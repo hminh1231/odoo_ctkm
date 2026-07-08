@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_ctkm_program_user,ctkm.program.user,model_ctkm_program,ctkm.group_ctkm_user,1,1,1,0
+access_ctkm_program_manager,ctkm.program.manager,model_ctkm_program,ctkm.group_ctkm_manager,1,1,1,1
+access_ctkm_stage_user,ctkm.stage.user,model_ctkm_stage,ctkm.group_ctkm_user,1,0,0,0
+access_ctkm_stage_manager,ctkm.stage.manager,model_ctkm_stage,ctkm.group_ctkm_manager,1,1,1,1
+access_ctkm_tag_user,ctkm.tag.user,model_ctkm_tag,ctkm.group_ctkm_user,1,0,0,0
+access_ctkm_tag_manager,ctkm.tag.manager,model_ctkm_tag,ctkm.group_ctkm_manager,1,1,1,1

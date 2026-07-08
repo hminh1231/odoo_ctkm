@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<odoo><data>
+
+    <menuitem name="CTKM"
+        id="ctkm_main_menu"
+        sequence="126"
+        groups="ctkm.group_ctkm_user"
+        web_icon="ctkm_core,static/description/icon.png"/>
+
+    <menuitem name="Chương trình khuyến mãi"
+        id="menu_ctkm_program"
+        sequence="1"
+        parent="ctkm.ctkm_main_menu"
+        groups="ctkm.group_ctkm_user"/>
+
+    <menuitem name="Cấu hình"
+        id="menu_ctkm_configuration"
+        sequence="99"
+        parent="ctkm.ctkm_main_menu"
+        groups="ctkm.group_ctkm_manager"/>
+
+    <menuitem name="Giai đoạn"
+        id="menu_ctkm_stage"
+        sequence="1"
+        parent="menu_ctkm_configuration"/>
+
+    <menuitem name="Nhãn"
+        id="menu_ctkm_tag"
+        sequence="2"
+        parent="menu_ctkm_configuration"/>
+
+</data></odoo>
