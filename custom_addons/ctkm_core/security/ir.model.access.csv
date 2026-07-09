@@ -5,3 +5,5 @@ access_ctkm_stage_user,ctkm.stage.user,model_ctkm_stage,ctkm_core.group_ctkm_use
 access_ctkm_stage_manager,ctkm.stage.manager,model_ctkm_stage,ctkm_core.group_ctkm_manager,1,1,1,1
 access_ctkm_tag_user,ctkm.tag.user,model_ctkm_tag,ctkm_core.group_ctkm_user,1,0,0,0
 access_ctkm_tag_manager,ctkm.tag.manager,model_ctkm_tag,ctkm_core.group_ctkm_manager,1,1,1,1
+access_ctkm_program_notify_line_user,ctkm.program.notify.line.user,model_ctkm_program_notify_line,ctkm_core.group_ctkm_user,1,1,1,1
+access_ctkm_program_notify_line_manager,ctkm.program.notify.line.manager,model_ctkm_program_notify_line,ctkm_core.group_ctkm_manager,1,1,1,1

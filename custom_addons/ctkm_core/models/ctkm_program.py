@@ -56,6 +56,12 @@ class CtkmProgram(models.Model):
         ], default='A6', required=True)
     badge_image = fields.Image('Ảnh nền nhãn', max_width=1024, max_height=1024)
     ticket_instructions = fields.Html('Hướng dẫn vé', translate=True)
+    notify_line_ids = fields.One2many(
+        'ctkm.program.notify.line',
+        'program_id',
+        string='Phạm vi thông báo',
+        copy=True,
+    )
 
     @api.constrains('date_begin', 'date_end')
     def _check_closing_date(self):

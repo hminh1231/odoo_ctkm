@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Chương trình khuyến mãi',
-    'version': '1.0',
+    'version': '1.1',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý chương trình khuyến mãi',
     'description': """
@@ -10,7 +10,7 @@ Quản lý chương trình khuyến mãi
 
 Module cung cấp quản lý các chương trình khuyến mãi.
 """,
-    'depends': ['mail'],
+    'depends': ['mail', 'hr_employee_hrm_detail'],
     'data': [
         'security/ctkm_security.xml',
         'security/ir.model.access.csv',
