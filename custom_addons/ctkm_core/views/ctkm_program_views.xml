@@ -65,9 +65,17 @@
                         </page>
                         <page string="Ghi chú &amp; Tài liệu" name="program_notes">
                             <group>
-                                <group>
+                                <group string="Nhãn chương trình">
                                     <field name="badge_format"/>
-                                    <field name="badge_image"/>
+                                    <field name="badge_image" widget="image"
+                                        options="{'accepted_file_extensions': 'image/*'}"/>
+                                </group>
+                                <group string="Tài liệu gửi kèm thông báo">
+                                    <div class="text-muted mb-2" colspan="2">
+                                        PDF, Word hoặc Excel — gửi kèm khi bấm <b>Gửi tin</b>.
+                                    </div>
+                                    <field name="notify_document_ids" widget="many2many_binary" nolabel="1" colspan="2"
+                                        options="{'accepted_file_extensions': '.pdf,.doc,.docx,.xls,.xlsx'}"/>
                                 </group>
                                 <group>
                                     <label for="ticket_instructions" string="Hướng dẫn vé"/>

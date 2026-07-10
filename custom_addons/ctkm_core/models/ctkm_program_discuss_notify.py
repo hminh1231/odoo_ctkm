@@ -69,6 +69,31 @@ class CtkmProgramDiscussNotify(models.Model):
             "res_id": res_id,
         }
 
+    def _ctkm_discuss_attachment_ids(self, chat):
+        self.ensure_one()
+        Attachment = self.env["ir.attachment"].sudo()
+        attachment_ids = []
+        badge_vals = self._ctkm_badge_attachment_values("discuss.channel", chat.id)
+        if badge_vals:
+            badge = Attachment.create(badge_vals)
+            badge.generate_access_token()
+            attachment_ids.append(badge.id)
+        for document in self.notify_document_ids:
+            discuss_doc = Attachment.create({
+                "name": document.name,
+                "type": "binary",
+                "datas": document.datas,
+                "mimetype": document.mimetype or mimetypes.guess_mimetype(
+                    document.name or "",
+                    default="application/octet-stream",
+                ),
+                "res_model": "discuss.channel",
+                "res_id": chat.id,
+            })
+            discuss_doc.generate_access_token()
+            attachment_ids.append(discuss_doc.id)
+        return attachment_ids
+
     def _post_ctkm_bot_discuss_message(self, recipient_user, body):
         self.ensure_one()
         Message = self.env["mail.message"]
@@ -90,11 +115,9 @@ class CtkmProgramDiscussNotify(models.Model):
                 "subtype_xmlid": "mail.mt_comment",
                 "author_id": bot_user.partner_id.id,
             }
-            attachment_vals = self._ctkm_badge_attachment_values("discuss.channel", chat.id)
-            if attachment_vals:
-                attachment = self.env["ir.attachment"].sudo().create(attachment_vals)
-                attachment.generate_access_token()
-                post_vals["attachment_ids"] = [attachment.id]
+            attachment_ids = self._ctkm_discuss_attachment_ids(chat)
+            if attachment_ids:
+                post_vals["attachment_ids"] = attachment_ids
             return chat.with_user(bot_user).sudo().message_post(**post_vals)
         except Exception:
             _logger.exception(
