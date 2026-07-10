@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Chương trình khuyến mãi',
-    'version': '1.6',
+    'version': '1.9',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý chương trình khuyến mãi',
     'description': """
@@ -29,6 +29,16 @@ Module cung cấp quản lý các chương trình khuyến mãi.
                 'after',
                 'mail/static/src/chatter/web/chatter_patch.js',
                 'ctkm_core/static/src/js/chatter_patch.js',
+            ),
+            (
+                'after',
+                'mail/static/src/core/common/attachment_list.js',
+                'ctkm_core/static/src/js/attachment_list_patch.js',
+            ),
+            (
+                'after',
+                'mail/static/src/discuss/core/common/attachment_model_patch.js',
+                'ctkm_core/static/src/js/attachment_patch.js',
             ),
         ],
     },
