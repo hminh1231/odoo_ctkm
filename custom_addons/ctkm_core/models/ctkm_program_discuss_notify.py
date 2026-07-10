@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 
+import base64
 import logging
 
 from markupsafe import Markup, escape
 
 from odoo import _, models
 from odoo.exceptions import UserError
-from odoo.tools import html2plaintext
+from odoo.tools import html2plaintext, mimetypes
 
 _logger = logging.getLogger(__name__)
 
@@ -45,14 +46,30 @@ class CtkmProgramDiscussNotify(models.Model):
             lines.append(Markup("Ghi chú: %s") % escape(note))
         return Markup("<br/>").join(lines)
 
-    def _ctkm_notify_attachments(self):
+    def _ctkm_badge_attachment_values(self, res_model, res_id):
         self.ensure_one()
         if not self.badge_image:
-            return []
-        filename = "%s_badge.png" % (self.name or "ctkm").replace("/", "-")
-        return [(filename, self.badge_image)]
+            return None
+        raw = base64.b64decode(self.badge_image)
+        mime = mimetypes.guess_mimetype(raw, default="image/jpeg") or "image/jpeg"
+        ext_map = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+        }
+        ext = ext_map.get(mime, ".jpg")
+        filename = "ctkm_%s_badge%s" % (self.id, ext)
+        return {
+            "name": filename,
+            "type": "binary",
+            "datas": base64.b64encode(raw),
+            "mimetype": mime,
+            "res_model": res_model,
+            "res_id": res_id,
+        }
 
-    def _post_ctkm_bot_discuss_message(self, recipient_user, body, attachments=None):
+    def _post_ctkm_bot_discuss_message(self, recipient_user, body):
         self.ensure_one()
         Message = self.env["mail.message"]
         if not recipient_user or recipient_user.share or not recipient_user.partner_id:
@@ -73,8 +90,11 @@ class CtkmProgramDiscussNotify(models.Model):
                 "subtype_xmlid": "mail.mt_comment",
                 "author_id": bot_user.partner_id.id,
             }
-            if attachments:
-                post_vals["attachments"] = attachments
+            attachment_vals = self._ctkm_badge_attachment_values("discuss.channel", chat.id)
+            if attachment_vals:
+                attachment = self.env["ir.attachment"].sudo().create(attachment_vals)
+                attachment.generate_access_token()
+                post_vals["attachment_ids"] = [attachment.id]
             return chat.with_user(bot_user).sudo().message_post(**post_vals)
         except Exception:
             _logger.exception(
@@ -99,10 +119,9 @@ class CtkmProgramDiscussNotify(models.Model):
                 raise UserError(_("Vui lòng chọn ít nhất một người nhận trong phạm vi thông báo."))
 
             body = program._ctkm_notify_message_body()
-            attachments = program._ctkm_notify_attachments()
             sent_users = self.env["res.users"]
             for user in users:
-                if program._post_ctkm_bot_discuss_message(user, body, attachments=attachments or None):
+                if program._post_ctkm_bot_discuss_message(user, body):
                     sent_users |= user
 
             log_parts = [_("Đã gửi thông báo Discuss tới %s người nhận.") % len(sent_users)]
