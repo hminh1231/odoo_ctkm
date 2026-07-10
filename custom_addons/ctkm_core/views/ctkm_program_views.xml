@@ -46,6 +46,11 @@
                             <field name="description" placeholder="Mô tả chi tiết chương trình khuyến mãi..."/>
                         </page>
                         <page string="Phạm vi thông báo" name="notify_scope">
+                            <div class="mb-2">
+                                <button name="action_send_discuss_notification" type="object"
+                                    string="Gửi tin" class="btn-primary"
+                                    icon="fa-paper-plane"/>
+                            </div>
                             <field name="notify_line_ids" nolabel="1">
                                 <list editable="bottom">
                                     <field name="stt" string="Số thứ tự" readonly="1"/>
