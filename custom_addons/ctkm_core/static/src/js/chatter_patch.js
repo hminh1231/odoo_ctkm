@@ -35,8 +35,10 @@ patch(Chatter.prototype, {
 
     async _ctkmSendDiscussNotification() {
         this.state.composerType = false;
-        if (!this.props.threadId) {
-            const saved = await this.props.saveRecord?.();
+        // Always save first so newly edited notify lines (store/job/recipients)
+        // are included before OdooBot CTKM sends Discuss messages.
+        if (typeof this.props.saveRecord === "function") {
+            const saved = await this.props.saveRecord();
             if (!saved) {
                 return;
             }
