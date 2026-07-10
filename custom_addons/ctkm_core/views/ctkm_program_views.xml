@@ -57,6 +57,7 @@
                                     <field name="sequence" column_invisible="1"/>
                                     <field name="mien"/>
                                     <field name="store_code_id" string="Mã cửa hàng" options="{'no_create': True, 'no_open': True}"/>
+                                    <field name="job_id" string="Chức vụ" options="{'no_create': True}"/>
                                     <field name="notify_employee_ids" widget="many2many_tags"
                                         domain="[('active', '=', True), ('mien', '=', mien)]"
                                         options="{'no_create': True, 'no_quick_create': True}"/>

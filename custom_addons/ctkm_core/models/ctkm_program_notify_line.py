@@ -32,6 +32,10 @@ class CtkmProgramNotifyLine(models.Model):
         string='Mã cửa hàng',
         domain="['|', ('mien', '=', False), ('mien', '=', mien)]",
     )
+    job_id = fields.Many2one(
+        'hr.job',
+        string='Chức vụ',
+    )
     store_code = fields.Char(
         string='Mã CH',
         related='store_code_id.code',
@@ -58,11 +62,13 @@ class CtkmProgramNotifyLine(models.Model):
                 ('ma_bo_phan_id', '=', self.store_code_id.id),
                 ('store_id', '=', store_id),
             ]
+        if self.job_id:
+            domain.append(('job_id', '=', self.job_id.id))
         return domain
 
     def _get_default_notify_employees(self):
         self.ensure_one()
-        if not self.store_code_id:
+        if not self.store_code_id and not self.job_id:
             return self.env['hr.employee']
         return self.env['hr.employee'].search(self._get_notify_employee_domain())
 
@@ -84,11 +90,17 @@ class CtkmProgramNotifyLine(models.Model):
             )
         else:
             self.notify_employee_ids = False
+        if self.store_code_id or self.job_id:
+            self.notify_employee_ids = self._get_default_notify_employees()
 
     @api.onchange('store_code_id')
     def _onchange_store_code_id(self):
         if self.store_code_id and self.store_code_id.mien:
             self.mien = self.store_code_id.mien
+        self.notify_employee_ids = self._get_default_notify_employees()
+
+    @api.onchange('job_id')
+    def _onchange_job_id(self):
         self.notify_employee_ids = self._get_default_notify_employees()
 
     @api.onchange('notify_employee_ids')
@@ -108,4 +120,18 @@ class CtkmProgramNotifyLine(models.Model):
                 raise ValidationError(
                     'Nhân viên %s không thuộc miền %s.'
                     % (', '.join(invalid.mapped('name')), line.mien)
+                )
+
+    @api.constrains('job_id', 'notify_employee_ids')
+    def _check_notify_employee_job(self):
+        for line in self:
+            if not line.job_id:
+                continue
+            invalid = line.notify_employee_ids.filtered(
+                lambda employee: employee.job_id != line.job_id
+            )
+            if invalid:
+                raise ValidationError(
+                    'Nhân viên %s không có chức vụ %s.'
+                    % (', '.join(invalid.mapped('name')), line.job_id.name)
                 )
