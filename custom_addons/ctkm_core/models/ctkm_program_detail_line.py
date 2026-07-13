@@ -10,6 +10,13 @@ class CtkmProgramDetailLine(models.Model):
 
     program_id = fields.Many2one(
         'ctkm.program', string='Chương trình', required=True, ondelete='cascade', index=True)
+    notify_line_id = fields.Many2one(
+        'ctkm.program.notify.line',
+        string='Dòng thông báo',
+        ondelete='set null',
+        index=True,
+        copy=False,
+    )
     sequence = fields.Integer(string='STT', default=10)
     stt = fields.Integer(string='STT', compute='_compute_stt')
     notification_date = fields.Date(string='NGÀY NHẬN THÔNG BÁO')

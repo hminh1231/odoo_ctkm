@@ -7,6 +7,7 @@ access_ctkm_tag_user,ctkm.tag.user,model_ctkm_tag,ctkm_core.group_ctkm_user,1,0,
 access_ctkm_tag_manager,ctkm.tag.manager,model_ctkm_tag,ctkm_core.group_ctkm_manager,1,1,1,1
 access_ctkm_program_notify_line_user,ctkm.program.notify.line.user,model_ctkm_program_notify_line,ctkm_core.group_ctkm_user,1,1,1,1
 access_ctkm_program_notify_line_manager,ctkm.program.notify.line.manager,model_ctkm_program_notify_line,ctkm_core.group_ctkm_manager,1,1,1,1
+access_ctkm_program_detail_line_user,ctkm.program.detail.line.user,model_ctkm_program_detail_line,ctkm_core.group_ctkm_user,1,1,1,0
 access_ctkm_program_detail_line_approver,ctkm.program.detail.line.approver,model_ctkm_program_detail_line,ctkm_core.group_ctkm_approver,1,1,1,1
 access_ctkm_program_detail_line_store,ctkm.program.detail.line.store,model_ctkm_program_detail_line,ctkm_core.group_ctkm_store,1,1,1,1
 access_ctkm_program_detail_line_manager,ctkm.program.detail.line.manager,model_ctkm_program_detail_line,ctkm_core.group_ctkm_manager,1,1,1,1

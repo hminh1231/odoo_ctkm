@@ -17,7 +17,7 @@
         id="menu_ctkm_detail"
         sequence="2"
         parent="ctkm_core.ctkm_main_menu"
-        groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager"/>
+        groups="ctkm_core.group_ctkm_user"/>
 
     <menuitem name="Cấu hình"
         id="menu_ctkm_configuration"
