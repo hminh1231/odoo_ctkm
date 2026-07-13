@@ -1,0 +1,114 @@
+<?xml version="1.0"?>
+<odoo><data>
+
+    <record model="ir.ui.view" id="view_ctkm_program_detail_line_tree">
+        <field name="name">ctkm.program.detail.line.list</field>
+        <field name="model">ctkm.program.detail.line</field>
+        <field name="arch" type="xml">
+            <list string="Detail" editable="bottom">
+                <field name="stt" readonly="1"/>
+                <field name="sequence" column_invisible="1"/>
+                <field name="program_id"/>
+                <field name="notification_date"/>
+                <field name="notification_file"/>
+                <field name="store_code_id" options="{'no_create': True, 'no_open': True}"/>
+
+                <field name="responsible_employee_id" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager" options="{'no_create': True}"/>
+                <field name="allocated_time" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"/>
+                <field name="processing_date" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"/>
+                <field name="work_content" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"/>
+                <field name="excel_file_status"
+                    groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"
+                    decoration-success="excel_file_status == 'processed'"
+                    decoration-muted="excel_file_status == 'not_processed'"/>
+                <field name="completion_date" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"/>
+                <field name="result_ok" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"/>
+                <field name="manager_confirmed" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"/>
+                <field name="result_note" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"/>
+                <field name="support_request" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager"/>
+
+                <field name="product_name" groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager"/>
+                <field name="quantity" groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager"/>
+                <field name="tag_confirmed" groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager"/>
+                <field name="receive_status"
+                    groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager"
+                    decoration-success="receive_status == 'received'"
+                    decoration-muted="receive_status == 'not_received'"/>
+                <field name="confirmation_note" groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager"/>
+                <field name="processing_status" groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager"/>
+                <field name="note" groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager"/>
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_program_detail_line_form">
+        <field name="name">ctkm.program.detail.line.form</field>
+        <field name="model">ctkm.program.detail.line</field>
+        <field name="arch" type="xml">
+            <form string="Detail">
+                <sheet>
+                    <group>
+                        <field name="program_id"/>
+                        <field name="notification_date"/>
+                        <field name="notification_file"/>
+                        <field name="store_code_id" options="{'no_create': True, 'no_open': True}"/>
+                    </group>
+                    <group groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager">
+                        <field name="responsible_employee_id" options="{'no_create': True}"/>
+                        <field name="allocated_time"/>
+                        <field name="processing_date"/>
+                        <field name="work_content"/>
+                        <field name="excel_file_status"/>
+                        <field name="completion_date"/>
+                        <field name="result_ok"/>
+                        <field name="manager_confirmed"/>
+                        <field name="result_note"/>
+                        <field name="support_request"/>
+                    </group>
+                    <group groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager">
+                        <field name="product_name"/>
+                        <field name="quantity"/>
+                        <field name="tag_confirmed"/>
+                        <field name="receive_status"/>
+                        <field name="confirmation_note"/>
+                        <field name="processing_status"/>
+                        <field name="note"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_program_detail_line_search">
+        <field name="name">ctkm.program.detail.line.search</field>
+        <field name="model">ctkm.program.detail.line</field>
+        <field name="arch" type="xml">
+            <search string="Detail">
+                <field name="program_id"/>
+                <field name="store_code_id"/>
+                <field name="responsible_employee_id"/>
+                <field name="product_name"/>
+                <filter string="Theo chương trình" name="group_program" context="{'group_by': 'program_id'}"/>
+                <filter string="Theo cửa hàng" name="group_store" context="{'group_by': 'store_code_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_ctkm_program_detail_view">
+        <field name="name">Detail</field>
+        <field name="path">ctkm-details</field>
+        <field name="res_model">ctkm.program.detail.line</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ctkm_program_detail_line_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Tạo dòng detail
+            </p>
+        </field>
+    </record>
+
+    <record id="menu_ctkm_detail" model="ir.ui.menu">
+        <field name="action" ref="action_ctkm_program_detail_view"/>
+    </record>
+
+</data></odoo>
