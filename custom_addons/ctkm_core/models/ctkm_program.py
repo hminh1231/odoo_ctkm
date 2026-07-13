@@ -82,6 +82,18 @@ class CtkmProgram(models.Model):
         string='Phạm vi thông báo',
         copy=True,
     )
+    approver_detail_line_ids = fields.One2many(
+        'ctkm.program.approver.detail.line',
+        'program_id',
+        string='Chi tiết approver',
+        copy=True,
+    )
+    store_detail_line_ids = fields.One2many(
+        'ctkm.program.store.detail.line',
+        'program_id',
+        string='Chi tiết cửa hàng',
+        copy=True,
+    )
 
     @api.constrains('badge_image')
     def _check_badge_image(self):

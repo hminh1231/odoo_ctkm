@@ -64,6 +64,49 @@
                                 </list>
                             </field>
                         </page>
+                        <page string="Detail" name="detail_approver" groups="ctkm_core.group_ctkm_approver">
+                            <field name="approver_detail_line_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="stt" readonly="1"/>
+                                    <field name="sequence" column_invisible="1"/>
+                                    <field name="notification_date"/>
+                                    <field name="notification_file"/>
+                                    <field name="store_code_id" options="{'no_create': True, 'no_open': True}"/>
+                                    <field name="responsible_employee_id" options="{'no_create': True}"/>
+                                    <field name="allocated_time"/>
+                                    <field name="processing_date"/>
+                                    <field name="work_content"/>
+                                    <field name="excel_file_status"
+                                        decoration-success="excel_file_status == 'processed'"
+                                        decoration-muted="excel_file_status == 'not_processed'"/>
+                                    <field name="completion_date"/>
+                                    <field name="result_ok"/>
+                                    <field name="manager_confirmed"/>
+                                    <field name="result_note"/>
+                                    <field name="support_request"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Detail" name="detail_store" groups="ctkm_core.group_ctkm_store">
+                            <field name="store_detail_line_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="stt" readonly="1"/>
+                                    <field name="sequence" column_invisible="1"/>
+                                    <field name="notification_date"/>
+                                    <field name="notification_file"/>
+                                    <field name="store_code_id" options="{'no_create': True, 'no_open': True}"/>
+                                    <field name="product_name"/>
+                                    <field name="quantity"/>
+                                    <field name="tag_confirmed"/>
+                                    <field name="receive_status"
+                                        decoration-success="receive_status == 'received'"
+                                        decoration-muted="receive_status == 'not_received'"/>
+                                    <field name="confirmation_note"/>
+                                    <field name="processing_status"/>
+                                    <field name="note"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Ghi chú &amp; Tài liệu" name="program_notes">
                             <group>
                                 <group string="Nhãn chương trình">
