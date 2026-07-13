@@ -4,7 +4,7 @@
     <menuitem name="CTKM"
         id="ctkm_main_menu"
         sequence="126"
-        groups="ctkm_core.group_ctkm_user"
+        groups="base.group_user"
         web_icon="ctkm_core,static/description/icon.png"/>
 
     <menuitem name="Chương trình khuyến mãi"

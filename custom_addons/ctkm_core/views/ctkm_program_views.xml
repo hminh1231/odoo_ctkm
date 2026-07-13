@@ -78,6 +78,13 @@
                                     <field name="notify_document_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.pdf,.doc,.docx,.xls,.xlsx'}"/>
                                 </group>
+                                <group string="Nhập file chi tiết số lượng sản phẩm">
+                                    <div class="text-muted mb-2" colspan="2">
+                                        File Excel .xlsx sẽ tạo dòng Detail theo từng mã sản phẩm, cửa hàng và số lượng.
+                                    </div>
+                                    <field name="product_quantity_file_ids" widget="many2many_binary" nolabel="1" colspan="2"
+                                        options="{'accepted_file_extensions': '.xlsx'}"/>
+                                </group>
                                 <group>
                                     <label for="ticket_instructions" string="Hướng dẫn vé"/>
                                     <br/>

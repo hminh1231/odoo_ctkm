@@ -39,7 +39,7 @@
         <record id="ctkm_program_detail_line_recipient_rule" model="ir.rule">
             <field name="name">CTKM Detail: chương trình được thông báo</field>
             <field name="model_id" ref="model_ctkm_program_detail_line"/>
-            <field name="groups" eval="[(4, ref('group_ctkm_user'))]"/>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="True"/>
@@ -47,9 +47,42 @@
             <field name="domain_force">['|', ('program_id.user_id', '=', user.id), ('program_id.notify_line_ids.notify_employee_ids.user_id', '=', user.id)]</field>
         </record>
 
+        <record id="ctkm_program_recipient_rule" model="ir.rule">
+            <field name="name">CTKM Program: chương trình được thông báo</field>
+            <field name="model_id" ref="model_ctkm_program"/>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+            <field name="domain_force">['|', ('user_id', '=', user.id), ('notify_line_ids.notify_employee_ids.user_id', '=', user.id)]</field>
+        </record>
+
+        <record id="ctkm_program_user_rule" model="ir.rule">
+            <field name="name">CTKM Program: người dùng CTKM xem tất cả</field>
+            <field name="model_id" ref="model_ctkm_program"/>
+            <field name="groups" eval="[(4, ref('group_ctkm_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+
         <record id="ctkm_program_detail_line_manager_rule" model="ir.rule">
             <field name="name">CTKM Detail: quản trị xem tất cả</field>
             <field name="model_id" ref="model_ctkm_program_detail_line"/>
+            <field name="groups" eval="[(4, ref('group_ctkm_manager'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+
+        <record id="ctkm_program_manager_rule" model="ir.rule">
+            <field name="name">CTKM Program: quản trị xem tất cả</field>
+            <field name="model_id" ref="model_ctkm_program"/>
             <field name="groups" eval="[(4, ref('group_ctkm_manager'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>

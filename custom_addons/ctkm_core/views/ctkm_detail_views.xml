@@ -9,6 +9,7 @@
                 <field name="stt" readonly="1"/>
                 <field name="sequence" column_invisible="1"/>
                 <field name="notify_line_id" column_invisible="1"/>
+                <field name="import_attachment_id" column_invisible="1"/>
                 <field name="program_id"/>
                 <field name="notification_date"/>
                 <field name="notification_file"/>

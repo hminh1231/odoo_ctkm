@@ -17,6 +17,13 @@ class CtkmProgramDetailLine(models.Model):
         index=True,
         copy=False,
     )
+    import_attachment_id = fields.Many2one(
+        'ir.attachment',
+        string='File nhập',
+        ondelete='set null',
+        index=True,
+        copy=False,
+    )
     sequence = fields.Integer(string='STT', default=10)
     stt = fields.Integer(string='STT', compute='_compute_stt')
     notification_date = fields.Date(string='NGÀY NHẬN THÔNG BÁO')
