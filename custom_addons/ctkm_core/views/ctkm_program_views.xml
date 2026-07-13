@@ -64,7 +64,7 @@
                                 </list>
                             </field>
                         </page>
-                        <page string="Detail" name="detail_approver" groups="ctkm_core.group_ctkm_approver">
+                        <page string="Detail" name="detail_approver" groups="ctkm_core.group_ctkm_approver,ctkm_core.group_ctkm_manager">
                             <field name="approver_detail_line_ids" nolabel="1">
                                 <list editable="bottom">
                                     <field name="stt" readonly="1"/>
@@ -87,7 +87,7 @@
                                 </list>
                             </field>
                         </page>
-                        <page string="Detail" name="detail_store" groups="ctkm_core.group_ctkm_store">
+                        <page string="Detail" name="detail_store" groups="ctkm_core.group_ctkm_store,ctkm_core.group_ctkm_manager">
                             <field name="store_detail_line_ids" nolabel="1">
                                 <list editable="bottom">
                                     <field name="stt" readonly="1"/>

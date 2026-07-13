@@ -32,7 +32,7 @@
             <field name="name">Administrator</field>
             <field name="sequence">20</field>
             <field name="privilege_id" ref="res_groups_privilege_ctkm"/>
-            <field name="implied_ids" eval="[(4, ref('group_ctkm_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('group_ctkm_store')), (4, ref('group_ctkm_approver'))]"/>
             <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
         </record>
     </data>
