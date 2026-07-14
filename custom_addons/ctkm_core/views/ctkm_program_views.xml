@@ -24,7 +24,7 @@
                             <field name="active" invisible="1"/>
                             <field name="date_begin" string="Ngày" widget="daterange" options="{'end_date_field': 'date_end'}"/>
                             <field name="date_end" invisible="1"/>
-                            <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color', 'no_quick_create': True}"/>
+                            <field name="notify_code" placeholder="VD: TB-2026-001"/>
                         </group>
                         <group name="right_program_details">
                             <field name="organizer_id"/>
@@ -78,13 +78,6 @@
                                     <field name="notify_document_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.pdf,.doc,.docx,.xls,.xlsx'}"/>
                                 </group>
-                                <group string="Nhập file chi tiết số lượng sản phẩm">
-                                    <div class="text-muted mb-2" colspan="2">
-                                        File Excel .xlsx sẽ tạo dòng Detail theo từng mã sản phẩm, cửa hàng và số lượng.
-                                    </div>
-                                    <field name="product_quantity_file_ids" widget="many2many_binary" nolabel="1" colspan="2"
-                                        options="{'accepted_file_extensions': '.xlsx'}"/>
-                                </group>
                                 <group>
                                     <label for="ticket_instructions" string="Hướng dẫn vé"/>
                                     <br/>
@@ -121,6 +114,7 @@
                 <field name="company_id" groups="base.group_multi_company" readonly="1" optional="show"/>
                 <field name="date_begin" readonly="1"/>
                 <field name="date_end" readonly="1"/>
+                <field name="notify_code" optional="show"/>
                 <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" optional="hide"/>
                 <field name="stage_id" readonly="1"/>
                 <field name="message_needaction" readonly="1" column_invisible="True"/>

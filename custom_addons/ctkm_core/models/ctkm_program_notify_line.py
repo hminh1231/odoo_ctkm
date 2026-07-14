@@ -49,43 +49,6 @@ class CtkmProgramNotifyLine(models.Model):
         string='Người nhận thông báo',
     )
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        lines = super().create(vals_list)
-        lines._sync_detail_lines()
-        return lines
-
-    def write(self, vals):
-        res = super().write(vals)
-        if {'program_id', 'store_code_id', 'notify_employee_ids'} & set(vals):
-            self._sync_detail_lines()
-        return res
-
-    def unlink(self):
-        self.env['ctkm.program.detail.line'].sudo().search([
-            ('notify_line_id', 'in', self.ids),
-        ]).unlink()
-        return super().unlink()
-
-    def _sync_detail_lines(self):
-        DetailLine = self.env['ctkm.program.detail.line'].sudo()
-        for line in self:
-            if not line.program_id:
-                continue
-            detail = DetailLine.search([('notify_line_id', '=', line.id)], limit=1)
-            vals = {
-                'program_id': line.program_id.id,
-                'store_code_id': line.store_code_id.id,
-            }
-            if detail:
-                detail.write(vals)
-            else:
-                DetailLine.create({
-                    **vals,
-                    'notify_line_id': line.id,
-                    'notification_date': fields.Date.context_today(line),
-                })
-
     def _get_notify_employee_domain(self):
         self.ensure_one()
         domain = [('active', '=', True)]

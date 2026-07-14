@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Chương trình khuyến mãi',
-    'version': '2.7',
+    'version': '2.8',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý chương trình khuyến mãi',
     'description': """
@@ -16,8 +16,8 @@ Module cung cấp quản lý các chương trình khuyến mãi.
         'security/ir.model.access.csv',
         'views/ctkm_menu_views.xml',
         'views/ctkm_stage_views.xml',
-        'views/ctkm_detail_views.xml',
         'views/ctkm_program_views.xml',
+        'views/ctkm_task_views.xml',
     ],
     'assets': {
         'web.assets_backend': [
@@ -41,6 +41,7 @@ Module cung cấp quản lý các chương trình khuyến mãi.
                 'mail/static/src/discuss/core/common/attachment_model_patch.js',
                 'ctkm_core/static/src/js/attachment_patch.js',
             ),
+            'ctkm_core/static/src/js/discuss_detail_link_patch.js',
         ],
     },
     'installable': True,

@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+<data>
+
+    <record id="view_ctkm_task_list" model="ir.ui.view">
+        <field name="name">ctkm.task.list</field>
+        <field name="model">ctkm.task</field>
+        <field name="arch" type="xml">
+            <list string="Công việc của tôi" editable="bottom"
+                decoration-success="state == 'done'"
+                decoration-warning="state == 'progress'"
+                decoration-muted="state == 'todo'">
+                <field name="process_date"/>
+                <field name="name"/>
+                <field name="done_date"/>
+                <field name="state" widget="badge"
+                    decoration-success="state == 'done'"
+                    decoration-warning="state == 'progress'"
+                    decoration-muted="state == 'todo'"/>
+                <field name="duration" placeholder="VD: 2 giờ"/>
+                <field name="handover_date"/>
+                <field name="handover_employee_id"
+                    options="{'no_create': True, 'no_open': True}"/>
+                <field name="manager_confirmed" widget="boolean_toggle"/>
+                <field name="support_employee_ids" widget="many2many_tags"
+                    options="{'no_create': True}"/>
+                <button name="action_notify_support" type="object"
+                    string="Thông báo" icon="fa-bell"
+                    title="Thông báo tới người hỗ trợ"
+                    class="btn-link"/>
+                <field name="program_id" optional="hide"
+                    options="{'no_create': True}"/>
+                <field name="user_id" widget="many2one_avatar_user" optional="hide"
+                    groups="ctkm_core.group_ctkm_manager"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ctkm_task_form" model="ir.ui.view">
+        <field name="name">ctkm.task.form</field>
+        <field name="model">ctkm.task</field>
+        <field name="arch" type="xml">
+            <form string="Công việc">
+                <header>
+                    <button name="action_notify_support" type="object"
+                        string="Thông báo tới người hỗ trợ"
+                        class="btn-primary"
+                        icon="fa-bell"/>
+                    <field name="state" widget="statusbar"
+                        options="{'clickable': '1'}"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="process_date"/>
+                            <field name="done_date"/>
+                            <field name="duration" placeholder="VD: 2 giờ"/>
+                            <field name="handover_date"/>
+                        </group>
+                        <group>
+                            <field name="handover_employee_id"
+                                options="{'no_create': True}"/>
+                            <field name="manager_confirmed"/>
+                            <field name="program_id"
+                                options="{'no_create': True}"/>
+                            <field name="user_id" widget="many2one_avatar_user"
+                                groups="ctkm_core.group_ctkm_manager"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="name" placeholder="Nội dung công việc..."/>
+                    </group>
+                    <group string="Người hỗ trợ">
+                        <field name="support_employee_ids" widget="many2many_tags"
+                            nolabel="1" colspan="2"
+                            options="{'no_create': True}"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ctkm_task_search" model="ir.ui.view">
+        <field name="name">ctkm.task.search</field>
+        <field name="model">ctkm.task</field>
+        <field name="arch" type="xml">
+            <search string="Công việc của tôi">
+                <field name="name"/>
+                <field name="handover_employee_id"/>
+                <field name="support_employee_ids"/>
+                <field name="program_id"/>
+                <field name="user_id"/>
+                <filter string="Của tôi" name="my_tasks"
+                    domain="[('user_id', '=', uid)]"/>
+                <separator/>
+                <filter string="Chưa bắt đầu" name="state_todo"
+                    domain="[('state', '=', 'todo')]"/>
+                <filter string="Đang xử lý" name="state_progress"
+                    domain="[('state', '=', 'progress')]"/>
+                <filter string="Hoàn thành" name="state_done"
+                    domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter string="Chưa xác nhận QL" name="not_confirmed"
+                    domain="[('manager_confirmed', '=', False)]"/>
+                <filter string="Đã xác nhận QL" name="confirmed"
+                    domain="[('manager_confirmed', '=', True)]"/>
+                <group>
+                    <filter string="Trạng thái" name="group_state"
+                        context="{'group_by': 'state'}"/>
+                    <filter string="Ngày xử lý" name="group_process_date"
+                        context="{'group_by': 'process_date'}"/>
+                    <filter string="Người tạo" name="group_user"
+                        context="{'group_by': 'user_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ctkm_task_my" model="ir.actions.act_window">
+        <field name="name">Công việc của tôi</field>
+        <field name="path">ctkm-my-tasks</field>
+        <field name="res_model">ctkm.task</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ctkm_task_search"/>
+        <field name="context">{'search_default_my_tasks': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Chưa có công việc nào.
+            </p>
+            <p>
+                Bấm Mới để thêm công việc: ngày xử lý, nội dung, trạng thái, bàn giao...
+            </p>
+        </field>
+    </record>
+
+    <record id="menu_ctkm_my_tasks" model="ir.ui.menu">
+        <field name="action" ref="action_ctkm_task_my"/>
+    </record>
+
+</data>
+</odoo>

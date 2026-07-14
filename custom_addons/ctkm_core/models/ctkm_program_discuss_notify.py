@@ -33,6 +33,25 @@ class CtkmProgramDiscussNotify(models.Model):
     def _ctkm_notify_plain_text(self, html_value):
         return html2plaintext(html_value or "").replace("\xa0", " ").strip()
 
+    def _ctkm_notify_detail_button_markup(self):
+        action = self.env.ref(
+            "ctkm_core.action_ctkm_program_my_activities",
+            raise_if_not_found=False,
+        )
+        href = "/odoo/ctkm-my-tasks"
+        if action:
+            # Prefer clean path when available; fall back to action id URL.
+            href = "/odoo/%s" % (action.path or ("action-%s" % action.id))
+        return Markup(
+            '<div class="o_ctkm_notify_detail mt-2">'
+            '<a class="btn btn-primary btn-sm o_ctkm_notify_detail_btn" '
+            'href="%s" data-oe-model="ir.actions.act_window" '
+            'data-oe-id="%s" data-oe-action="ctkm_core.action_ctkm_program_my_activities">'
+            "Bấm để xem chi tiết"
+            "</a>"
+            "</div>"
+        ) % (escape(href), action.id if action else 0)
+
     def _ctkm_notify_message_body(self):
         self.ensure_one()
         lines = [Markup("<b>%s</b>") % escape(self.name or "")]
@@ -44,6 +63,7 @@ class CtkmProgramDiscussNotify(models.Model):
         note = self._ctkm_notify_plain_text(self.note)
         if note:
             lines.append(Markup("Ghi chú: %s") % escape(note))
+        lines.append(self._ctkm_notify_detail_button_markup())
         return Markup("<br/>").join(lines)
 
     def _ctkm_badge_attachment_values(self, res_model, res_id):
