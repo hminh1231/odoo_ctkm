@@ -1,0 +1,47 @@
+/* Một ô trạng thái: xám / vàng / xanh lá */
+.o_ctkm_status_badge {
+    display: inline-block;
+    max-width: 100%;
+}
+
+.o_ctkm_status_badge .o_ctkm_status_label,
+.o_ctkm_status_badge .o_ctkm_status_select {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.15rem 0.7rem;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    border: 1px solid transparent;
+    max-width: 100%;
+}
+
+.o_ctkm_status_badge .o_ctkm_status_select {
+    appearance: auto;
+    cursor: pointer;
+    outline: none;
+}
+
+/* Chưa xử lý — xám */
+.o_ctkm_status_badge.o_ctkm_status_todo .o_ctkm_status_label,
+.o_ctkm_status_badge.o_ctkm_status_todo .o_ctkm_status_select {
+    background-color: #adb5bd;
+    color: #212529;
+    border-color: #868e96;
+}
+
+/* Đang xử lý — vàng */
+.o_ctkm_status_badge.o_ctkm_status_progress .o_ctkm_status_label,
+.o_ctkm_status_badge.o_ctkm_status_progress .o_ctkm_status_select {
+    background-color: #ffc107;
+    color: #212529;
+    border-color: #e0a800;
+}
+
+/* Hoàn thành — xanh lá */
+.o_ctkm_status_badge.o_ctkm_status_done .o_ctkm_status_label,
+.o_ctkm_status_badge.o_ctkm_status_done .o_ctkm_status_select {
+    background-color: #28a745;
+    color: #fff;
+    border-color: #1e7e34;
+}

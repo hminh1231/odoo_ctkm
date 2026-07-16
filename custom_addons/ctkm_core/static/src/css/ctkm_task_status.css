@@ -1,0 +1,22 @@
+/* Colors for Trạng thái (selection_badge) on Công việc của tôi */
+.o_ctkm_task_list .o_field_selection_badge span.badge[raw-value="todo"],
+.o_ctkm_task_list .o_field_selection_badge .o_selection_badge[value='"todo"'],
+.o_ctkm_task_list .o_field_selection_badge .badge[value='"todo"'] {
+    background-color: #adb5bd !important;
+    color: #212529 !important;
+    border-color: #868e96 !important;
+}
+.o_ctkm_task_list .o_field_selection_badge span.badge[raw-value="progress"],
+.o_ctkm_task_list .o_field_selection_badge .o_selection_badge[value='"progress"'],
+.o_ctkm_task_list .o_field_selection_badge .badge[value='"progress"'] {
+    background-color: #ffc107 !important;
+    color: #212529 !important;
+    border-color: #e0a800 !important;
+}
+.o_ctkm_task_list .o_field_selection_badge span.badge[raw-value="done"],
+.o_ctkm_task_list .o_field_selection_badge .o_selection_badge[value='"done"'],
+.o_ctkm_task_list .o_field_selection_badge .badge[value='"done"'] {
+    background-color: #28a745 !important;
+    color: #ffffff !important;
+    border-color: #1e7e34 !important;
+}

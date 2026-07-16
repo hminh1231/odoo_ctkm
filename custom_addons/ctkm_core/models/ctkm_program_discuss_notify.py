@@ -5,7 +5,7 @@ import logging
 
 from markupsafe import Markup, escape
 
-from odoo import _, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import html2plaintext, mimetypes
 
@@ -34,23 +34,48 @@ class CtkmProgramDiscussNotify(models.Model):
         return html2plaintext(html_value or "").replace("\xa0", " ").strip()
 
     def _ctkm_notify_detail_button_markup(self):
-        action = self.env.ref(
-            "ctkm_core.action_ctkm_program_my_activities",
-            raise_if_not_found=False,
-        )
-        href = "/odoo/ctkm-my-tasks"
-        if action:
-            # Prefer clean path when available; fall back to action id URL.
-            href = "/odoo/%s" % (action.path or ("action-%s" % action.id))
+        href = "/odoo/ctkm-my-tasks?ctkm_program_id=%s" % self.id
         return Markup(
             '<div class="o_ctkm_notify_detail mt-2">'
             '<a class="btn btn-primary btn-sm o_ctkm_notify_detail_btn" '
-            'href="%s" data-oe-model="ir.actions.act_window" '
-            'data-oe-id="%s" data-oe-action="ctkm_core.action_ctkm_program_my_activities">'
+            'href="%s" data-oe-model="ctkm.program" data-oe-id="%s" '
+            'data-program-id="%s" contenteditable="false">'
             "Bấm để xem chi tiết"
             "</a>"
             "</div>"
-        ) % (escape(href), action.id if action else 0)
+        ) % (escape(href), self.id, self.id)
+
+    def action_open_my_task(self):
+        """Delegate: lần đầu bấm nút tạo công việc, ngày xử lý = ngày bấm."""
+        self.ensure_one()
+        return self.env["ctkm.task"].action_open_for_program(self.id)
+
+    @api.model
+    def _ctkm_fix_notify_detail_buttons(self):
+        """Cập nhật nút trong tin Discuss cũ để có data-program-id."""
+        import re
+
+        Message = self.env["mail.message"].sudo()
+        messages = Message.search([("body", "ilike", "o_ctkm_notify_detail_btn")])
+        if not messages:
+            return True
+        pattern = re.compile(
+            r'<div class="o_ctkm_notify_detail[^"]*">.*?</div>',
+            re.IGNORECASE | re.DOTALL,
+        )
+        for program in self.sudo().search([]):
+            name = (program.name or "").strip()
+            if not name:
+                continue
+            btn_html = str(program._ctkm_notify_detail_button_markup())
+            for message in messages:
+                body = message.body or ""
+                if "o_ctkm_notify_detail_btn" not in body or name not in body:
+                    continue
+                new_body = pattern.sub(btn_html, body, count=1)
+                if new_body != body:
+                    message.write({"body": new_body})
+        return True
 
     def _ctkm_notify_message_body(self):
         self.ensure_one()

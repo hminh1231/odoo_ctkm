@@ -11,5 +11,6 @@ access_ctkm_tag_manager,ctkm.tag.manager,model_ctkm_tag,ctkm_core.group_ctkm_man
 access_ctkm_program_notify_line_employee,ctkm.program.notify.line.employee,model_ctkm_program_notify_line,base.group_user,1,0,0,0
 access_ctkm_program_notify_line_user,ctkm.program.notify.line.user,model_ctkm_program_notify_line,ctkm_core.group_ctkm_user,1,1,1,1
 access_ctkm_program_notify_line_manager,ctkm.program.notify.line.manager,model_ctkm_program_notify_line,ctkm_core.group_ctkm_manager,1,1,1,1
+access_ctkm_task_employee,ctkm.task.employee,model_ctkm_task,base.group_user,1,1,1,1
 access_ctkm_task_user,ctkm.task.user,model_ctkm_task,ctkm_core.group_ctkm_user,1,1,1,1
 access_ctkm_task_manager,ctkm.task.manager,model_ctkm_task,ctkm_core.group_ctkm_manager,1,1,1,1

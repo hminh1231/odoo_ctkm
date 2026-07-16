@@ -42,7 +42,7 @@
             <field name="perm_unlink" eval="False"/>
         </record>
 
-        <!-- Tasks: user chỉ thấy việc của mình; manager thấy tất cả -->
+        <!-- Tasks: CTKM user thấy việc của mình; manager thấy tất cả -->
         <record id="ctkm_task_rule_user" model="ir.rule">
             <field name="name">CTKM Task: user xem công việc của mình</field>
             <field name="model_id" ref="model_ctkm_task"/>
@@ -54,6 +54,13 @@
             <field name="model_id" ref="model_ctkm_task"/>
             <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[(4, ref('group_ctkm_manager'))]"/>
+        </record>
+        <!-- Nhân viên (mở từ Discuss): tạo/sửa công việc của chính mình -->
+        <record id="ctkm_task_rule_notify_recipient" model="ir.rule">
+            <field name="name">CTKM Task: nhân viên quản lý việc của mình</field>
+            <field name="model_id" ref="model_ctkm_task"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
         </record>
     </data>
 </odoo>
