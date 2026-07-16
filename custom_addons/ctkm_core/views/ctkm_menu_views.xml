@@ -21,6 +21,12 @@
         parent="ctkm_core.ctkm_main_menu"
         groups="base.group_user"/>
 
+    <menuitem name="Báo cáo"
+        id="menu_ctkm_report"
+        sequence="3"
+        parent="ctkm_core.ctkm_main_menu"
+        groups="ctkm_core.group_ctkm_user"/>
+
     <menuitem name="Cấu hình"
         id="menu_ctkm_configuration"
         sequence="99"

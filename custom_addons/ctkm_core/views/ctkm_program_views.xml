@@ -129,6 +129,7 @@
         <field name="arch" type="xml">
             <search string="Chương trình khuyến mãi">
                 <field name="name" string="Tên chương trình"/>
+                <field name="notify_code" string="Mã số thông báo"/>
                 <field name="user_id"/>
                 <field name="stage_id"/>
                 <filter string="Chương trình của tôi" name="myprograms" help="Chương trình của tôi" domain="[('user_id', '=', uid)]"/>
@@ -139,6 +140,7 @@
                 <filter string="Đã lưu trữ" name="filter_inactive" domain="[('active', '=', False)]"/>
                 <separator/>
                 <group>
+                    <filter string="Mã số thông báo" name="groupby_notify_code" context="{'group_by': 'notify_code'}"/>
                     <filter string="Người phụ trách" name="responsible" context="{'group_by': 'user_id'}"/>
                     <filter string="Giai đoạn" name="stage_id" context="{'group_by': 'stage_id'}"/>
                     <filter string="Ngày bắt đầu" name="date_begin" domain="[]" context="{'group_by': 'date_begin'}"/>
@@ -165,6 +167,49 @@
 
     <record id="menu_ctkm_program" model="ir.ui.menu">
         <field name="action" ref="action_ctkm_program_view"/>
+    </record>
+
+    <!-- Báo cáo -->
+    <record model="ir.ui.view" id="view_ctkm_program_pivot">
+        <field name="name">ctkm.program.pivot</field>
+        <field name="model">ctkm.program</field>
+        <field name="arch" type="xml">
+            <pivot string="Báo cáo theo mã số thông báo">
+                <field name="notify_code" type="row"/>
+                <field name="stage_id" type="row"/>
+                <field name="date_begin" interval="month" type="col"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_program_graph">
+        <field name="name">ctkm.program.graph</field>
+        <field name="model">ctkm.program</field>
+        <field name="arch" type="xml">
+            <graph string="Báo cáo theo mã số thông báo" type="bar">
+                <field name="notify_code" type="row"/>
+            </graph>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_ctkm_program_report">
+        <field name="name">Báo cáo</field>
+        <field name="path">ctkm-reports</field>
+        <field name="res_model">ctkm.program</field>
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="search_view_id" ref="view_ctkm_program_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Chưa có dữ liệu để báo cáo.
+            </p>
+            <p>
+                Tạo chương trình khuyến mãi (có mã số thông báo) để xem thống kê theo mã TB.
+            </p>
+        </field>
+    </record>
+
+    <record id="menu_ctkm_report" model="ir.ui.menu">
+        <field name="action" ref="action_ctkm_program_report"/>
     </record>
 
 </data></odoo>
