@@ -4,6 +4,7 @@ import base64
 
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
+from odoo.fields import Domain
 from odoo.tools import mimetypes
 
 _CTKM_NOTIFY_DOC_EXTENSIONS = frozenset({
@@ -37,7 +38,24 @@ class CtkmProgram(models.Model):
         ('done', 'Sẵn sàng cho giai đoạn tiếp'),
         ('blocked', 'Bị chặn'),
     ], default='normal', copy=False, tracking=True)
-    notify_code = fields.Char(string='Mã số thông báo')
+    notify_code = fields.Char(string='Mã số thông báo', index=True)
+    hour_quota = fields.Char(
+        string='Định biên giờ',
+        help='Định biên giờ cho chương trình / thông báo.',
+    )
+    notify_receipt_date = fields.Date(
+        string='Ngày nhận thông báo',
+        compute='_compute_notify_report_fields',
+        help='Lấy thông tin tự động từ người nhập CTKM.',
+    )
+    notify_file_display = fields.Char(
+        string='File thông báo',
+        compute='_compute_notify_report_fields',
+    )
+    notify_scope_display = fields.Char(
+        string='Phạm vi áp dụng',
+        compute='_compute_notify_report_fields',
+    )
     tag_ids = fields.Many2many('ctkm.tag', string='Nhãn', readonly=False)
     organizer_id = fields.Many2one(
         'res.partner', string='Đơn vị tổ chức', tracking=True,
@@ -83,6 +101,79 @@ class CtkmProgram(models.Model):
         string='Phạm vi thông báo',
         copy=True,
     )
+
+    @api.depends(
+        'create_date', 'date_begin', 'notify_document_ids.name',
+        'notify_line_ids.store_code', 'notify_line_ids.store_code_id',
+    )
+    def _compute_notify_report_fields(self):
+        for program in self:
+            # Ngày nhận TB: ưu tiên ngày tạo (người nhập CTKM), fallback ngày bắt đầu.
+            if program.create_date:
+                program.notify_receipt_date = fields.Datetime.context_timestamp(
+                    program, program.create_date
+                ).date()
+            elif program.date_begin:
+                program.notify_receipt_date = fields.Datetime.context_timestamp(
+                    program, program.date_begin
+                ).date()
+            else:
+                program.notify_receipt_date = False
+            files = program.notify_document_ids.mapped('name')
+            program.notify_file_display = ', '.join(files) if files else ''
+            scopes = [
+                code for code in program.notify_line_ids.mapped('store_code') if code
+            ]
+            if not scopes:
+                scopes = [
+                    line.store_code_id.display_name
+                    for line in program.notify_line_ids
+                    if line.store_code_id
+                ]
+            program.notify_scope_display = ', '.join(scopes) if scopes else ''
+
+    def action_open_notify_code_detail(self):
+        """Mở trang chi tiết theo mã số thông báo (từ báo cáo pivot)."""
+        self.ensure_one()
+        return self._action_open_notify_code_detail(self.notify_code)
+
+    @api.model
+    def action_open_notify_code_detail_by_code(self, notify_code, domain=None):
+        """Gọi từ JS pivot khi bấm mã số thông báo."""
+        return self._action_open_notify_code_detail(notify_code, domain=domain)
+
+    @api.model
+    def _action_open_notify_code_detail(self, notify_code, domain=None):
+        code = (notify_code or '').strip()
+        program_domain = Domain(domain or [])
+        if code:
+            program_domain &= Domain('notify_code', '=', code)
+        elif not program_domain:
+            raise ValidationError(_('Thiếu mã số thông báo.'))
+
+        programs = self.search(program_domain)
+        if not code and programs:
+            code = (programs[:1].notify_code or '').strip()
+        if not code:
+            raise ValidationError(_('Thiếu mã số thông báo.'))
+
+        report = self.env['ctkm.notify.report'].sudo().get_or_create_for_code(code)
+        form_view = self.env.ref(
+            'ctkm_core.view_ctkm_notify_report_form',
+            raise_if_not_found=False,
+        )
+        return {
+            'type': 'ir.actions.act_window',
+            'name': code,
+            'res_model': 'ctkm.notify.report',
+            'res_id': report.id,
+            'view_mode': 'form',
+            'views': [(form_view.id, 'form')] if form_view else [(False, 'form')],
+            'target': 'current',
+            'context': {'ctkm_notify_detail': True},
+            # Đường dẫn rõ ràng, tránh kẹt URL list cũ notify.line
+            'path': 'ctkm-notify-detail',
+        }
 
     @api.constrains('badge_image')
     def _check_badge_image(self):

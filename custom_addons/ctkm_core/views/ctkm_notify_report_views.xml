@@ -1,0 +1,99 @@
+<?xml version="1.0"?>
+<odoo><data>
+
+    <record model="ir.ui.view" id="view_ctkm_notify_report_form">
+        <field name="name">ctkm.notify.report.form</field>
+        <field name="model">ctkm.notify.report</field>
+        <field name="arch" type="xml">
+            <form string="Chi tiết thông báo" create="0" delete="0" duplicate="0">
+                <sheet>
+                    <div class="oe_title mb-3">
+                        <label for="notify_code" string="Mã số thông báo"/>
+                        <h1><field name="notify_code" readonly="1"/></h1>
+                    </div>
+
+                    <field name="line_ids" nolabel="1" readonly="1"
+                        invisible="not line_ids">
+                        <list create="0" delete="0" edit="0"
+                            class="o_ctkm_notify_detail_list"
+                            default_order="sequence, id">
+                            <field name="stt" string="STT"/>
+                            <field name="notify_receipt_date" string="Ngày nhận thông báo"/>
+                            <field name="notify_file_display" string="File thông báo"/>
+                            <field name="scope_display" string="Phạm vi áp dụng"/>
+                            <field name="responsible_id" string="Người phụ trách" widget="many2one_avatar_user"/>
+                            <field name="hour_quota" string="Định biên giờ"/>
+                            <field name="sequence" column_invisible="1"/>
+                        </list>
+                    </field>
+
+                    <field name="program_ids" nolabel="1" readonly="1"
+                        invisible="line_ids or not program_ids">
+                        <list create="0" delete="0" edit="0"
+                            class="o_ctkm_notify_detail_list"
+                            default_order="id">
+                            <field name="notify_code" string="Mã số thông báo"/>
+                            <field name="notify_receipt_date" string="Ngày nhận thông báo"/>
+                            <field name="notify_file_display" string="File thông báo"/>
+                            <field name="notify_scope_display" string="Phạm vi áp dụng"/>
+                            <field name="user_id" string="Người phụ trách" widget="many2one_avatar_user"/>
+                            <field name="hour_quota" string="Định biên giờ"/>
+                        </list>
+                    </field>
+
+                    <div class="o_ctkm_summary_tables mt-4">
+                        <table class="o_ctkm_summary_table">
+                            <thead>
+                                <tr class="o_ctkm_summary_title">
+                                    <th colspan="3">BẢNG BÁO CÁO TEM</th>
+                                </tr>
+                                <tr class="o_ctkm_summary_header">
+                                    <th>TỔNG CH SL CẦN LÀM BB</th>
+                                    <th>TỔNG SL ĐÃ LÀM</th>
+                                    <th>TỔNG SL CHƯA LÀM</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="o_ctkm_summary_values">
+                                    <td><field name="tem_qty_need" nolabel="1" readonly="1" placeholder=" "/></td>
+                                    <td><field name="tem_qty_done" nolabel="1" readonly="1" placeholder=" "/></td>
+                                    <td><field name="tem_qty_pending" nolabel="1" readonly="1" placeholder=" "/></td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <table class="o_ctkm_summary_table">
+                            <thead>
+                                <tr class="o_ctkm_summary_title">
+                                    <th colspan="3">BẢNG BÁO CÁO TAG</th>
+                                </tr>
+                                <tr class="o_ctkm_summary_header">
+                                    <th>TỔNG CH SL CẦN LÀM BB</th>
+                                    <th>TỔNG SL ĐÃ LÀM</th>
+                                    <th>TỔNG SL CHƯA LÀM</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="o_ctkm_summary_values">
+                                    <td><field name="tag_qty_need" nolabel="1" readonly="1" placeholder=" "/></td>
+                                    <td><field name="tag_qty_done" nolabel="1" readonly="1" placeholder=" "/></td>
+                                    <td><field name="tag_qty_pending" nolabel="1" readonly="1" placeholder=" "/></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_ctkm_notify_report_detail">
+        <field name="name">Chi tiết thông báo</field>
+        <field name="res_model">ctkm.notify.report</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="view_ctkm_notify_report_form"/>
+        <field name="target">current</field>
+        <field name="path">ctkm-notify-detail</field>
+    </record>
+
+</data></odoo>

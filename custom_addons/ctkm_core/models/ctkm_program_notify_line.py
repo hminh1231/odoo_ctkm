@@ -48,6 +48,52 @@ class CtkmProgramNotifyLine(models.Model):
         'employee_id',
         string='Người nhận thông báo',
     )
+    notify_receipt_date = fields.Date(
+        string='Ngày nhận thông báo',
+        related='program_id.notify_receipt_date',
+        readonly=True,
+    )
+    notify_file_display = fields.Char(
+        string='File thông báo',
+        related='program_id.notify_file_display',
+        readonly=True,
+    )
+    responsible_id = fields.Many2one(
+        'res.users',
+        string='Người phụ trách',
+        related='program_id.user_id',
+        readonly=True,
+    )
+    hour_quota = fields.Char(
+        string='Định biên giờ',
+        related='program_id.hour_quota',
+        readonly=True,
+    )
+    notify_code = fields.Char(
+        string='Mã số thông báo',
+        related='program_id.notify_code',
+        readonly=True,
+        store=True,
+        index=True,
+    )
+    scope_display = fields.Char(
+        string='Phạm vi áp dụng',
+        compute='_compute_scope_display',
+    )
+
+    @api.depends('store_code', 'store_code_id', 'mien', 'job_id')
+    def _compute_scope_display(self):
+        for line in self:
+            parts = []
+            if line.store_code:
+                parts.append(line.store_code)
+            elif line.store_code_id:
+                parts.append(line.store_code_id.display_name)
+            if line.mien:
+                parts.append(line.mien)
+            if line.job_id:
+                parts.append(line.job_id.name)
+            line.scope_display = ' / '.join(parts) if parts else ''
 
     def _get_notify_employee_domain(self):
         self.ensure_one()

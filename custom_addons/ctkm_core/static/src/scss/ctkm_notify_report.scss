@@ -1,0 +1,83 @@
+// Bảng chi tiết mã số thông báo (kiểu header đỏ như mẫu)
+.o_ctkm_notify_detail_list {
+    thead th {
+        background-color: #e53935 !important;
+        color: #fff !important;
+        font-weight: 700;
+        text-align: center;
+        vertical-align: middle;
+        white-space: normal;
+    }
+
+    tbody td {
+        border-color: #212121 !important;
+        vertical-align: middle;
+    }
+}
+
+// Hai bảng TEM / TAG phía dưới trang chi tiết
+.o_ctkm_summary_tables {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    max-width: 720px;
+    margin-top: 1.5rem;
+}
+
+.o_ctkm_summary_table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+
+    th,
+    td {
+        border: 1px solid #212121;
+        text-align: center;
+        vertical-align: middle;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .o_ctkm_summary_title th {
+        background-color: #ffff00;
+        color: #000;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+    }
+
+    .o_ctkm_summary_header th {
+        background-color: #fff;
+        color: #000;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        white-space: normal;
+    }
+
+    .o_ctkm_summary_values td {
+        min-height: 2.5rem;
+        height: 2.5rem;
+        background-color: #fff;
+    }
+
+    .o_ctkm_summary_values .o_field_widget {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .o_ctkm_summary_values input,
+    .o_ctkm_summary_values span {
+        text-align: center;
+        font-weight: 600;
+    }
+}
+
+// Gợi ý: mã TB trên pivot có thể bấm được
+.o_action[data-action-id] .o_pivot .o_pivot_header_cell_closed,
+.o_pivot .o_pivot_header_cell_closed.o_ctkm_notify_link {
+    cursor: pointer;
+}
+
+body:has(.o_pivot) .o_ctkm_notify_report_hint {
+    display: none;
+}
