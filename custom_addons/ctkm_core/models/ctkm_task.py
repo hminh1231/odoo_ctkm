@@ -122,6 +122,66 @@ class CtkmTask(models.Model):
             },
         }
 
+    def action_advance_stage(self):
+        """Chuyển chương trình KM liên kết sang giai đoạn tiếp theo."""
+        self.ensure_one()
+        if not self.program_id:
+            raise UserError(_('Công việc chưa gắn chương trình khuyến mãi.'))
+
+        program = self.program_id.sudo()
+        current = program.stage_id
+        Stage = self.env['ctkm.stage'].sudo()
+
+        if current and current.pipe_end:
+            raise UserError(_(
+                'Chương trình "%(program)s" đã ở giai đoạn kết thúc "%(stage)s".'
+            ) % {
+                'program': program.display_name,
+                'stage': current.display_name,
+            })
+
+        domain = [('sequence', '>', current.sequence)] if current else []
+        next_stage = Stage.search(domain, order='sequence, id', limit=1)
+        if not next_stage and current:
+            next_stage = Stage.search(
+                [('sequence', '=', current.sequence), ('id', '>', current.id)],
+                order='id',
+                limit=1,
+            )
+        if not next_stage:
+            raise UserError(_('Không còn giai đoạn tiếp theo để chuyển.'))
+
+        old_name = current.display_name if current else _('(chưa có)')
+        program.write({
+            'stage_id': next_stage.id,
+            'kanban_state': 'normal',
+        })
+        self.message_post(
+            body=_(
+                'Đã chuyển bước chương trình <b>%(program)s</b>: '
+                '%(old)s → <b>%(new)s</b>'
+            ) % {
+                'program': program.display_name,
+                'old': old_name,
+                'new': next_stage.display_name,
+            },
+            subtype_xmlid='mail.mt_note',
+            body_is_html=True,
+        )
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Đã chuyển bước'),
+                'message': _('%(old)s → %(new)s') % {
+                    'old': old_name,
+                    'new': next_stage.display_name,
+                },
+                'type': 'success',
+                'sticky': False,
+            },
+        }
+
     @api.model
     def action_open_for_program(self, program_id):
         """Tạo/mở công việc khi bấm nút trong Discuss (không phụ thuộc ACL form CTKM)."""

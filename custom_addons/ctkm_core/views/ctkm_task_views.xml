@@ -21,7 +21,11 @@
                     options="{'no_create': True}"/>
                 <button name="action_notify_support" type="object"
                     string="Thông báo" icon="fa-bell"
-                    title="Thông báo tới người hỗ trợ"
+                    title="Thông báo tới người hỗ trợ / bàn giao"
+                    class="btn-link"/>
+                <button name="action_advance_stage" type="object"
+                    string="Chuyển bước" icon="fa-forward"
+                    title="Chuyển sang bước làm tiếp theo (giai đoạn CTKM)"
                     class="btn-link"/>
                 <field name="program_id" optional="hide"
                     options="{'no_create': True}"/>
@@ -41,6 +45,10 @@
                         string="Thông báo tới người hỗ trợ"
                         class="btn-primary"
                         icon="fa-bell"/>
+                    <button name="action_advance_stage" type="object"
+                        string="Chuyển bước"
+                        class="btn-secondary"
+                        icon="fa-forward"/>
                     <field name="state" widget="statusbar"
                         options="{'clickable': '1'}"/>
                 </header>

@@ -33,6 +33,15 @@ import { patch } from "@web/core/utils/patch";
     background-color: #28a745 !important;
     color: #ffffff !important;
     border-color: #1e7e34 !important;
+}
+.o_ctkm_task_list td.o_list_button > div {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    flex-wrap: nowrap !important;
+    gap: 2px !important;
+}
+.o_ctkm_task_list td.o_list_button > div > button {
+    justify-content: flex-start;
 }`;
     (document.head || document.documentElement).appendChild(style);
 })();
