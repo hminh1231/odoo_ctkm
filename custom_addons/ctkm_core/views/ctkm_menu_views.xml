@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <odoo><data>
 
-    <!-- App CTKM: mọi user nội bộ thấy (để mở Công việc từ Discuss đúng navbar).
+    <!-- App CTKM: mọi user nội bộ thấy.
          Chương trình KM / Cấu hình vẫn chỉ CTKM User / Manager. -->
     <menuitem name="CTKM"
         id="ctkm_main_menu"

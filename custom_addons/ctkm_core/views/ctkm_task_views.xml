@@ -12,7 +12,7 @@
                 <field name="process_date"/>
                 <field name="name"/>
                 <field name="done_date"/>
-                <field name="state" widget="selection_badge"/>
+                <field name="state" widget="selection_badge" readonly="1"/>
                 <field name="duration" optional="show"/>
                 <field name="program_id" optional="hide"
                     options="{'no_create': True, 'no_open': True}"/>
@@ -27,13 +27,14 @@
         <field name="arch" type="xml">
             <form string="Công việc của tôi" create="0" delete="0">
                 <header>
-                    <button name="action_notify_support" type="object"
-                        string="Thông báo" class="btn-primary" icon="fa-bell"/>
+                    <button name="action_mark_done" type="object"
+                        string="Hoàn thành" class="btn-primary" icon="fa-check"
+                        invisible="manager_confirmed or state == 'done'"/>
                     <button name="action_advance_stage" type="object"
-                        string="Chuyển bước" class="btn-secondary" icon="fa-forward"/>
+                        string="Chuyển tiếp" class="btn-secondary" icon="fa-forward"
+                        invisible="state != 'done' or not manager_confirmed"/>
                     <field name="program_stage_id" widget="statusbar"/>
-                    <field name="state" widget="statusbar"
-                        options="{'clickable': '1'}" invisible="1"/>
+                    <field name="state" invisible="1"/>
                 </header>
                 <sheet>
                     <field name="program_id" invisible="1"/>
@@ -110,9 +111,37 @@
                                     <field name="work_document_ids" widget="many2many_binary"
                                         nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg'}"/>
-                                    <field name="handover_employee_id" invisible="1"/>
-                                    <field name="support_employee_ids" invisible="1"
-                                        widget="many2many_tags"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Yêu cầu hỗ trợ" name="task_support">
+                            <group>
+                                <group>
+                                    <field name="handover_date"/>
+                                    <field name="handover_employee_id"
+                                        options="{'no_create': True}"/>
+                                    <field name="duration" placeholder="VD: 2 giờ"/>
+                                </group>
+                                <group>
+                                    <field name="support_employee_ids" widget="many2many_tags"
+                                        options="{'no_create': True}"/>
+                                    <div colspan="2" class="mt-2">
+                                        <button name="action_notify_support" type="object"
+                                            string="Gửi yêu cầu hỗ trợ" class="btn-primary"
+                                            icon="fa-bell"/>
+                                    </div>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Xác nhận quản lý" name="task_manager_confirm">
+                            <group>
+                                <group>
+                                    <field name="manager_confirmed"
+                                        readonly="state not in ('waiting_confirm', 'done')"/>
+                                    <div colspan="2" class="text-muted"
+                                        invisible="state in ('waiting_confirm', 'done')">
+                                        Chỉ xác nhận được sau khi công việc đã bấm Hoàn thành.
+                                    </div>
                                 </group>
                             </group>
                         </page>
@@ -138,6 +167,8 @@
                     domain="[('state', '=', 'todo')]"/>
                 <filter string="Đang xử lý" name="state_progress"
                     domain="[('state', '=', 'progress')]"/>
+                <filter string="Chờ xác nhận" name="state_waiting_confirm"
+                    domain="[('state', '=', 'waiting_confirm')]"/>
                 <filter string="Hoàn thành" name="state_done"
                     domain="[('state', '=', 'done')]"/>
                 <group>
@@ -168,6 +199,10 @@
     </record>
 
     <record id="menu_ctkm_my_tasks" model="ir.ui.menu">
+        <field name="action" ref="action_ctkm_task_my"/>
+    </record>
+
+    <record id="ctkm_main_menu" model="ir.ui.menu">
         <field name="action" ref="action_ctkm_task_my"/>
     </record>
 

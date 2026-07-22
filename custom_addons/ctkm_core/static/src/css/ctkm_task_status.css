@@ -13,6 +13,13 @@
     color: #212529 !important;
     border-color: #e0a800 !important;
 }
+.o_ctkm_task_list .o_field_selection_badge span.badge[raw-value="waiting_confirm"],
+.o_ctkm_task_list .o_field_selection_badge .o_selection_badge[value='"waiting_confirm"'],
+.o_ctkm_task_list .o_field_selection_badge .badge[value='"waiting_confirm"'] {
+    background-color: #17a2b8 !important;
+    color: #ffffff !important;
+    border-color: #117a8b !important;
+}
 .o_ctkm_task_list .o_field_selection_badge span.badge[raw-value="done"],
 .o_ctkm_task_list .o_field_selection_badge .o_selection_badge[value='"done"'],
 .o_ctkm_task_list .o_field_selection_badge .badge[value='"done"'] {

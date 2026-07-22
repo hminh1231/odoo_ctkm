@@ -34,16 +34,16 @@ class CtkmProgramDiscussNotify(models.Model):
         return html2plaintext(html_value or "").replace("\xa0", " ").strip()
 
     def _ctkm_notify_detail_button_markup(self):
+        # Không gắn data-oe-model/oe-id — tránh Discuss mở form trong tab Thảo luận.
         href = "/odoo/ctkm-my-tasks?ctkm_program_id=%s" % self.id
         return Markup(
             '<div class="o_ctkm_notify_detail mt-2">'
             '<a class="btn btn-primary btn-sm o_ctkm_notify_detail_btn" '
-            'href="%s" data-oe-model="ctkm.program" data-oe-id="%s" '
-            'data-program-id="%s" contenteditable="false">'
+            'href="%s" data-program-id="%s" contenteditable="false">'
             "Bấm để xem chi tiết"
             "</a>"
             "</div>"
-        ) % (escape(href), self.id, self.id)
+        ) % (escape(href), self.id)
 
     def action_open_my_task(self):
         """Delegate: lần đầu bấm nút tạo công việc, ngày xử lý = ngày bấm."""

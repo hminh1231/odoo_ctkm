@@ -38,6 +38,14 @@
     border-color: #e0a800;
 }
 
+/* Chờ xác nhận — xanh dương */
+.o_ctkm_status_badge.o_ctkm_status_waiting_confirm .o_ctkm_status_label,
+.o_ctkm_status_badge.o_ctkm_status_waiting_confirm .o_ctkm_status_select {
+    background-color: #17a2b8;
+    color: #fff;
+    border-color: #117a8b;
+}
+
 /* Hoàn thành — xanh lá */
 .o_ctkm_status_badge.o_ctkm_status_done .o_ctkm_status_label,
 .o_ctkm_status_badge.o_ctkm_status_done .o_ctkm_status_select {

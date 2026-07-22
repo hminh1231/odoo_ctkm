@@ -27,6 +27,13 @@ import { patch } from "@web/core/utils/patch";
     color: #212529 !important;
     border-color: #e0a800 !important;
 }
+.o_ctkm_task_list .o_field_selection_badge span.badge[raw-value="waiting_confirm"],
+.o_ctkm_task_list .o_field_selection_badge .o_selection_badge[value='"waiting_confirm"'],
+.o_ctkm_task_list .o_field_selection_badge .badge[value='"waiting_confirm"'] {
+    background-color: #17a2b8 !important;
+    color: #ffffff !important;
+    border-color: #117a8b !important;
+}
 .o_ctkm_task_list .o_field_selection_badge span.badge[raw-value="done"],
 .o_ctkm_task_list .o_field_selection_badge .o_selection_badge[value='"done"'],
 .o_ctkm_task_list .o_field_selection_badge .badge[value='"done"'] {
@@ -67,13 +74,33 @@ function extractCtkmProgramId(link) {
     }
 }
 
-function rememberCtkmApp(menus) {
+function rememberCtkmApp(menus, menuIdFromServer) {
+    if (menuIdFromServer) {
+        browser.sessionStorage.setItem("menu_id", String(menuIdFromServer));
+        try {
+            menus.setCurrentMenu(Number(menuIdFromServer));
+        } catch {
+            // ignore if menu not loaded yet
+        }
+        return;
+    }
     const taskMenu =
         menus.getAll().find((m) => m.actionPath === "ctkm-my-tasks") ||
         menus.getApps().find((app) => String(app.name || "").toUpperCase().includes("CTKM"));
     if (taskMenu) {
         browser.sessionStorage.setItem("menu_id", String(taskMenu.appID || taskMenu.id));
+        try {
+            menus.setCurrentMenu(taskMenu);
+        } catch {
+            // ignore
+        }
     }
+}
+
+function hardNavigate(url) {
+    // Thoát hẳn SPA Discuss → load lại webclient trong app CTKM.
+    const absolute = new URL(url, browser.location.origin).toString();
+    browser.location.assign(absolute);
 }
 
 patch(Store.prototype, {
@@ -82,8 +109,10 @@ patch(Store.prototype, {
         if (!link) {
             return super.handleClickOnLink(...arguments);
         }
+        // Chặn Discuss (và patch mail web) mở form trong tab Thảo luận.
         ev.preventDefault();
         ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
         const programId = extractCtkmProgramId(link);
         if (!programId) {
             this.env.services.notification.add(
@@ -92,15 +121,14 @@ patch(Store.prototype, {
             );
             return true;
         }
-        // Tạo/mở task rồi redirect full page → navbar CTKM.
         this.env.services.orm
             .call("ctkm.task", "action_open_for_program", [programId])
             .then((action) => {
-                rememberCtkmApp(this.env.services.menu);
+                rememberCtkmApp(this.env.services.menu, action?.menu_id);
                 const url =
                     (action && action.type === "ir.actions.act_url" && action.url) ||
                     CTKM_TASKS_PATH;
-                browser.location.assign(url);
+                hardNavigate(url);
             })
             .catch((error) => {
                 const message =

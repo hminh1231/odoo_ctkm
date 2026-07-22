@@ -27,6 +27,7 @@ class CtkmTask(models.Model):
         selection=[
             ('todo', 'Chưa xử lý'),
             ('progress', 'Đang xử lý'),
+            ('waiting_confirm', 'Chờ xác nhận'),
             ('done', 'Hoàn thành'),
         ],
         string='Trạng thái',
@@ -158,8 +159,74 @@ class CtkmTask(models.Model):
 
     @api.onchange('state')
     def _onchange_state(self):
-        if self.state == 'done' and not self.done_date:
+        if self.state in ('waiting_confirm', 'done') and not self.done_date:
             self.done_date = fields.Date.context_today(self)
+
+    def write(self, vals):
+        vals = dict(vals)
+        internal = self.env.context.get('ctkm_internal_state_write')
+        user_set_state = 'state' in vals
+
+        if user_set_state and not internal:
+            raise UserError(_(
+                'Không thể đổi trạng thái trực tiếp. '
+                'Dùng nút Hoàn thành hoặc Xác nhận quản lý.'
+            ))
+
+        if vals.get('manager_confirmed'):
+            for task in self:
+                next_state = vals.get('state', task.state)
+                if next_state not in ('waiting_confirm', 'done'):
+                    raise UserError(_(
+                        'Chỉ xác nhận quản lý được sau khi đã bấm Hoàn thành.'
+                    ))
+            vals['state'] = 'done'
+        elif 'manager_confirmed' in vals and not vals['manager_confirmed']:
+            next_state = vals.get('state')
+            if next_state is None or next_state == 'done':
+                vals['state'] = 'waiting_confirm'
+
+        if 'state' in vals and vals['state'] not in ('waiting_confirm', 'done'):
+            vals['manager_confirmed'] = False
+
+        if vals.get('state') == 'done':
+            for task in self:
+                confirmed = (
+                    vals['manager_confirmed']
+                    if 'manager_confirmed' in vals
+                    else task.manager_confirmed
+                )
+                if not confirmed:
+                    raise UserError(_(
+                        'Trạng thái Hoàn thành chỉ khi đã bấm Hoàn thành '
+                        'và có Xác nhận quản lý.'
+                    ))
+
+        return super().write(vals)
+
+    def action_mark_done(self):
+        """Người làm việc báo hoàn thành → chờ quản lý xác nhận."""
+        for task in self:
+            vals = {
+                'state': 'waiting_confirm',
+                'manager_confirmed': False,
+            }
+            if not task.done_date:
+                vals['done_date'] = fields.Date.context_today(task)
+            task.with_context(ctkm_internal_state_write=True).write(vals)
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Đã gửi hoàn thành'),
+                'message': _(
+                    'Đã bấm Hoàn thành. Trạng thái chuyển sang Chờ xác nhận '
+                    'cho đến khi quản lý xác nhận.'
+                ),
+                'type': 'success',
+                'sticky': False,
+            },
+        }
 
     def action_notify_support(self):
         """Gửi thông báo Discuss cho người hỗ trợ / bàn giao."""
@@ -200,6 +267,15 @@ class CtkmTask(models.Model):
     def action_advance_stage(self):
         """Chuyển chương trình KM liên kết sang giai đoạn tiếp theo."""
         self.ensure_one()
+        if self.state != 'done':
+            raise UserError(_(
+                'Chỉ chuyển tiếp được sau khi đã bấm Hoàn thành '
+                '(trạng thái công việc phải là Hoàn thành).'
+            ))
+        if not self.manager_confirmed:
+            raise UserError(_(
+                'Cần có Xác nhận quản lý trước khi chuyển tiếp.'
+            ))
         if not self.program_id:
             raise UserError(_('Công việc chưa gắn chương trình khuyến mãi.'))
 
@@ -307,8 +383,21 @@ class CtkmTask(models.Model):
             'ctkm_core.action_ctkm_task_my'
         )
         path = action.get('path') or 'ctkm-my-tasks'
+        menu = self.env.ref('ctkm_core.menu_ctkm_my_tasks', raise_if_not_found=False)
+        app_menu_id = False
+        if menu:
+            app_menu = menu
+            while app_menu.parent_id:
+                app_menu = app_menu.parent_id
+            app_menu_id = app_menu.id
+        # URL form + menu_id → webclient mở trong app CTKM, không giữ breadcrumb Thảo luận.
+        url = '/odoo/%s/%s' % (path, task.id)
+        if app_menu_id:
+            url = '%s?menu_id=%s' % (url, app_menu_id)
         return {
             'type': 'ir.actions.act_url',
-            'url': '/odoo/%s/%s' % (path, task.id),
+            'url': url,
             'target': 'self',
+            'task_id': task.id,
+            'menu_id': app_menu_id,
         }
