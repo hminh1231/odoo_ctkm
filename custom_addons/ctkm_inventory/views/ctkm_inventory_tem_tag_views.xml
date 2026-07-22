@@ -1,0 +1,78 @@
+<?xml version="1.0"?>
+<odoo><data>
+
+    <record model="ir.ui.view" id="view_ctkm_inventory_tem_tag_list">
+        <field name="name">ctkm.inventory.tem.tag.list</field>
+        <field name="model">ctkm.inventory.tem.tag</field>
+        <field name="arch" type="xml">
+            <list string="Tem/Tag" multi_edit="1" default_order="date desc, program_id, material_code">
+                <header>
+                    <button name="%(ctkm_inventory.action_ctkm_inventory_import_wizard)d"
+                        type="action"
+                        string="Import"
+                        class="btn-primary"
+                        groups="ctkm_core.group_ctkm_user"/>
+                </header>
+                <field name="date"/>
+                <field name="material_code"/>
+                <field name="promo_price"/>
+                <field name="program_id"/>
+                <field name="tem_tag"/>
+                <field name="quantity"/>
+                <field name="imported_ctkm_name" optional="hide"/>
+                <field name="import_filename" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_inventory_tem_tag_form">
+        <field name="name">ctkm.inventory.tem.tag.form</field>
+        <field name="model">ctkm.inventory.tem.tag</field>
+        <field name="arch" type="xml">
+            <form string="Tem/Tag">
+                <sheet>
+                    <group>
+                        <field name="date"/>
+                        <field name="material_code"/>
+                        <field name="promo_price"/>
+                        <field name="program_id"/>
+                        <field name="imported_ctkm_name"/>
+                        <field name="tem_tag"/>
+                        <field name="quantity"/>
+                        <field name="import_filename" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_inventory_tem_tag_search">
+        <field name="name">ctkm.inventory.tem.tag.search</field>
+        <field name="model">ctkm.inventory.tem.tag</field>
+        <field name="arch" type="xml">
+            <search string="Tem/Tag">
+                <field name="material_code"/>
+                <field name="program_id"/>
+                <field name="imported_ctkm_name"/>
+                <field name="tem_tag"/>
+                <filter string="Theo CTKM" name="group_program" context="{'group_by': 'program_id'}"/>
+                <filter string="Theo Tem/tag" name="group_tem_tag" context="{'group_by': 'tem_tag'}"/>
+                <filter string="Theo Date" name="group_date" context="{'group_by': 'date'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_ctkm_inventory_tem_tag">
+        <field name="name">Tem/Tag</field>
+        <field name="path">ctkm-inventory-tem-tag</field>
+        <field name="res_model">ctkm.inventory.tem.tag</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ctkm_inventory_tem_tag_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Import dữ liệu Tem/Tag từ file Excel.
+            </p>
+        </field>
+    </record>
+
+</data></odoo>

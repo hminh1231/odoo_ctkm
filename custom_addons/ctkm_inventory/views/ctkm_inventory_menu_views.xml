@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<odoo><data>
+
+    <menuitem name="Kho"
+        id="menu_ctkm_inventory_root"
+        sequence="2"
+        parent="ctkm_core.ctkm_main_menu"
+        groups="ctkm_core.group_ctkm_user"/>
+
+    <menuitem name="Tem/Tag"
+        id="menu_ctkm_inventory_tem_tag"
+        sequence="1"
+        parent="menu_ctkm_inventory_root"
+        action="action_ctkm_inventory_tem_tag"
+        groups="ctkm_core.group_ctkm_user"/>
+
+</data></odoo>

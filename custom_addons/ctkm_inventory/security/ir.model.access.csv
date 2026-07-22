@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_ctkm_inventory_tem_tag_employee,ctkm.inventory.tem.tag.employee,model_ctkm_inventory_tem_tag,base.group_user,1,0,0,0
+access_ctkm_inventory_tem_tag_user,ctkm.inventory.tem.tag.user,model_ctkm_inventory_tem_tag,ctkm_core.group_ctkm_user,1,1,1,0
+access_ctkm_inventory_tem_tag_manager,ctkm.inventory.tem.tag.manager,model_ctkm_inventory_tem_tag,ctkm_core.group_ctkm_manager,1,1,1,1
+access_ctkm_inventory_import_wizard_user,ctkm.inventory.import.wizard.user,model_ctkm_inventory_import_wizard,ctkm_core.group_ctkm_user,1,1,1,1
+access_ctkm_inventory_import_wizard_manager,ctkm.inventory.import.wizard.manager,model_ctkm_inventory_import_wizard,ctkm_core.group_ctkm_manager,1,1,1,1
