@@ -5,10 +5,7 @@
         <field name="name">ctkm.inventory.tem.tag.list</field>
         <field name="model">ctkm.inventory.tem.tag</field>
         <field name="arch" type="xml">
-            <list string="Tem/Tag"
-                create="0"
-                multi_edit="1"
-                default_order="date desc, program_id, material_code">
+            <list string="Tem/Tag" multi_edit="1" default_order="date desc, program_id, material_code">
                 <header>
                     <button name="%(ctkm_inventory.action_ctkm_inventory_import_wizard)d"
                         type="action"
@@ -68,7 +65,6 @@
         <field name="res_model">ctkm.inventory.tem.tag</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="view_ctkm_inventory_tem_tag_search"/>
-        <field name="context">{'create': False}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Import dữ liệu Tem/Tag từ file Excel.
