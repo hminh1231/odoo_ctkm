@@ -18,10 +18,6 @@ class CtkmInventoryTemTag(models.Model):
         ondelete='cascade',
         index=True,
     )
-    imported_ctkm_name = fields.Char(
-        string='CTKM trên file',
-        help='Tên CTKM đọc từ file Excel, dùng để đối chiếu khi tên trên file khác bản ghi CTKM.',
-    )
     tem_tag = fields.Char(string='Tem/tag', index=True)
     quantity = fields.Float(string='Quantity', default=0.0)
     import_filename = fields.Char(string='File nhập', readonly=True)

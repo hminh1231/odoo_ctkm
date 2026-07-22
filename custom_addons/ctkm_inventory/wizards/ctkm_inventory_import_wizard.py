@@ -25,7 +25,8 @@ class CtkmInventoryImportWizard(models.TransientModel):
     program_id = fields.Many2one(
         'ctkm.program',
         string='CTKM',
-        help='Chọn CTKM nếu tên CTKM trong file không khớp chính xác với bản ghi CTKM.',
+        required=True,
+        help='Chọn chương trình khuyến mãi thuộc file Excel này.',
     )
     import_date = fields.Date(
         string='Date',
@@ -57,7 +58,6 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 'material_code': row['material_code'],
                 'promo_price': row.get('promo_price') or 0.0,
                 'program_id': program.id,
-                'imported_ctkm_name': row.get('ctkm_name'),
                 'tem_tag': row.get('tem_tag'),
                 'quantity': row.get('quantity') or 0.0,
                 'import_filename': self.filename,
@@ -153,7 +153,6 @@ class CtkmInventoryImportWizard(models.TransientModel):
             if self._normalize_label(material_code).startswith('tong cong'):
                 break
 
-            ctkm_name = self._clean_text(row.iloc[columns['ctkm_name']])
             tem_tag = self._clean_text(row.iloc[columns['tem_tag']])
             quantity = self._extract_quantity(row, columns)
             if quantity is None:
@@ -163,7 +162,6 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 'date': sheet_date,
                 'material_code': material_code,
                 'promo_price': self._to_float(row.iloc[columns['promo_price']]),
-                'ctkm_name': ctkm_name,
                 'tem_tag': tem_tag,
                 'quantity': quantity,
                 'sheet_name': sheet_name,
@@ -218,40 +216,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
         return False
 
     def _find_program(self, row):
-        if self.program_id:
-            return self.program_id
-
-        Program = self.env['ctkm.program']
-        ctkm_name = row.get('ctkm_name')
-        if ctkm_name:
-            compact_name = ' '.join(ctkm_name.split())
-            for operator in ('=ilike', 'ilike'):
-                program = Program.search([('name', operator, compact_name)], limit=1)
-                if program:
-                    return program
-
-        for code in self._extract_reference_codes(row):
-            program = Program.search([('notify_code', 'ilike', code)], limit=1)
-            if program:
-                return program
-
-        raise UserError(
-            _(
-                'Không tìm thấy CTKM khớp với "%(ctkm)s" trong sheet "%(sheet)s". '
-                'Hãy chọn CTKM trong wizard rồi import lại.'
-            ) % {
-                'ctkm': ctkm_name or _('Không có tên CTKM'),
-                'sheet': row.get('sheet_name') or '',
-            }
-        )
-
-    def _extract_reference_codes(self, row):
-        candidates = [row.get('sheet_name'), row.get('ctkm_name'), self.filename]
-        codes = []
-        for candidate in candidates:
-            text = self._clean_text(candidate)
-            codes.extend(re.findall(r'\b\d{4,}\b', text))
-        return codes
+        return self.program_id
 
     def _parse_date(self, value):
         if isinstance(value, datetime):
