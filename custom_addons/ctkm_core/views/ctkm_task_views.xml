@@ -2,83 +2,121 @@
 <odoo>
 <data>
 
+    <!-- List: gọn như hình 3 -->
     <record id="view_ctkm_task_list" model="ir.ui.view">
         <field name="name">ctkm.task.list</field>
         <field name="model">ctkm.task</field>
         <field name="arch" type="xml">
-            <list string="Công việc của tôi" editable="bottom" create="1" delete="1"
+            <list string="Công việc của tôi" create="0" delete="0"
                 class="o_ctkm_task_list">
                 <field name="process_date"/>
                 <field name="name"/>
                 <field name="done_date"/>
                 <field name="state" widget="selection_badge"/>
-                <field name="duration" placeholder="VD: 2 giờ"/>
-                <field name="handover_date"/>
-                <field name="handover_employee_id"
-                    options="{'no_create': True, 'no_open': True}"/>
-                <field name="manager_confirmed" widget="boolean_toggle"/>
-                <field name="support_employee_ids" widget="many2many_tags"
-                    options="{'no_create': True}"/>
-                <button name="action_notify_support" type="object"
-                    string="Thông báo" icon="fa-bell"
-                    title="Thông báo tới người hỗ trợ / bàn giao"
-                    class="btn-link"/>
-                <button name="action_advance_stage" type="object"
-                    string="Chuyển bước" icon="fa-forward"
-                    title="Chuyển sang bước làm tiếp theo (giai đoạn CTKM)"
-                    class="btn-link"/>
+                <field name="duration" optional="show"/>
                 <field name="program_id" optional="hide"
-                    options="{'no_create': True}"/>
-                <field name="user_id" widget="many2one_avatar_user" optional="hide"
-                    groups="ctkm_core.group_ctkm_manager"/>
+                    options="{'no_create': True, 'no_open': True}"/>
             </list>
         </field>
     </record>
 
+    <!-- Form: header CTKM readonly + chỉ Ghi chú & Tài liệu -->
     <record id="view_ctkm_task_form" model="ir.ui.view">
         <field name="name">ctkm.task.form</field>
         <field name="model">ctkm.task</field>
         <field name="arch" type="xml">
-            <form string="Công việc">
+            <form string="Công việc của tôi" create="0" delete="0">
                 <header>
                     <button name="action_notify_support" type="object"
-                        string="Thông báo tới người hỗ trợ"
-                        class="btn-primary"
-                        icon="fa-bell"/>
+                        string="Thông báo" class="btn-primary" icon="fa-bell"/>
                     <button name="action_advance_stage" type="object"
-                        string="Chuyển bước"
-                        class="btn-secondary"
-                        icon="fa-forward"/>
+                        string="Chuyển bước" class="btn-secondary" icon="fa-forward"/>
+                    <field name="program_stage_id" widget="statusbar"/>
                     <field name="state" widget="statusbar"
-                        options="{'clickable': '1'}"/>
+                        options="{'clickable': '1'}" invisible="1"/>
                 </header>
                 <sheet>
+                    <field name="program_id" invisible="1"/>
+                    <field name="company_id" invisible="1"/>
+                    <field name="name" invisible="1"/>
+                    <field name="program_kanban_state" widget="statusbar"
+                        class="ms-auto float-end"/>
+                    <div class="oe_title">
+                        <label for="program_name" string="Tên chương trình"/>
+                        <h1>
+                            <field name="program_name" readonly="1"
+                                placeholder="Chưa gắn chương trình khuyến mãi"/>
+                        </h1>
+                    </div>
                     <group>
                         <group>
-                            <field name="process_date"/>
-                            <field name="done_date"/>
-                            <field name="duration" placeholder="VD: 2 giờ"/>
-                            <field name="handover_date"/>
+                            <field name="program_date_begin" string="Ngày"
+                                widget="daterange"
+                                options="{'end_date_field': 'program_date_end'}"
+                                readonly="1"/>
+                            <field name="program_date_end" invisible="1"/>
+                            <field name="program_notify_code" readonly="1"/>
+                            <field name="program_hour_quota" readonly="1"
+                                placeholder="VD: 8 giờ"/>
                         </group>
                         <group>
-                            <field name="handover_employee_id"
-                                options="{'no_create': True}"/>
-                            <field name="manager_confirmed"/>
-                            <field name="program_id"
-                                options="{'no_create': True}"/>
-                            <field name="user_id" widget="many2one_avatar_user"
-                                groups="ctkm_core.group_ctkm_manager"/>
-                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="program_organizer_id" readonly="1"/>
+                            <field name="program_user_id" readonly="1"
+                                widget="many2one_avatar_user"/>
+                            <field name="program_company_id" readonly="1"
+                                groups="base.group_multi_company"/>
+                            <field name="program_address_id" readonly="1"
+                                context="{'show_address': 1}"/>
+                            <field name="program_event_url" readonly="1"
+                                invisible="program_address_id" widget="url"/>
+                            <label for="program_seats_limited" string="Giới hạn đăng ký"/>
+                            <div>
+                                <field name="program_seats_limited" readonly="1"/>
+                                <span invisible="not program_seats_limited">
+                                   đến <field name="program_seats_max" class="oe_inline" readonly="1"/> Người tham gia
+                                </span>
+                            </div>
                         </group>
                     </group>
-                    <group>
-                        <field name="name" placeholder="Nội dung công việc..."/>
-                    </group>
-                    <group string="Người hỗ trợ">
-                        <field name="support_employee_ids" widget="many2many_tags"
-                            nolabel="1" colspan="2"
-                            options="{'no_create': True}"/>
-                    </group>
+                    <notebook>
+                        <page string="Ghi chú &amp; Tài liệu" name="task_notes">
+                            <group>
+                                <group string="Nhãn chương trình">
+                                    <field name="program_badge_format" readonly="1"/>
+                                    <field name="program_badge_image" widget="image"
+                                        readonly="1"
+                                        options="{'accepted_file_extensions': 'image/*'}"/>
+                                </group>
+                                <group string="Tài liệu gửi kèm thông báo">
+                                    <field name="program_notify_document_ids"
+                                        widget="many2many_binary" nolabel="1" colspan="2"
+                                        readonly="1"/>
+                                </group>
+                                <group>
+                                    <label for="program_ticket_instructions" string="Hướng dẫn vé"/>
+                                    <br/>
+                                    <field name="program_ticket_instructions" nolabel="1"
+                                        colspan="2" readonly="1"/>
+                                </group>
+                                <group>
+                                    <label for="program_note" string="Ghi chú chương trình"/>
+                                    <br/>
+                                    <field name="program_note" nolabel="1" colspan="2"
+                                        readonly="1"/>
+                                </group>
+                                <group string="Ghi chú &amp; tài liệu của tôi">
+                                    <field name="work_note" nolabel="1" colspan="2"
+                                        placeholder="Thêm ghi chú của bạn..."/>
+                                    <field name="work_document_ids" widget="many2many_binary"
+                                        nolabel="1" colspan="2"
+                                        options="{'accepted_file_extensions': '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg'}"/>
+                                    <field name="handover_employee_id" invisible="1"/>
+                                    <field name="support_employee_ids" invisible="1"
+                                        widget="many2many_tags"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
                 </sheet>
                 <chatter/>
             </form>
@@ -91,8 +129,6 @@
         <field name="arch" type="xml">
             <search string="Công việc của tôi">
                 <field name="name"/>
-                <field name="handover_employee_id"/>
-                <field name="support_employee_ids"/>
                 <field name="program_id"/>
                 <field name="user_id"/>
                 <filter string="Của tôi" name="my_tasks"
@@ -104,18 +140,11 @@
                     domain="[('state', '=', 'progress')]"/>
                 <filter string="Hoàn thành" name="state_done"
                     domain="[('state', '=', 'done')]"/>
-                <separator/>
-                <filter string="Chưa xác nhận QL" name="not_confirmed"
-                    domain="[('manager_confirmed', '=', False)]"/>
-                <filter string="Đã xác nhận QL" name="confirmed"
-                    domain="[('manager_confirmed', '=', True)]"/>
                 <group>
                     <filter string="Trạng thái" name="group_state"
                         context="{'group_by': 'state'}"/>
                     <filter string="Ngày xử lý" name="group_process_date"
                         context="{'group_by': 'process_date'}"/>
-                    <filter string="Người tạo" name="group_user"
-                        context="{'group_by': 'user_id'}"/>
                 </group>
             </search>
         </field>
@@ -133,8 +162,7 @@
                 Chưa có công việc nào.
             </p>
             <p>
-                Bấm nút <b>Mới</b> (góc trên bên trái) để thêm dòng công việc:
-                ngày xử lý, nội dung CV, trạng thái, bàn giao...
+                Công việc được tạo khi bạn bấm xem chi tiết từ tin nhắn CTKM trên Discuss.
             </p>
         </field>
     </record>
