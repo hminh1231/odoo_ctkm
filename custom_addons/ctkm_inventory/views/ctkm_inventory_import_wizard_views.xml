@@ -41,7 +41,7 @@
         <field name="binding_view_types">list</field>
         <field name="state">code</field>
         <field name="code">action = env.ref('ctkm_inventory.action_ctkm_inventory_import_wizard').read()[0]</field>
-        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+        <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
     </record>
 
 </data></odoo>
