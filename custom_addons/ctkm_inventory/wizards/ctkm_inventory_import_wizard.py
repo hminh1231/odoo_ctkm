@@ -59,6 +59,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 'promo_price': row.get('promo_price') or 0.0,
                 'program_id': program.id,
                 'tem_tag': row.get('tem_tag'),
+                'store': row.get('store'),
                 'quantity': row.get('quantity') or 0.0,
                 'import_filename': self.filename,
             })
@@ -153,20 +154,38 @@ class CtkmInventoryImportWizard(models.TransientModel):
             if self._normalize_label(material_code).startswith('tong cong'):
                 break
 
-            tem_tag = self._clean_text(row.iloc[columns['tem_tag']])
-            quantity = self._extract_quantity(row, columns)
-            if quantity is None:
-                continue
-
-            result.append({
-                'date': sheet_date,
-                'material_code': material_code,
-                'promo_price': self._to_float(row.iloc[columns['promo_price']]),
-                'tem_tag': tem_tag,
-                'quantity': quantity,
-                'sheet_name': sheet_name,
-            })
+            result.extend(
+                self._extract_inventory_rows(row, columns, sheet_date, material_code, sheet_name)
+            )
         return result
+
+    def _extract_inventory_rows(self, row, columns, sheet_date, material_code, sheet_name):
+        base_values = {
+            'date': sheet_date,
+            'material_code': material_code,
+            'promo_price': self._to_float(row.iloc[columns['promo_price']]),
+            'tem_tag': self._clean_text(row.iloc[columns['tem_tag']]),
+            'sheet_name': sheet_name,
+        }
+
+        store_columns = columns.get('store_columns') or []
+        if store_columns:
+            rows = []
+            for store_col, store_name in store_columns:
+                quantity = self._to_float(row.iloc[store_col])
+                if not quantity:
+                    continue
+                rows.append({
+                    **base_values,
+                    'store': store_name,
+                    'quantity': quantity,
+                })
+            return rows
+
+        quantity = self._extract_quantity(row, columns)
+        if quantity is None:
+            return []
+        return [{**base_values, 'quantity': quantity}]
 
     def _find_header(self, frame):
         required = {
@@ -184,8 +203,28 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 elif label == 'tong cong':
                     found['quantity_total'] = col_index
             if all(column in found for column in required.values()):
+                found['store_columns'] = self._find_store_columns(frame.iloc[row_index], found)
                 return row_index, found
         return None, {}
+
+    def _find_store_columns(self, header_row, columns):
+        fixed_columns = {
+            columns['material_code'],
+            columns['promo_price'],
+            columns['ctkm_name'],
+            columns['tem_tag'],
+        }
+        total_col = columns.get('quantity_total')
+        store_columns = []
+        for col_index, value in enumerate(header_row):
+            if col_index in fixed_columns or col_index == total_col:
+                continue
+            if total_col is not None and col_index > total_col:
+                continue
+            store_name = self._clean_text(value)
+            if store_name:
+                store_columns.append((col_index, store_name))
+        return store_columns
 
     def _extract_quantity(self, row, columns):
         total_col = columns.get('quantity_total')

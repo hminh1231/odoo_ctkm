@@ -6,7 +6,7 @@ from odoo import fields, models
 class CtkmInventoryTemTag(models.Model):
     _name = 'ctkm.inventory.tem.tag'
     _description = 'Kho Tem/Tag CTKM'
-    _order = 'date desc, program_id, material_code'
+    _order = 'date desc, program_id, material_code, store'
 
     date = fields.Date(string='Date', required=True, index=True)
     material_code = fields.Char(string='Mã vật tư', required=True, index=True)
@@ -19,5 +19,6 @@ class CtkmInventoryTemTag(models.Model):
         index=True,
     )
     tem_tag = fields.Char(string='Tem/tag', index=True)
+    store = fields.Char(string='Store', index=True)
     quantity = fields.Float(string='Quantity', default=0.0)
     import_filename = fields.Char(string='File nhập', readonly=True)
