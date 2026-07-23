@@ -7,13 +7,6 @@
         <field name="arch" type="xml">
             <list string="Tem/Tag" multi_edit="1" create="1" import="1"
                 default_order="date desc, program_id, material_code, store">
-                <header>
-                    <button name="%(ctkm_inventory.action_ctkm_inventory_import_wizard)d"
-                        type="action"
-                        string="Import"
-                        display="always"
-                        class="btn-primary"/>
-                </header>
                 <field name="date"/>
                 <field name="material_code"/>
                 <field name="promo_price"/>
