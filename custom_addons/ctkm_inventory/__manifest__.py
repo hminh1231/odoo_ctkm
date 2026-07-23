@@ -14,6 +14,12 @@
         'views/ctkm_inventory_tem_tag_views.xml',
         'views/ctkm_inventory_menu_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'ctkm_inventory/static/src/js/ctkm_inventory_import_menu.js',
+            'ctkm_inventory/static/src/xml/ctkm_inventory_import_menu.xml',
+        ],
+    },
     'installable': True,
     'author': 'CTKM',
     'license': 'LGPL-3',

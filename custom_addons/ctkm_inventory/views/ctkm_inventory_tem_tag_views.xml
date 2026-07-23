@@ -5,7 +5,7 @@
         <field name="name">ctkm.inventory.tem.tag.list</field>
         <field name="model">ctkm.inventory.tem.tag</field>
         <field name="arch" type="xml">
-            <list string="Tem/Tag" multi_edit="1" create="1" import="1"
+            <list string="Tem/Tag" multi_edit="1" create="1" import="0"
                 default_order="date desc, program_id, material_code, store">
                 <field name="date"/>
                 <field name="material_code"/>
