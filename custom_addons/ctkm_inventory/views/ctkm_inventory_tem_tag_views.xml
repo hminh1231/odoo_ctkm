@@ -11,6 +11,7 @@
                     <button name="%(ctkm_inventory.action_ctkm_inventory_import_wizard)d"
                         type="action"
                         string="Import"
+                        display="always"
                         class="btn-primary"/>
                 </header>
                 <field name="date"/>

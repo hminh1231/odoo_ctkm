@@ -4,7 +4,7 @@
     'version': '1.0',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý tồn kho tem/tag cho CTKM',
-    'depends': ['ctkm_core'],
+    'depends': ['ctkm_core', 'base_import'],
     'external_dependencies': {
         'python': ['pandas', 'python_calamine'],
     },
