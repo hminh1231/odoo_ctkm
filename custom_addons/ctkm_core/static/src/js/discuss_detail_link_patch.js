@@ -53,8 +53,8 @@ import { patch } from "@web/core/utils/patch";
     (document.head || document.documentElement).appendChild(style);
 })();
 
-const CTKM_DETAIL_BTN_SELECTOR = "a.o_ctkm_notify_detail_btn";
-const CTKM_TASKS_PATH = "/odoo/ctkm-my-tasks";
+const CTKM_DETAIL_BTN_SELECTOR = "a.o_ctkm_notify_detail_btn, a.o_ctkm_manager_confirm_btn";
+const CTKM_TASKS_PATH = "/odoo/ctkm.task";
 
 function extractCtkmProgramId(link) {
     const fromDataset = Number(
@@ -74,6 +74,25 @@ function extractCtkmProgramId(link) {
     }
 }
 
+function extractCtkmTaskId(link) {
+    const fromDataset = Number(link.dataset.taskId || 0);
+    if (fromDataset) {
+        return fromDataset;
+    }
+    try {
+        const href = link.getAttribute("href") || "";
+        const url = new URL(href, window.location.origin);
+        const fromQuery = Number(url.searchParams.get("ctkm_task_id") || 0);
+        if (fromQuery) {
+            return fromQuery;
+        }
+        const match = url.pathname.match(/\/(?:ctkm\.task|ctkm-my-tasks)\/(\d+)/);
+        return match ? Number(match[1]) : 0;
+    } catch {
+        return 0;
+    }
+}
+
 function rememberCtkmApp(menus, menuIdFromServer) {
     if (menuIdFromServer) {
         browser.sessionStorage.setItem("menu_id", String(menuIdFromServer));
@@ -86,6 +105,7 @@ function rememberCtkmApp(menus, menuIdFromServer) {
     }
     const taskMenu =
         menus.getAll().find((m) => m.actionPath === "ctkm-my-tasks") ||
+        menus.getAll().find((m) => String(m.name || "").includes("Công việc của tôi")) ||
         menus.getApps().find((app) => String(app.name || "").toUpperCase().includes("CTKM"));
     if (taskMenu) {
         browser.sessionStorage.setItem("menu_id", String(taskMenu.appID || taskMenu.id));
@@ -113,6 +133,36 @@ patch(Store.prototype, {
         ev.preventDefault();
         ev.stopPropagation();
         ev.stopImmediatePropagation?.();
+
+        const isManagerConfirm = link.classList.contains("o_ctkm_manager_confirm_btn");
+        if (isManagerConfirm) {
+            const taskId = extractCtkmTaskId(link);
+            if (!taskId) {
+                this.env.services.notification.add(
+                    _t("Không tìm thấy công việc cần xác nhận."),
+                    { type: "warning" }
+                );
+                return true;
+            }
+            this.env.services.orm
+                .call("ctkm.task", "action_open_for_manager_confirm", [taskId])
+                .then((action) => {
+                    rememberCtkmApp(this.env.services.menu, action?.menu_id);
+                    const url =
+                        (action && action.type === "ir.actions.act_url" && action.url) ||
+                        CTKM_TASKS_PATH;
+                    hardNavigate(url);
+                })
+                .catch((error) => {
+                    const message =
+                        error?.data?.message ||
+                        error?.message ||
+                        _t("Không mở được công việc CTKM.");
+                    this.env.services.notification.add(message, { type: "danger" });
+                });
+            return true;
+        }
+
         const programId = extractCtkmProgramId(link);
         if (!programId) {
             this.env.services.notification.add(

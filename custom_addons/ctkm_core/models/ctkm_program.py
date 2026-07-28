@@ -57,6 +57,9 @@ class CtkmProgram(models.Model):
         compute='_compute_notify_report_fields',
     )
     tag_ids = fields.Many2many('ctkm.tag', string='Nhãn', readonly=False)
+    task_ids = fields.One2many(
+        'ctkm.task', 'program_id', string='Công việc',
+    )
     organizer_id = fields.Many2one(
         'res.partner', string='Đơn vị tổ chức', tracking=True,
         default=lambda self: self.env.company.partner_id,

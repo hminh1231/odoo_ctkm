@@ -35,7 +35,7 @@ class CtkmProgramDiscussNotify(models.Model):
 
     def _ctkm_notify_detail_button_markup(self):
         # Không gắn data-oe-model/oe-id — tránh Discuss mở form trong tab Thảo luận.
-        href = "/odoo/ctkm-my-tasks?ctkm_program_id=%s" % self.id
+        href = "/odoo/ctkm.task?ctkm_program_id=%s" % self.id
         return Markup(
             '<div class="o_ctkm_notify_detail mt-2">'
             '<a class="btn btn-primary btn-sm o_ctkm_notify_detail_btn" '

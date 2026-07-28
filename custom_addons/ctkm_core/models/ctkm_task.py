@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
 
+import logging
+
+from markupsafe import Markup, escape
+from psycopg2 import IntegrityError
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import html2plaintext
-from psycopg2 import IntegrityError
+
+_logger = logging.getLogger(__name__)
 
 
 class CtkmTask(models.Model):
@@ -49,6 +55,10 @@ class CtkmTask(models.Model):
     manager_confirmed = fields.Boolean(
         string='Xác nhận quản lý',
         tracking=True,
+    )
+    can_confirm_as_manager = fields.Boolean(
+        string='Được phép xác nhận quản lý',
+        compute='_compute_can_confirm_as_manager',
     )
     support_employee_ids = fields.Many2many(
         'hr.employee',
@@ -157,6 +167,148 @@ class CtkmTask(models.Model):
         'Bạn đã có công việc cho chương trình này rồi.',
     )
 
+    @api.depends_context('uid')
+    def _compute_can_confirm_as_manager(self):
+        for task in self:
+            task.can_confirm_as_manager = task._user_can_confirm_as_manager(self.env.user)
+
+    def _get_worker_employee(self):
+        """Nhân viên gắn với người tạo công việc."""
+        self.ensure_one()
+        employee = self.user_id.sudo().employee_id
+        if employee:
+            return employee
+        return self.env['hr.employee'].sudo().search(
+            [('user_id', '=', self.user_id.id)], limit=1
+        )
+
+    def _get_org_chart_manager_user(self):
+        """Quản lý trực tiếp theo org chart (parent_id)."""
+        self.ensure_one()
+        employee = self._get_worker_employee()
+        manager = employee.parent_id.sudo() if employee else self.env['hr.employee']
+        user = manager.user_id
+        if user and user.active and not user.share and user.partner_id:
+            return user
+        return self.env['res.users']
+
+    def _user_can_confirm_as_manager(self, user):
+        """Chỉ quản lý org-chart (hoặc CTKM Administrator) được xác nhận."""
+        self.ensure_one()
+        if not user or user.share:
+            return False
+        if user.has_group('ctkm_core.group_ctkm_manager'):
+            return True
+        manager_user = self._get_org_chart_manager_user()
+        return bool(manager_user and manager_user.id == user.id)
+
+    def _ctkm_task_form_url(self):
+        self.ensure_one()
+        menu = self.env.ref('ctkm_core.menu_ctkm_my_tasks', raise_if_not_found=False)
+        app_menu_id = False
+        if menu:
+            app_menu = menu
+            while app_menu.parent_id:
+                app_menu = app_menu.parent_id
+            app_menu_id = app_menu.id
+        # Dùng model path (ctkm.task), không dùng action path (ctkm-my-tasks)
+        # để tránh webclient gọi RPC với model sai.
+        url = '/odoo/ctkm.task/%s' % self.id
+        if app_menu_id:
+            url = '%s?menu_id=%s' % (url, app_menu_id)
+        return url, app_menu_id
+
+    def _ctkm_manager_confirm_button_markup(self):
+        self.ensure_one()
+        href = '/odoo/ctkm.task/%s' % self.id
+        return Markup(
+            '<div class="o_ctkm_notify_detail mt-2">'
+            '<a class="btn btn-primary btn-sm o_ctkm_manager_confirm_btn" '
+            'href="%s" data-task-id="%s" contenteditable="false">'
+            'Bấm để xác nhận hoàn thành'
+            '</a>'
+            '</div>'
+        ) % (escape(href), self.id)
+
+    def _ctkm_manager_confirm_message_body(self):
+        self.ensure_one()
+        worker_name = self.user_id.name or ''
+        program_name = self.program_name or self.name or ''
+        lines = [
+            Markup('<b>Yêu cầu xác nhận hoàn thành công việc CTKM</b>'),
+            Markup('Nhân viên <b>%s</b> đã bấm Hoàn thành.') % escape(worker_name),
+            Markup('Công việc: <b>%s</b>') % escape(program_name),
+            Markup(
+                'Vui lòng vào form và tick <b>Xác nhận quản lý</b> '
+                'để hoàn tất trạng thái.'
+            ),
+            self._ctkm_manager_confirm_button_markup(),
+        ]
+        return Markup('<br/>').join(lines)
+
+    def _post_ctkm_bot_dm(self, recipient_user, body):
+        """Gửi DM Discuss từ OdooBot CTKM tới quản lý."""
+        self.ensure_one()
+        Message = self.env['mail.message']
+        if not recipient_user or recipient_user.share or not recipient_user.partner_id:
+            return Message
+        bot_user = self.env.ref(
+            'business_discuss_bots.user_bot_ctkm', raise_if_not_found=False
+        )
+        if not bot_user or not bot_user.partner_id:
+            raise UserError(_('Chưa cấu hình OdooBot CTKM trên hệ thống.'))
+        try:
+            chat = (
+                self.env['discuss.channel']
+                .sudo()
+                .with_user(recipient_user)
+                ._get_or_create_chat([bot_user.partner_id.id], pin=True)
+            )
+            return chat.with_user(bot_user).sudo().message_post(
+                body=body,
+                message_type='comment',
+                subtype_xmlid='mail.mt_comment',
+                author_id=bot_user.partner_id.id,
+            )
+        except Exception:
+            _logger.exception(
+                'ctkm_core: OdooBot CTKM DM failed task_id=%s recipient_user_id=%s',
+                self.id,
+                recipient_user.id,
+            )
+            return Message
+
+    def _notify_org_manager_confirm(self):
+        """Gửi tin OdooBot CTKM tới quản lý org-chart để xác nhận."""
+        self.ensure_one()
+        manager_user = self._get_org_chart_manager_user()
+        if not manager_user:
+            raise UserError(_(
+                'Không tìm thấy quản lý trực tiếp trên organization chart '
+                '(hoặc quản lý chưa có tài khoản Odoo). '
+                'Không thể gửi yêu cầu xác nhận.'
+            ))
+        if manager_user == self.user_id:
+            raise UserError(_(
+                'Quản lý trực tiếp trùng với người làm việc. '
+                'Vui lòng kiểm tra lại organization chart.'
+            ))
+        posted = self._post_ctkm_bot_dm(
+            manager_user, self._ctkm_manager_confirm_message_body()
+        )
+        if not posted:
+            raise UserError(_(
+                'Không gửi được thông báo Discuss tới quản lý %s.'
+            ) % manager_user.name)
+        self.message_post(
+            body=_(
+                'Đã gửi yêu cầu xác nhận tới quản lý <b>%s</b> qua OdooBot CTKM.'
+            ) % manager_user.name,
+            subtype_xmlid='mail.mt_note',
+            body_is_html=True,
+        )
+        return manager_user
+
     @api.onchange('state')
     def _onchange_state(self):
         if self.state in ('waiting_confirm', 'done') and not self.done_date:
@@ -172,6 +324,14 @@ class CtkmTask(models.Model):
                 'Không thể đổi trạng thái trực tiếp. '
                 'Dùng nút Hoàn thành hoặc Xác nhận quản lý.'
             ))
+
+        if 'manager_confirmed' in vals and not internal:
+            for task in self:
+                if not task._user_can_confirm_as_manager(self.env.user):
+                    raise UserError(_(
+                        'Chỉ quản lý trực tiếp (theo organization chart) '
+                        'mới được bấm Xác nhận quản lý.'
+                    ))
 
         if vals.get('manager_confirmed'):
             for task in self:
@@ -205,8 +365,14 @@ class CtkmTask(models.Model):
         return super().write(vals)
 
     def action_mark_done(self):
-        """Người làm việc báo hoàn thành → chờ quản lý xác nhận."""
+        """Người làm việc báo hoàn thành → gửi tin quản lý xác nhận."""
         for task in self:
+            manager_user = task._get_org_chart_manager_user()
+            if not manager_user:
+                raise UserError(_(
+                    'Không tìm thấy quản lý trực tiếp trên organization chart '
+                    '(hoặc quản lý chưa có tài khoản Odoo).'
+                ))
             vals = {
                 'state': 'waiting_confirm',
                 'manager_confirmed': False,
@@ -214,14 +380,15 @@ class CtkmTask(models.Model):
             if not task.done_date:
                 vals['done_date'] = fields.Date.context_today(task)
             task.with_context(ctkm_internal_state_write=True).write(vals)
+            task._notify_org_manager_confirm()
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': _('Đã gửi hoàn thành'),
                 'message': _(
-                    'Đã bấm Hoàn thành. Trạng thái chuyển sang Chờ xác nhận '
-                    'cho đến khi quản lý xác nhận.'
+                    'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
+                    'tới quản lý trực tiếp.'
                 ),
                 'type': 'success',
                 'sticky': False,
@@ -379,21 +546,35 @@ class CtkmTask(models.Model):
             except IntegrityError:
                 task = Task.search(domain, limit=1)
 
-        action = self.env['ir.actions.act_window']._for_xml_id(
-            'ctkm_core.action_ctkm_task_my'
+        url, app_menu_id = task._ctkm_task_form_url()
+        return {
+            'type': 'ir.actions.act_url',
+            'url': url,
+            'target': 'self',
+            'task_id': task.id,
+            'menu_id': app_menu_id,
+        }
+
+    @api.model
+    def action_open_for_manager_confirm(self, task_id):
+        """Mở form công việc để quản lý xác nhận (từ tin OdooBot CTKM)."""
+        task_id = int(task_id or 0)
+        if not task_id:
+            raise UserError(_('Thiếu mã công việc CTKM.'))
+        task = self.sudo().browse(task_id)
+        if not task.exists():
+            raise UserError(_('Không tìm thấy công việc CTKM.'))
+        user = self.env.user
+        allowed = (
+            task._user_can_confirm_as_manager(user)
+            or task.user_id == user
+            or user.has_group('ctkm_core.group_ctkm_manager')
         )
-        path = action.get('path') or 'ctkm-my-tasks'
-        menu = self.env.ref('ctkm_core.menu_ctkm_my_tasks', raise_if_not_found=False)
-        app_menu_id = False
-        if menu:
-            app_menu = menu
-            while app_menu.parent_id:
-                app_menu = app_menu.parent_id
-            app_menu_id = app_menu.id
-        # URL form + menu_id → webclient mở trong app CTKM, không giữ breadcrumb Thảo luận.
-        url = '/odoo/%s/%s' % (path, task.id)
-        if app_menu_id:
-            url = '%s?menu_id=%s' % (url, app_menu_id)
+        if not allowed:
+            raise UserError(_(
+                'Bạn không có quyền mở công việc này để xác nhận.'
+            ))
+        url, app_menu_id = task._ctkm_task_form_url()
         return {
             'type': 'ir.actions.act_url',
             'url': url,
