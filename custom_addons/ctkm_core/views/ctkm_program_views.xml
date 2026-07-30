@@ -51,6 +51,10 @@
                                 <button name="action_send_discuss_notification" type="object"
                                     string="Gửi tin" class="btn-primary"
                                     icon="fa-paper-plane"/>
+                                <div class="text-muted mt-1">
+                                    Gửi theo thứ tự Số thứ tự: bước 1 trước; bước sau nhận tin
+                                    khi bước trước bấm <b>Chuyển tiếp</b> (kèm ghi chú/file đã đẩy).
+                                </div>
                             </div>
                             <field name="notify_line_ids" nolabel="1">
                                 <list editable="bottom">
@@ -58,10 +62,12 @@
                                     <field name="sequence" column_invisible="1"/>
                                     <field name="mien"/>
                                     <field name="store_code_id" string="Mã cửa hàng" options="{'no_create': True, 'no_open': True}"/>
-                                    <field name="job_id" string="Chức vụ" options="{'no_create': True}"/>
+                                    <field name="job_title" string="Chức vụ"/>
+                                    <field name="job_id" string="Job Position" options="{'no_create': True}"/>
                                     <field name="notify_employee_ids" widget="many2many_tags"
                                         domain="[('active', '=', True), ('mien', '=', mien)]"
                                         options="{'no_create': True, 'no_quick_create': True}"/>
+                                    <field name="notified" string="Đã gửi" readonly="1"/>
                                 </list>
                             </field>
                         </page>

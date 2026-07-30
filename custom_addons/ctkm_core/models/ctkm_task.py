@@ -60,6 +60,10 @@ class CtkmTask(models.Model):
         string='Được phép xác nhận quản lý',
         compute='_compute_can_confirm_as_manager',
     )
+    is_task_assignee = fields.Boolean(
+        string='Là người nhận việc',
+        compute='_compute_is_task_assignee',
+    )
     support_employee_ids = fields.Many2many(
         'hr.employee',
         'ctkm_task_support_employee_rel',
@@ -70,7 +74,7 @@ class CtkmTask(models.Model):
     )
     user_id = fields.Many2one(
         'res.users',
-        string='Người tạo',
+        string='Người nhận việc',
         default=lambda self: self.env.user,
         required=True,
         index=True,
@@ -162,15 +166,58 @@ class CtkmTask(models.Model):
         string='Tài liệu',
     )
 
-    _user_program_uniq = models.Constraint(
-        'UNIQUE(user_id, program_id)',
-        'Bạn đã có công việc cho chương trình này rồi.',
+    # Bước phạm vi thông báo (Gửi tin tuần tự theo STT dòng)
+    notify_line_id = fields.Many2one(
+        'ctkm.program.notify.line',
+        string='Bước phạm vi',
+        ondelete='set null',
+        index=True,
+        copy=False,
+    )
+    notify_step_label = fields.Char(
+        related='notify_line_id.step_label',
+        string='Bước xử lý',
+        readonly=True,
+    )
+    forwarded = fields.Boolean(
+        string='Đã chuyển tiếp bước',
+        default=False,
+        copy=False,
+        tracking=True,
+    )
+    # Ghi chú / file nhận từ chương trình + bước trước (readonly)
+    handover_note = fields.Html(
+        string='Ghi chú nhận từ bước trước',
+        sanitize_attributes=False,
+        readonly=True,
+        copy=False,
+    )
+    handover_document_ids = fields.Many2many(
+        'ir.attachment',
+        'ctkm_task_handover_document_rel',
+        'task_id',
+        'attachment_id',
+        string='Tài liệu nhận từ bước trước',
+        readonly=True,
+        copy=False,
+    )
+
+    _user_program_line_uniq = models.Constraint(
+        'UNIQUE(user_id, program_id, notify_line_id)',
+        'Bạn đã có công việc cho bước phạm vi này rồi.',
     )
 
     @api.depends_context('uid')
     def _compute_can_confirm_as_manager(self):
         for task in self:
             task.can_confirm_as_manager = task._user_can_confirm_as_manager(self.env.user)
+
+    @api.depends('user_id')
+    @api.depends_context('uid')
+    def _compute_is_task_assignee(self):
+        uid = self.env.user.id
+        for task in self:
+            task.is_task_assignee = task.user_id.id == uid
 
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
@@ -246,8 +293,33 @@ class CtkmTask(models.Model):
         ]
         return Markup('<br/>').join(lines)
 
+    def _ctkm_worker_confirmed_button_markup(self):
+        self.ensure_one()
+        href = '/odoo/ctkm.task/%s' % self.id
+        return Markup(
+            '<div class="o_ctkm_notify_detail mt-2">'
+            '<a class="btn btn-primary btn-sm o_ctkm_task_open_btn" '
+            'href="%s" data-task-id="%s" contenteditable="false">'
+            'Bấm để xem công việc'
+            '</a>'
+            '</div>'
+        ) % (escape(href), self.id)
+
+    def _ctkm_worker_manager_confirmed_message_body(self, manager_user=None):
+        self.ensure_one()
+        manager_user = manager_user or self.env.user
+        program_name = self.program_name or self.name or ''
+        lines = [
+            Markup('<b>Quản lý đã xác nhận hoàn thành công việc CTKM</b>'),
+            Markup('Quản lý <b>%s</b> đã xác nhận.') % escape(manager_user.name or ''),
+            Markup('Công việc: <b>%s</b>') % escape(program_name),
+            Markup('Trạng thái công việc đã chuyển sang <b>Hoàn thành</b>.'),
+            self._ctkm_worker_confirmed_button_markup(),
+        ]
+        return Markup('<br/>').join(lines)
+
     def _post_ctkm_bot_dm(self, recipient_user, body):
-        """Gửi DM Discuss từ OdooBot CTKM tới quản lý."""
+        """Gửi DM Discuss từ OdooBot CTKM tới một user."""
         self.ensure_one()
         Message = self.env['mail.message']
         if not recipient_user or recipient_user.share or not recipient_user.partner_id:
@@ -309,6 +381,37 @@ class CtkmTask(models.Model):
         )
         return manager_user
 
+    def _notify_worker_manager_confirmed(self, manager_user=None):
+        """Gửi tin OdooBot CTKM cho người nhận việc khi quản lý đã xác nhận."""
+        self.ensure_one()
+        worker = self.user_id
+        if not worker or worker.share or not worker.partner_id:
+            return self.env['res.users']
+        manager_user = manager_user or self.env.user
+        # Tránh spam nếu người nhận việc chính là người xác nhận.
+        if worker == manager_user:
+            return worker
+        posted = self._post_ctkm_bot_dm(
+            worker,
+            self._ctkm_worker_manager_confirmed_message_body(manager_user),
+        )
+        if not posted:
+            _logger.warning(
+                'ctkm_core: cannot notify worker task_id=%s user_id=%s',
+                self.id,
+                worker.id,
+            )
+            return self.env['res.users']
+        self.message_post(
+            body=_(
+                'Đã thông báo cho <b>%s</b> rằng quản lý đã xác nhận '
+                '(qua OdooBot CTKM).'
+            ) % worker.name,
+            subtype_xmlid='mail.mt_note',
+            body_is_html=True,
+        )
+        return worker
+
     @api.onchange('state')
     def _onchange_state(self):
         if self.state in ('waiting_confirm', 'done') and not self.done_date:
@@ -362,11 +465,37 @@ class CtkmTask(models.Model):
                         'và có Xác nhận quản lý.'
                     ))
 
-        return super().write(vals)
+        newly_confirmed = self.browse()
+        if vals.get('manager_confirmed'):
+            newly_confirmed = self.filtered(lambda t: not t.manager_confirmed)
+
+        res = super().write(vals)
+
+        if newly_confirmed:
+            manager_user = self.env.user
+            for task in newly_confirmed:
+                task._notify_worker_manager_confirmed(manager_user)
+
+        return res
 
     def action_mark_done(self):
         """Người làm việc báo hoàn thành → gửi tin quản lý xác nhận."""
+        notified = self.browse()
+        already_waiting = self.browse()
         for task in self:
+            if task.user_id != self.env.user and not self.env.user.has_group(
+                'ctkm_core.group_ctkm_manager'
+            ):
+                raise UserError(_(
+                    'Chỉ người nhận việc mới được bấm Hoàn thành.'
+                ))
+            # Đã chờ xác nhận rồi: không gửi tin trùng cho quản lý.
+            if task.state == 'waiting_confirm' and not task.manager_confirmed:
+                already_waiting |= task
+                continue
+            if task.state == 'done' and task.manager_confirmed:
+                already_waiting |= task
+                continue
             manager_user = task._get_org_chart_manager_user()
             if not manager_user:
                 raise UserError(_(
@@ -381,14 +510,57 @@ class CtkmTask(models.Model):
                 vals['done_date'] = fields.Date.context_today(task)
             task.with_context(ctkm_internal_state_write=True).write(vals)
             task._notify_org_manager_confirm()
+            notified |= task
+
+        if notified:
+            title = _('Đã gửi hoàn thành')
+            message = _(
+                'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
+                'tới quản lý trực tiếp.'
+            )
+        else:
+            title = _('Đã gửi trước đó')
+            message = _(
+                'Công việc đang chờ xác nhận quản lý. '
+                'Không gửi thêm tin nhắn Discuss.'
+            )
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
-                'title': _('Đã gửi hoàn thành'),
+                'title': title,
+                'message': message,
+                'type': 'success' if notified else 'warning',
+                'sticky': False,
+            },
+        }
+
+    def action_manager_confirm(self):
+        """Quản lý xác nhận hoàn thành → thông báo cho người nhận việc."""
+        for task in self:
+            if not task._user_can_confirm_as_manager(self.env.user):
+                raise UserError(_(
+                    'Chỉ quản lý trực tiếp (theo organization chart) '
+                    'mới được xác nhận hoàn thành.'
+                ))
+            if task.state not in ('waiting_confirm', 'done'):
+                raise UserError(_(
+                    'Chỉ xác nhận được sau khi nhân viên đã bấm Hoàn thành.'
+                ))
+            if task.manager_confirmed and task.state == 'done':
+                continue
+            task.with_context(ctkm_internal_state_write=True).write({
+                'manager_confirmed': True,
+                'state': 'done',
+            })
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Đã xác nhận'),
                 'message': _(
-                    'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
-                    'tới quản lý trực tiếp.'
+                    'Đã xác nhận quản lý. OdooBot CTKM đã thông báo '
+                    'cho người nhận việc.'
                 ),
                 'type': 'success',
                 'sticky': False,
@@ -432,7 +604,7 @@ class CtkmTask(models.Model):
         }
 
     def action_advance_stage(self):
-        """Chuyển chương trình KM liên kết sang giai đoạn tiếp theo."""
+        """Chuyển tiếp bước phạm vi → gửi tin bước sau (kèm ghi chú/file)."""
         self.ensure_one()
         if self.state != 'done':
             raise UserError(_(
@@ -443,10 +615,91 @@ class CtkmTask(models.Model):
             raise UserError(_(
                 'Cần có Xác nhận quản lý trước khi chuyển tiếp.'
             ))
+        if self.forwarded:
+            raise UserError(_('Công việc này đã chuyển tiếp rồi.'))
         if not self.program_id:
             raise UserError(_('Công việc chưa gắn chương trình khuyến mãi.'))
 
         program = self.program_id.sudo()
+        current_line = self.notify_line_id.sudo()
+        self.write({'forwarded': True})
+        self.message_post(
+            body=_('Đã bấm <b>Chuyển tiếp</b> cho bước <b>%s</b>.')
+            % escape(current_line.step_label or _('(không xác định)')),
+            subtype_xmlid='mail.mt_note',
+            body_is_html=True,
+        )
+
+        # Task cũ không gắn bước phạm vi: giữ hành vi chuyển giai đoạn CTKM
+        if not current_line:
+            return self._ctkm_advance_program_stage(program)
+
+        siblings = self.sudo().search([
+            ('program_id', '=', program.id),
+            ('notify_line_id', '=', current_line.id),
+        ])
+        pending = siblings.filtered(
+            lambda t: not t.forwarded or t.state != 'done' or not t.manager_confirmed
+        )
+        if pending:
+            names = ', '.join(pending.mapped('user_id.name'))
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Đã chuyển tiếp phần của bạn'),
+                    'message': _(
+                        'Chờ các người còn lại hoàn tất bước "%(step)s": %(names)s'
+                    ) % {
+                        'step': current_line.step_label or '',
+                        'names': names,
+                    },
+                    'type': 'warning',
+                    'sticky': False,
+                },
+            }
+
+        lines = program.notify_line_ids.sorted(lambda l: (l.sequence, l.id))
+        next_line = self.env['ctkm.program.notify.line']
+        found_current = False
+        for line in lines:
+            if found_current:
+                next_line = line
+                break
+            if line.id == current_line.id:
+                found_current = True
+
+        if next_line:
+            handover_note, handover_docs = self._ctkm_collect_handover_from_line(
+                program, current_line
+            )
+            sent = program._ctkm_send_notify_line(
+                next_line,
+                handover_note=handover_note,
+                handover_attachments=handover_docs,
+            )
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Đã chuyển bước'),
+                    'message': _(
+                        'Đã gửi OdooBot CTKM tới bước "%(step)s" (%(count)s người), '
+                        'kèm ghi chú và tài liệu đã đẩy qua.'
+                    ) % {
+                        'step': next_line.step_label or '',
+                        'count': len(sent),
+                    },
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
+
+        return self._ctkm_advance_program_stage(program)
+
+    def _ctkm_advance_program_stage(self, program):
+        """Chuyển giai đoạn CTKM khi hết bước phạm vi / task không gắn dòng."""
+        self.ensure_one()
         current = program.stage_id
         Stage = self.env['ctkm.stage'].sudo()
 
@@ -467,15 +720,25 @@ class CtkmTask(models.Model):
                 limit=1,
             )
         if not next_stage:
-            raise UserError(_('Không còn giai đoạn tiếp theo để chuyển.'))
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Hoàn tất các bước phạm vi'),
+                    'message': _(
+                        'Đã chuyển tiếp hết các bước người nhận. '
+                        'Không còn giai đoạn chương trình tiếp theo.'
+                    ),
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
 
         old_name = current.display_name if current else _('(chưa có)')
         program.write({
             'stage_id': next_stage.id,
             'kanban_state': 'normal',
         })
-        if self.state != 'done':
-            self.state = 'progress'
         self.message_post(
             body=_(
                 'Đã chuyển bước chương trình <b>%(program)s</b>: '
@@ -503,6 +766,114 @@ class CtkmTask(models.Model):
         }
 
     @api.model
+    def _task_content_from_program(self, program):
+        content = program.name or _('Công việc CTKM')
+        description = html2plaintext(program.description or '').replace('\xa0', ' ').strip()
+        if description:
+            content = '%s\n%s' % (content, description)
+        return content
+
+    @api.model
+    def _duplicate_attachments_for_task(self, attachments, task):
+        """Copy file để bước sau đọc được (ACL theo task mới)."""
+        Attachment = self.env['ir.attachment'].sudo()
+        copies = Attachment
+        for att in attachments:
+            copies |= att.copy({
+                'res_model': 'ctkm.task',
+                'res_id': task.id,
+                'name': att.name,
+            })
+        return copies
+
+    @api.model
+    def _ctkm_collect_handover_from_line(self, program, notify_line):
+        """Gom ghi chú/file chương trình + task đã chuyển tiếp của bước hiện tại."""
+        program.ensure_one()
+        note_parts = []
+        docs = self.env['ir.attachment']
+        tasks = self.sudo().search([
+            ('program_id', '=', program.id),
+            ('notify_line_id', '=', notify_line.id),
+            ('forwarded', '=', True),
+        ], order='id')
+        # Handover đã có trên bước này (gồm chương trình + bước trước hơn)
+        if tasks and tasks[0].handover_note:
+            note_parts.append(Markup(tasks[0].handover_note))
+            docs |= tasks[0].handover_document_ids
+        elif program.note:
+            note_parts.append(
+                Markup('<p><b>%s</b></p>%s')
+                % (escape(_('Ghi chú chương trình')), Markup(program.note))
+            )
+        if not tasks or not tasks[0].handover_document_ids:
+            docs |= program.notify_document_ids
+
+        for task in tasks:
+            step = task.notify_step_label or _('Bước trước')
+            worker = task.user_id.name or ''
+            if task.work_note:
+                note_parts.append(
+                    Markup('<p><b>%s</b></p>%s')
+                    % (
+                        escape(_('Ghi chú từ %s (%s)') % (worker, step)),
+                        Markup(task.work_note),
+                    )
+                )
+            docs |= task.work_document_ids
+        handover_note = Markup('<hr/>').join(note_parts) if note_parts else False
+        return handover_note, docs
+
+    @api.model
+    def _get_or_create_for_program_user(
+        self, program, user, notify_line=None,
+        handover_note=False, handover_attachments=None,
+    ):
+        """Mỗi người + mỗi bước phạm vi có 1 công việc riêng."""
+        program.ensure_one()
+        if not user or not user.exists():
+            return self.browse()
+        Task = self.sudo()
+        domain = [
+            ('program_id', '=', program.id),
+            ('user_id', '=', user.id),
+        ]
+        if notify_line:
+            domain.append(('notify_line_id', '=', notify_line.id))
+        else:
+            domain.append(('notify_line_id', '=', False))
+        task = Task.search(domain, limit=1)
+        if task:
+            vals = {}
+            if handover_note and not task.handover_note:
+                vals['handover_note'] = handover_note
+            if vals:
+                task.write(vals)
+            if handover_attachments and not task.handover_document_ids:
+                copies = self._duplicate_attachments_for_task(handover_attachments, task)
+                task.handover_document_ids = [(6, 0, copies.ids)]
+            return task
+        vals = {
+            'program_id': program.id,
+            'user_id': user.id,
+            'process_date': fields.Date.context_today(self),
+            'name': self._task_content_from_program(program),
+            'state': 'todo',
+            'company_id': program.company_id.id or self.env.company.id,
+            'notify_line_id': notify_line.id if notify_line else False,
+            'handover_note': handover_note or False,
+        }
+        try:
+            with self.env.cr.savepoint():
+                task = Task.create(vals)
+        except IntegrityError:
+            return Task.search(domain, limit=1)
+        if handover_attachments:
+            copies = self._duplicate_attachments_for_task(handover_attachments, task)
+            task.handover_document_ids = [(6, 0, copies.ids)]
+        return task
+
+    @api.model
     def action_open_for_program(self, program_id):
         """Tạo/mở công việc khi bấm nút trong Discuss (không phụ thuộc ACL form CTKM)."""
         program_id = int(program_id or 0)
@@ -522,29 +893,25 @@ class CtkmTask(models.Model):
         if not allowed:
             raise UserError(_('Bạn không có quyền mở công việc của chương trình này.'))
 
+        # Ưu tiên task bước gần nhất của user; nếu chưa có thì bước đã notified
         Task = self.sudo()
-        domain = [
+        task = Task.search([
             ('program_id', '=', program.id),
             ('user_id', '=', user.id),
-        ]
-        task = Task.search(domain, limit=1)
+        ], order='id desc', limit=1)
         if not task:
-            content = program.name or _('Công việc CTKM')
-            description = html2plaintext(program.description or '').replace('\xa0', ' ').strip()
-            if description:
-                content = '%s\n%s' % (content, description)
-            try:
-                with self.env.cr.savepoint():
-                    task = Task.create({
-                        'program_id': program.id,
-                        'user_id': user.id,
-                        'process_date': fields.Date.context_today(self),
-                        'name': content,
-                        'state': 'todo',
-                        'company_id': program.company_id.id or self.env.company.id,
-                    })
-            except IntegrityError:
-                task = Task.search(domain, limit=1)
+            line = program.notify_line_ids.filtered(
+                lambda l: user in l.notify_employee_ids.mapped('user_id') and l.notified
+            )[:1]
+            if not line:
+                line = program.notify_line_ids.filtered(
+                    lambda l: user in l.notify_employee_ids.mapped('user_id')
+                ).sorted(lambda l: (l.sequence, l.id))[:1]
+            task = self._get_or_create_for_program_user(
+                program, user, notify_line=line or None
+            )
+        if not task:
+            raise UserError(_('Không tạo được công việc CTKM.'))
 
         url, app_menu_id = task._ctkm_task_form_url()
         return {

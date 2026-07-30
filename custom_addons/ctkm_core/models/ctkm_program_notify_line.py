@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+from odoo.addons.hr_job_title_vn.models.hr_version import JOB_TITLE_SELECTION
 from odoo.exceptions import ValidationError
 
 MIEN_SELECTION = [
@@ -32,9 +33,13 @@ class CtkmProgramNotifyLine(models.Model):
         string='Mã cửa hàng',
         domain="['|', ('mien', '=', False), ('mien', '=', mien)]",
     )
+    job_title = fields.Selection(
+        selection=JOB_TITLE_SELECTION,
+        string='Chức vụ',
+    )
     job_id = fields.Many2one(
         'hr.job',
-        string='Chức vụ',
+        string='Job Position',
     )
     store_code = fields.Char(
         string='Mã CH',
@@ -47,6 +52,21 @@ class CtkmProgramNotifyLine(models.Model):
         'line_id',
         'employee_id',
         string='Người nhận thông báo',
+    )
+    notified = fields.Boolean(
+        string='Đã gửi tin',
+        default=False,
+        copy=False,
+        help='Đã gửi OdooBot CTKM cho bước phạm vi này.',
+    )
+    notified_date = fields.Datetime(
+        string='Ngày gửi tin',
+        copy=False,
+        readonly=True,
+    )
+    step_label = fields.Char(
+        string='Nhãn bước',
+        compute='_compute_step_label',
     )
     notify_receipt_date = fields.Date(
         string='Ngày nhận thông báo',
@@ -81,8 +101,9 @@ class CtkmProgramNotifyLine(models.Model):
         compute='_compute_scope_display',
     )
 
-    @api.depends('store_code', 'store_code_id', 'mien', 'job_id')
+    @api.depends('store_code', 'store_code_id', 'mien', 'job_title', 'job_id')
     def _compute_scope_display(self):
+        job_title_labels = dict(JOB_TITLE_SELECTION)
         for line in self:
             parts = []
             if line.store_code:
@@ -91,11 +112,37 @@ class CtkmProgramNotifyLine(models.Model):
                 parts.append(line.store_code_id.display_name)
             if line.mien:
                 parts.append(line.mien)
+            if line.job_title:
+                parts.append(job_title_labels.get(line.job_title, line.job_title))
             if line.job_id:
                 parts.append(line.job_id.name)
             line.scope_display = ' / '.join(parts) if parts else ''
 
-    def _get_notify_employee_domain(self):
+    @api.depends('job_title', 'job_id', 'stt')
+    def _compute_step_label(self):
+        job_title_labels = dict(JOB_TITLE_SELECTION)
+        for line in self:
+            label = (
+                line.job_id.name
+                or job_title_labels.get(line.job_title, line.job_title)
+                or _('Bước %s') % (line.stt or line.sequence or '')
+            )
+            line.step_label = label
+
+    def _get_recipient_users(self):
+        """User nội bộ hợp lệ của dòng phạm vi."""
+        self.ensure_one()
+        employees = self.notify_employee_ids
+        users = employees.mapped('user_id').filtered(
+            lambda user: user and user.active and not user.share and user.partner_id
+        )
+        skipped = employees.filtered(
+            lambda employee: not employee.user_id
+            or not employee.user_id.active
+            or employee.user_id.share
+            or not employee.user_id.partner_id
+        )
+        return users, skipped
         self.ensure_one()
         domain = [('active', '=', True)]
         if self.mien:
@@ -108,13 +155,15 @@ class CtkmProgramNotifyLine(models.Model):
                 ('ma_bo_phan_id', '=', self.store_code_id.id),
                 ('store_id', '=', store_id),
             ]
+        if self.job_title:
+            domain.append(('job_title', '=', self.job_title))
         if self.job_id:
             domain.append(('job_id', '=', self.job_id.id))
         return domain
 
     def _get_default_notify_employees(self):
         self.ensure_one()
-        if not self.store_code_id and not self.job_id:
+        if not self.store_code_id and not self.job_title and not self.job_id:
             return self.env['hr.employee']
         return self.env['hr.employee'].search(self._get_notify_employee_domain())
 
@@ -136,13 +185,17 @@ class CtkmProgramNotifyLine(models.Model):
             )
         else:
             self.notify_employee_ids = False
-        if self.store_code_id or self.job_id:
+        if self.store_code_id or self.job_title or self.job_id:
             self.notify_employee_ids = self._get_default_notify_employees()
 
     @api.onchange('store_code_id')
     def _onchange_store_code_id(self):
         if self.store_code_id and self.store_code_id.mien:
             self.mien = self.store_code_id.mien
+        self.notify_employee_ids = self._get_default_notify_employees()
+
+    @api.onchange('job_title')
+    def _onchange_job_title(self):
         self.notify_employee_ids = self._get_default_notify_employees()
 
     @api.onchange('job_id')
@@ -168,6 +221,24 @@ class CtkmProgramNotifyLine(models.Model):
                     % (', '.join(invalid.mapped('name')), line.mien)
                 )
 
+    @api.constrains('job_title', 'notify_employee_ids')
+    def _check_notify_employee_job_title(self):
+        job_title_labels = dict(JOB_TITLE_SELECTION)
+        for line in self:
+            if not line.job_title:
+                continue
+            invalid = line.notify_employee_ids.filtered(
+                lambda employee: employee.job_title != line.job_title
+            )
+            if invalid:
+                raise ValidationError(
+                    'Nhân viên %s không có chức vụ %s.'
+                    % (
+                        ', '.join(invalid.mapped('name')),
+                        job_title_labels.get(line.job_title, line.job_title),
+                    )
+                )
+
     @api.constrains('job_id', 'notify_employee_ids')
     def _check_notify_employee_job(self):
         for line in self:
@@ -178,6 +249,6 @@ class CtkmProgramNotifyLine(models.Model):
             )
             if invalid:
                 raise ValidationError(
-                    'Nhân viên %s không có chức vụ %s.'
+                    'Nhân viên %s không có Job Position %s.'
                     % (', '.join(invalid.mapped('name')), line.job_id.name)
                 )

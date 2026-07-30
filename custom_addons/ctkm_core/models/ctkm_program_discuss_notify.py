@@ -30,6 +30,118 @@ class CtkmProgramDiscussNotify(models.Model):
             or not employee.user_id.partner_id
         )
 
+    def _ctkm_first_unsent_notify_line(self):
+        """Dòng phạm vi chưa gửi, theo thứ tự sequence/STT."""
+        self.ensure_one()
+        lines = self.notify_line_ids.sorted(lambda line: (line.sequence, line.id))
+        return lines.filtered(lambda line: not line.notified)[:1]
+
+    def _ctkm_notify_message_body_for_line(self, notify_line):
+        self.ensure_one()
+        lines = [Markup("<b>%s</b>") % escape(self.name or "")]
+        step = notify_line.step_label or ""
+        if step:
+            lines.append(Markup("Bước xử lý: <b>%s</b>") % escape(step))
+        if self.user_id:
+            lines.append(Markup("Người phụ trách: %s") % escape(self.user_id.name))
+        description = self._ctkm_notify_plain_text(self.description)
+        if description:
+            lines.append(Markup("Mô tả: %s") % escape(description))
+        note = self._ctkm_notify_plain_text(self.note)
+        if note:
+            lines.append(Markup("Ghi chú: %s") % escape(note))
+        lines.append(self._ctkm_notify_detail_button_markup())
+        return Markup("<br/>").join(lines)
+
+    def _ctkm_send_notify_line(self, notify_line, handover_note=False, handover_attachments=None):
+        """Gửi OdooBot + tạo task cho một dòng phạm vi."""
+        self.ensure_one()
+        users, skipped = notify_line._get_recipient_users()
+        if not users:
+            if skipped:
+                raise UserError(
+                    _(
+                        "Bước \"%s\" không có người nhận hợp lệ. "
+                        "Các nhân viên sau chưa có tài khoản nội bộ: %s"
+                    )
+                    % (notify_line.step_label or "", ", ".join(skipped.mapped("name")))
+                )
+            raise UserError(
+                _('Bước "%s" chưa có người nhận thông báo.')
+                % (notify_line.step_label or "")
+            )
+
+        body = self._ctkm_notify_message_body_for_line(notify_line)
+        Task = self.env["ctkm.task"]
+        sent_users = self.env["res.users"]
+        # Bước đầu: kèm ghi chú/file chương trình vào handover để bước sau kế thừa chuỗi
+        if not handover_note and self.note:
+            handover_note = Markup("<p><b>%s</b></p>%s") % (
+                escape(_("Ghi chú chương trình")),
+                Markup(self.note),
+            )
+        if handover_attachments is None:
+            handover_attachments = self.notify_document_ids
+
+        for user in users:
+            if self._post_ctkm_bot_discuss_message(user, body):
+                sent_users |= user
+                Task._get_or_create_for_program_user(
+                    self,
+                    user,
+                    notify_line=notify_line,
+                    handover_note=handover_note,
+                    handover_attachments=handover_attachments,
+                )
+
+        notify_line.write({
+            "notified": True,
+            "notified_date": fields.Datetime.now(),
+        })
+
+        log_parts = [
+            _("Đã gửi thông báo Discuss tới bước <b>%s</b> (%s người nhận).")
+            % (escape(notify_line.step_label or ""), len(sent_users))
+        ]
+        if skipped:
+            log_parts.append(
+                _("Bỏ qua %s nhân viên chưa có tài khoản nội bộ: %s")
+                % (len(skipped), ", ".join(skipped.mapped("name")))
+            )
+        if sent_users:
+            log_parts.append(_("Người nhận: %s") % ", ".join(sent_users.mapped("name")))
+        self.message_post(
+            body=Markup("<br/>").join(Markup("%s") % part for part in log_parts),
+            subtype_xmlid="mail.mt_note",
+        )
+        return sent_users
+
+    def action_send_discuss_notification(self):
+        for program in self:
+            line = program._ctkm_first_unsent_notify_line()
+            if not line:
+                if not program.notify_line_ids:
+                    raise UserError(_("Vui lòng chọn ít nhất một người nhận trong phạm vi thông báo."))
+                raise UserError(_(
+                    "Đã gửi đủ các bước phạm vi thông báo. "
+                    "Bước tiếp theo sẽ được gửi khi người ở bước hiện tại bấm Chuyển tiếp."
+                ))
+            program._ctkm_send_notify_line(line)
+
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": _("Gửi tin thành công"),
+                "message": _(
+                    "OdooBot CTKM đã gửi tới bước phạm vi đầu tiên chưa gửi. "
+                    "Các bước sau sẽ nhận tin khi bước trước bấm Chuyển tiếp."
+                ),
+                "type": "success",
+                "sticky": False,
+            },
+        }
+
     def _ctkm_notify_plain_text(self, html_value):
         return html2plaintext(html_value or "").replace("\xa0", " ").strip()
 
@@ -172,46 +284,3 @@ class CtkmProgramDiscussNotify(models.Model):
             )
             return Message
 
-    def action_send_discuss_notification(self):
-        for program in self:
-            users, skipped_employees = program._ctkm_notify_recipient_users()
-            if not users:
-                if skipped_employees:
-                    raise UserError(
-                        _(
-                            "Không có người nhận hợp lệ trong phạm vi thông báo. "
-                            "Các nhân viên sau chưa có tài khoản nội bộ: %s"
-                        )
-                        % ", ".join(skipped_employees.mapped("name"))
-                    )
-                raise UserError(_("Vui lòng chọn ít nhất một người nhận trong phạm vi thông báo."))
-
-            body = program._ctkm_notify_message_body()
-            sent_users = self.env["res.users"]
-            for user in users:
-                if program._post_ctkm_bot_discuss_message(user, body):
-                    sent_users |= user
-
-            log_parts = [_("Đã gửi thông báo Discuss tới %s người nhận.") % len(sent_users)]
-            if skipped_employees:
-                log_parts.append(
-                    _("Bỏ qua %s nhân viên chưa có tài khoản nội bộ: %s")
-                    % (len(skipped_employees), ", ".join(skipped_employees.mapped("name")))
-                )
-            if sent_users:
-                log_parts.append(_("Người nhận: %s") % ", ".join(sent_users.mapped("name")))
-            program.message_post(
-                body=Markup("<br/>").join(Markup("%s") % part for part in log_parts),
-                subtype_xmlid="mail.mt_note",
-            )
-
-        return {
-            "type": "ir.actions.client",
-            "tag": "display_notification",
-            "params": {
-                "title": _("Gửi tin thành công"),
-                "message": _("OdooBot CTKM đã gửi thông báo tới người nhận trong phạm vi thông báo."),
-                "type": "success",
-                "sticky": False,
-            },
-        }

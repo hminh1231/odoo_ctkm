@@ -53,7 +53,8 @@ import { patch } from "@web/core/utils/patch";
     (document.head || document.documentElement).appendChild(style);
 })();
 
-const CTKM_DETAIL_BTN_SELECTOR = "a.o_ctkm_notify_detail_btn, a.o_ctkm_manager_confirm_btn";
+const CTKM_DETAIL_BTN_SELECTOR =
+    "a.o_ctkm_notify_detail_btn, a.o_ctkm_manager_confirm_btn, a.o_ctkm_task_open_btn";
 const CTKM_TASKS_PATH = "/odoo/ctkm.task";
 
 function extractCtkmProgramId(link) {
@@ -135,17 +136,23 @@ patch(Store.prototype, {
         ev.stopImmediatePropagation?.();
 
         const isManagerConfirm = link.classList.contains("o_ctkm_manager_confirm_btn");
-        if (isManagerConfirm) {
+        const isTaskOpen = link.classList.contains("o_ctkm_task_open_btn");
+        if (isManagerConfirm || isTaskOpen) {
             const taskId = extractCtkmTaskId(link);
             if (!taskId) {
                 this.env.services.notification.add(
-                    _t("Không tìm thấy công việc cần xác nhận."),
+                    isManagerConfirm
+                        ? _t("Không tìm thấy công việc cần xác nhận.")
+                        : _t("Không tìm thấy công việc CTKM."),
                     { type: "warning" }
                 );
                 return true;
             }
+            const method = isManagerConfirm
+                ? "action_open_for_manager_confirm"
+                : "action_open_for_manager_confirm";
             this.env.services.orm
-                .call("ctkm.task", "action_open_for_manager_confirm", [taskId])
+                .call("ctkm.task", method, [taskId])
                 .then((action) => {
                     rememberCtkmApp(this.env.services.menu, action?.menu_id);
                     const url =
