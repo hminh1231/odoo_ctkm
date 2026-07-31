@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <record id="ctkm_inventory_tem_tag_rule_store_user" model="ir.rule">
+            <field name="name">CTKM Inventory Tem/Tag: same employee store</field>
+            <field name="model_id" ref="model_ctkm_inventory_tem_tag"/>
+            <field name="domain_force">[('store_key', 'in', user.env['ctkm.inventory.tem.tag'].current_user_store_keys())]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <record id="ctkm_inventory_tem_tag_rule_manager_all" model="ir.rule">
+            <field name="name">CTKM Inventory Tem/Tag: manager all stores</field>
+            <field name="model_id" ref="model_ctkm_inventory_tem_tag"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('ctkm_core.group_ctkm_manager'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+    </data>
+</odoo>

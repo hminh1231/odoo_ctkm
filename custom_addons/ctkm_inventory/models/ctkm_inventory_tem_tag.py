@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 
-from odoo import fields, models
+from odoo import api, fields, models
+
+
+def _normalize_store_code(value):
+    value = ' '.join((value or '').strip().split())
+    return value.upper() if value else False
 
 
 class CtkmInventoryTemTag(models.Model):
@@ -20,5 +25,37 @@ class CtkmInventoryTemTag(models.Model):
     )
     tem_tag = fields.Char(string='Tem/tag', index=True)
     store = fields.Char(string='Store', index=True)
+    store_key = fields.Char(
+        string='Store Key',
+        compute='_compute_store_key',
+        store=True,
+        index=True,
+        readonly=True,
+    )
     quantity = fields.Float(string='Quantity', default=0.0)
     import_filename = fields.Char(string='File nhập', readonly=True)
+
+    @api.depends('store')
+    def _compute_store_key(self):
+        for record in self:
+            record.store_key = _normalize_store_code(record.store)
+
+    @api.model
+    def current_user_store_keys(self):
+        user = self.env.user.sudo()
+        codes = []
+        if 'employee_ma_bo_phan_id' in user._fields and user.employee_ma_bo_phan_id:
+            codes.append(user.employee_ma_bo_phan_id.code)
+        if 'employee_id' in user._fields and user.employee_id:
+            employee = user.employee_id.sudo()
+            if 'ma_bo_phan' in employee._fields:
+                codes.append(employee.ma_bo_phan)
+            if 'ma_bo_phan_id' in employee._fields and employee.ma_bo_phan_id:
+                codes.append(employee.ma_bo_phan_id.code)
+
+        keys = []
+        for code in codes:
+            key = _normalize_store_code(code)
+            if key and key not in keys:
+                keys.append(key)
+        return keys

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'CTKM Kho',
-    'version': '1.0',
+    'version': '1.1',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý tồn kho tem/tag cho CTKM',
     'depends': ['ctkm_core', 'base_import'],
@@ -9,6 +9,7 @@
         'python': ['pandas', 'python_calamine'],
     },
     'data': [
+        'security/ctkm_inventory_security.xml',
         'security/ir.model.access.csv',
         'views/ctkm_inventory_import_wizard_views.xml',
         'views/ctkm_inventory_tem_tag_views.xml',
