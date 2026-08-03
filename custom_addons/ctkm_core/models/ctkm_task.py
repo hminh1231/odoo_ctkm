@@ -139,13 +139,21 @@ class CtkmTask(models.Model):
     program_badge_format = fields.Selection(
         related='program_id.badge_format', string='Kích thước nhãn', readonly=True,
     )
+    # Binary qua sudo (không đi ACL attachment của program).
     program_badge_image = fields.Image(
-        related='program_id.badge_image', string='Ảnh nhãn', readonly=True,
+        string='Ảnh nhãn',
+        compute='_compute_program_badge_image',
+        readonly=True,
     )
+    # Bản copy gắn task — nhân viên đọc được mà không cần quyền program attachment.
     program_notify_document_ids = fields.Many2many(
-        related='program_id.notify_document_ids',
+        'ir.attachment',
+        'ctkm_task_program_document_rel',
+        'task_id',
+        'attachment_id',
         string='Tài liệu gửi kèm thông báo',
         readonly=True,
+        copy=False,
     )
     program_ticket_instructions = fields.Html(
         related='program_id.ticket_instructions',
@@ -211,6 +219,11 @@ class CtkmTask(models.Model):
     def _compute_can_confirm_as_manager(self):
         for task in self:
             task.can_confirm_as_manager = task._user_can_confirm_as_manager(self.env.user)
+
+    @api.depends('program_id', 'program_id.badge_image')
+    def _compute_program_badge_image(self):
+        for task in self:
+            task.program_badge_image = task.program_id.sudo().badge_image or False
 
     @api.depends('user_id')
     @api.depends_context('uid')
@@ -673,10 +686,11 @@ class CtkmTask(models.Model):
             handover_note, handover_docs = self._ctkm_collect_handover_from_line(
                 program, current_line
             )
-            sent = program._ctkm_send_notify_line(
+            # sudo: tạo task/file cho người bước sau không thuộc quyền user hiện tại
+            sent = program.sudo()._ctkm_send_notify_line(
                 next_line,
                 handover_note=handover_note,
-                handover_attachments=handover_docs,
+                handover_attachments=handover_docs.sudo() if handover_docs else handover_docs,
             )
             return {
                 'type': 'ir.actions.client',
@@ -774,17 +788,49 @@ class CtkmTask(models.Model):
         return content
 
     @api.model
-    def _duplicate_attachments_for_task(self, attachments, task):
-        """Copy file để bước sau đọc được (ACL theo task mới)."""
+    def _duplicate_attachments_for_task(self, attachments, task, description_prefix=None):
+        """Copy file để bước sau / nhân viên đọc được (ACL theo task mới).
+
+        Luôn sudo: người bấm Chuyển tiếp không có quyền ghi attachment
+        lên task của người bước tiếp theo.
+        """
         Attachment = self.env['ir.attachment'].sudo()
         copies = Attachment
-        for att in attachments:
-            copies |= att.copy({
+        for att in attachments.sudo():
+            vals = {
                 'res_model': 'ctkm.task',
                 'res_id': task.id,
                 'name': att.name,
-            })
+            }
+            if description_prefix:
+                vals['description'] = '%s%s' % (description_prefix, att.id)
+            copies |= att.copy(vals)
         return copies
+
+    def _ensure_program_notify_documents(self):
+        """Copy tài liệu CTKM vào task để nhân viên không bị chặn ACL program."""
+        for task in self.sudo():
+            program = task.program_id
+            if not program or not task.id:
+                continue
+            Attachment = self.env['ir.attachment'].sudo()
+            copies = Attachment
+            for doc in program.notify_document_ids:
+                marker = 'ctkm_program_doc:%s' % doc.id
+                existing = Attachment.search([
+                    ('res_model', '=', 'ctkm.task'),
+                    ('res_id', '=', task.id),
+                    ('description', '=', marker),
+                ], limit=1)
+                if not existing:
+                    existing = doc.copy({
+                        'res_model': 'ctkm.task',
+                        'res_id': task.id,
+                        'name': doc.name,
+                        'description': marker,
+                    })
+                copies |= existing
+            task.program_notify_document_ids = [(6, 0, copies.ids)]
 
     @api.model
     def _ctkm_collect_handover_from_line(self, program, notify_line):
@@ -852,6 +898,7 @@ class CtkmTask(models.Model):
             if handover_attachments and not task.handover_document_ids:
                 copies = self._duplicate_attachments_for_task(handover_attachments, task)
                 task.handover_document_ids = [(6, 0, copies.ids)]
+            task._ensure_program_notify_documents()
             return task
         vals = {
             'program_id': program.id,
@@ -867,10 +914,14 @@ class CtkmTask(models.Model):
             with self.env.cr.savepoint():
                 task = Task.create(vals)
         except IntegrityError:
-            return Task.search(domain, limit=1)
+            task = Task.search(domain, limit=1)
+            if task:
+                task._ensure_program_notify_documents()
+            return task
         if handover_attachments:
             copies = self._duplicate_attachments_for_task(handover_attachments, task)
             task.handover_document_ids = [(6, 0, copies.ids)]
+        task._ensure_program_notify_documents()
         return task
 
     @api.model
@@ -913,6 +964,7 @@ class CtkmTask(models.Model):
         if not task:
             raise UserError(_('Không tạo được công việc CTKM.'))
 
+        task._ensure_program_notify_documents()
         url, app_menu_id = task._ctkm_task_form_url()
         return {
             'type': 'ir.actions.act_url',
@@ -941,6 +993,7 @@ class CtkmTask(models.Model):
             raise UserError(_(
                 'Bạn không có quyền mở công việc này để xác nhận.'
             ))
+        task._ensure_program_notify_documents()
         url, app_menu_id = task._ctkm_task_form_url()
         return {
             'type': 'ir.actions.act_url',
