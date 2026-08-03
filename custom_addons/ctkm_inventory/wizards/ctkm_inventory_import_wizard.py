@@ -2,18 +2,26 @@
 
 import base64
 import io
+import logging
 import math
 import re
 import unicodedata
+from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from zipfile import ZipFile
 from xml.etree import ElementTree
 
+from markupsafe import Markup, escape
+
 from odoo import _, fields, models
+from odoo.addons.ctkm_inventory.models.ctkm_inventory_tem_tag import _normalize_store_code
 from odoo.exceptions import UserError
 
 
 _MAIN_NS = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+_CTKM_BOT_XMLID = 'business_discuss_bots.user_bot_ctkm'
+
+_logger = logging.getLogger(__name__)
 
 
 class CtkmInventoryImportWizard(models.TransientModel):
@@ -74,12 +82,181 @@ class CtkmInventoryImportWizard(models.TransientModel):
             Inventory.search(domain).unlink()
 
         created = Inventory.create(values)
+        self._notify_imported_tem_tags(created)
         action = self.env.ref('ctkm_inventory.action_ctkm_inventory_tem_tag').read()[0]
         action.update({
             'name': _('Tem/Tag đã import'),
             'domain': [('id', 'in', created.ids)],
         })
         return action
+
+    def _notify_imported_tem_tags(self, records):
+        grouped = self._group_tem_tag_records_by_store(records.sudo())
+        if not grouped:
+            return False
+
+        sent_users = self.env['res.users']
+        skipped_store_names = []
+        for group in grouped.values():
+            users = self._get_store_recipient_users(group['store_key'])
+            if not users:
+                skipped_store_names.append(group['store_name'])
+                continue
+            body = self._tem_tag_import_message_body(
+                group['program'],
+                group['store_name'],
+                group['items'].values(),
+            )
+            for user in users:
+                if self._post_tem_tag_bot_message(user, body):
+                    sent_users |= user
+
+        self._log_tem_tag_notification_result(records.sudo(), sent_users, skipped_store_names)
+        return True
+
+    def _group_tem_tag_records_by_store(self, records):
+        grouped = OrderedDict()
+        for record in records.sorted(
+            lambda rec: (
+                rec.program_id.id,
+                rec.store_key or '',
+                rec.material_code or '',
+                rec.tem_tag or '',
+                rec.id,
+            )
+        ):
+            store_key = record.store_key or _normalize_store_code(record.store)
+            if not store_key:
+                continue
+            group_key = (record.program_id.id, store_key)
+            group = grouped.setdefault(
+                group_key,
+                {
+                    'program': record.program_id,
+                    'store_key': store_key,
+                    'store_name': record.store or store_key,
+                    'items': OrderedDict(),
+                },
+            )
+            item_key = (record.tem_tag or '', record.material_code or '')
+            item = group['items'].setdefault(
+                item_key,
+                {
+                    'label': self._tem_tag_item_label(record),
+                    'quantity': 0.0,
+                },
+            )
+            item['quantity'] += record.quantity or 0.0
+        return grouped
+
+    def _tem_tag_item_label(self, record):
+        tem_tag = (record.tem_tag or '').strip()
+        material_code = (record.material_code or '').strip()
+        if tem_tag and material_code:
+            return '%s (%s)' % (tem_tag, material_code)
+        return tem_tag or material_code or _('Không có mã')
+
+    def _get_store_recipient_users(self, store_key):
+        Employee = self.env['hr.employee'].sudo()
+        employees = Employee.search([('active', '=', True), ('user_id', '!=', False)])
+        employees = employees.filtered(
+            lambda employee: store_key in self._employee_store_keys(employee)
+        )
+        return employees.mapped('user_id').filtered(
+            lambda user: user and user.active and not user.share and user.partner_id
+        )
+
+    def _employee_store_keys(self, employee):
+        codes = []
+        if 'ma_bo_phan' in employee._fields:
+            codes.append(employee.ma_bo_phan)
+        if 'ma_bo_phan_id' in employee._fields and employee.ma_bo_phan_id:
+            codes.append(employee.ma_bo_phan_id.code)
+        if 'store_id' in employee._fields and employee.store_id:
+            codes.append(employee.store_id.code)
+        if 'current_version_id' in employee._fields and employee.current_version_id:
+            version = employee.current_version_id
+            if 'store_id' in version._fields and version.store_id:
+                codes.append(version.store_id.code)
+
+        keys = set()
+        for code in codes:
+            key = _normalize_store_code(code)
+            if key:
+                keys.add(key)
+        return keys
+
+    def _tem_tag_import_message_body(self, program, store_name, items):
+        lines = [
+            Markup('Chuong trinh khuyen mai <b>%s</b>') % escape(program.name or ''),
+            Markup('cua hang <b>%s</b>') % escape(store_name or ''),
+            Markup('da nhan so tem/tag la'),
+        ]
+        for index, item in enumerate(items, start=1):
+            lines.append(
+                Markup('%s. %s voi so luong %s')
+                % (
+                    index,
+                    escape(item['label']),
+                    escape(self._format_tem_tag_quantity(item['quantity'])),
+                )
+            )
+        return Markup('<br/>').join(lines)
+
+    def _format_tem_tag_quantity(self, quantity):
+        quantity = quantity or 0.0
+        if float(quantity).is_integer():
+            return str(int(quantity))
+        return ('%.6f' % quantity).rstrip('0').rstrip('.')
+
+    def _post_tem_tag_bot_message(self, recipient_user, body):
+        Message = self.env['mail.message']
+        if not recipient_user or recipient_user.share or not recipient_user.partner_id:
+            return Message
+        bot_user = self.env.ref(_CTKM_BOT_XMLID, raise_if_not_found=False)
+        if not bot_user or not bot_user.partner_id:
+            _logger.warning('ctkm_inventory: CTKM bot user is not configured')
+            return Message
+        try:
+            chat = (
+                self.env['discuss.channel']
+                .sudo()
+                .with_user(recipient_user)
+                ._get_or_create_chat([bot_user.partner_id.id], pin=True)
+            )
+            return chat.with_user(bot_user).sudo().message_post(
+                body=body,
+                message_type='comment',
+                subtype_xmlid='mail.mt_comment',
+                author_id=bot_user.partner_id.id,
+            )
+        except Exception:
+            _logger.exception(
+                'ctkm_inventory: Tem/Tag bot notification failed recipient_user_id=%s',
+                recipient_user.id,
+            )
+            return Message
+
+    def _log_tem_tag_notification_result(self, records, sent_users, skipped_store_names):
+        programs = records.mapped('program_id')
+        if not programs:
+            return
+        log_lines = [
+            _('Đã import Tem/Tag và gửi thông báo Discuss tới %s người nhận.')
+            % len(sent_users)
+        ]
+        if sent_users:
+            log_lines.append(_('Người nhận: %s') % ', '.join(sent_users.mapped('name')))
+        if skipped_store_names:
+            log_lines.append(
+                _('Không tìm thấy nhân viên có tài khoản nội bộ cho cửa hàng: %s')
+                % ', '.join(skipped_store_names)
+            )
+        for program in programs:
+            program.message_post(
+                body=Markup('<br/>').join(Markup('%s') % escape(line) for line in log_lines),
+                subtype_xmlid='mail.mt_note',
+            )
 
     def _decode_upload(self):
         try:

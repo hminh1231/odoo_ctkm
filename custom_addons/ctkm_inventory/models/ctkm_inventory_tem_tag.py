@@ -52,6 +52,12 @@ class CtkmInventoryTemTag(models.Model):
                 codes.append(employee.ma_bo_phan)
             if 'ma_bo_phan_id' in employee._fields and employee.ma_bo_phan_id:
                 codes.append(employee.ma_bo_phan_id.code)
+            if 'store_id' in employee._fields and employee.store_id:
+                codes.append(employee.store_id.code)
+            if 'current_version_id' in employee._fields and employee.current_version_id:
+                version = employee.current_version_id
+                if 'store_id' in version._fields and version.store_id:
+                    codes.append(version.store_id.code)
 
         keys = []
         for code in codes:
