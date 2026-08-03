@@ -143,6 +143,8 @@ class CtkmProgramNotifyLine(models.Model):
             or not employee.user_id.partner_id
         )
         return users, skipped
+
+    def _get_notify_employee_domain(self):
         self.ensure_one()
         domain = [('active', '=', True)]
         if self.mien:
@@ -166,6 +168,20 @@ class CtkmProgramNotifyLine(models.Model):
         if not self.store_code_id and not self.job_title and not self.job_id:
             return self.env['hr.employee']
         return self.env['hr.employee'].search(self._get_notify_employee_domain())
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            program_id = vals.get('program_id')
+            if program_id and not vals.get('sequence'):
+                existing = self.search([('program_id', '=', program_id)])
+                vals['sequence'] = (max(existing.mapped('sequence') or [0]) + 10)
+            elif program_id and vals.get('sequence') == 10:
+                # Nhiều dòng mặc định sequence=10 → tăng dần theo số dòng hiện có
+                existing = self.search([('program_id', '=', program_id)])
+                if existing:
+                    vals['sequence'] = max(existing.mapped('sequence') or [0]) + 10
+        return super().create(vals_list)
 
     @api.depends('program_id.notify_line_ids.sequence', 'sequence')
     def _compute_stt(self):

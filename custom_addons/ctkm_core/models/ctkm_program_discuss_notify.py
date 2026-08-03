@@ -30,11 +30,18 @@ class CtkmProgramDiscussNotify(models.Model):
             or not employee.user_id.partner_id
         )
 
-    def _ctkm_first_unsent_notify_line(self):
-        """Dòng phạm vi chưa gửi, theo thứ tự sequence/STT."""
+    def _ctkm_ordered_notify_lines(self):
         self.ensure_one()
-        lines = self.notify_line_ids.sorted(lambda line: (line.sequence, line.id))
-        return lines.filtered(lambda line: not line.notified)[:1]
+        return self.notify_line_ids.sorted(lambda line: (line.sequence, line.id))
+
+    def _ctkm_first_notify_line(self):
+        """Dòng phạm vi đầu tiên (STT 1) — chỉ bước này được Gửi tin khởi động."""
+        return self._ctkm_ordered_notify_lines()[:1]
+
+    def _ctkm_first_unsent_notify_line(self):
+        """Dòng phạm vi chưa gửi, theo thứ tự sequence/STT (dùng khi Chuyển tiếp)."""
+        self.ensure_one()
+        return self._ctkm_ordered_notify_lines().filtered(lambda line: not line.notified)[:1]
 
     def _ctkm_notify_message_body_for_line(self, notify_line):
         self.ensure_one()
@@ -117,16 +124,32 @@ class CtkmProgramDiscussNotify(models.Model):
         return sent_users
 
     def action_send_discuss_notification(self):
+        """Chỉ khởi động bước STT 1. Các bước sau chỉ qua Chuyển tiếp trên công việc."""
         for program in self:
-            line = program._ctkm_first_unsent_notify_line()
-            if not line:
-                if not program.notify_line_ids:
-                    raise UserError(_("Vui lòng chọn ít nhất một người nhận trong phạm vi thông báo."))
+            first_line = program._ctkm_first_notify_line()
+            if not first_line:
+                raise UserError(_("Vui lòng chọn ít nhất một người nhận trong phạm vi thông báo."))
+
+            # Đã gửi bước đầu rồi → không được Gửi tin nhảy sang bước 2/3/...
+            if first_line.notified:
+                next_pending = program._ctkm_ordered_notify_lines().filtered(
+                    lambda line: not line.notified
+                )
+                if next_pending:
+                    raise UserError(_(
+                        "Đã gửi bước đầu \"%s\". "
+                        "Bước \"%s\" chỉ nhận tin khi người ở bước trước "
+                        "hoàn thành, được xác nhận quản lý và bấm Chuyển tiếp."
+                    ) % (
+                        first_line.step_label or "",
+                        next_pending[:1].step_label or "",
+                    ))
                 raise UserError(_(
                     "Đã gửi đủ các bước phạm vi thông báo. "
-                    "Bước tiếp theo sẽ được gửi khi người ở bước hiện tại bấm Chuyển tiếp."
+                    "Bước tiếp theo chỉ mở khi người ở bước hiện tại bấm Chuyển tiếp."
                 ))
-            program._ctkm_send_notify_line(line)
+
+            program._ctkm_send_notify_line(first_line)
 
         return {
             "type": "ir.actions.client",
@@ -134,8 +157,8 @@ class CtkmProgramDiscussNotify(models.Model):
             "params": {
                 "title": _("Gửi tin thành công"),
                 "message": _(
-                    "OdooBot CTKM đã gửi tới bước phạm vi đầu tiên chưa gửi. "
-                    "Các bước sau sẽ nhận tin khi bước trước bấm Chuyển tiếp."
+                    "OdooBot CTKM đã gửi tới bước đầu (STT 1). "
+                    "Bước sau chỉ nhận tin khi bước trước bấm Chuyển tiếp."
                 ),
                 "type": "success",
                 "sticky": False,

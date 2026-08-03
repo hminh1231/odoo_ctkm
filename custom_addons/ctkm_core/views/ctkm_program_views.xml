@@ -52,8 +52,10 @@
                                     string="Gửi tin" class="btn-primary"
                                     icon="fa-paper-plane"/>
                                 <div class="text-muted mt-1">
-                                    Gửi theo thứ tự Số thứ tự: bước 1 trước; bước sau nhận tin
-                                    khi bước trước bấm <b>Chuyển tiếp</b> (kèm ghi chú/file đã đẩy).
+                                    <b>Gửi tin</b> chỉ gửi bước <b>STT 1</b>.
+                                    Bước sau chỉ nhận tin khi bước trước hoàn thành,
+                                    xác nhận quản lý và bấm <b>Chuyển tiếp</b>
+                                    (kèm ghi chú/file đẩy qua).
                                 </div>
                             </div>
                             <field name="notify_line_ids" nolabel="1">
