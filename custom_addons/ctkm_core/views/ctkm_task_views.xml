@@ -190,7 +190,7 @@
                 <filter string="Của tôi" name="my_tasks"
                     domain="[('user_id', '=', uid)]"/>
                 <filter string="Chờ tôi xác nhận" name="waiting_my_confirm"
-                    domain="[('state', '=', 'waiting_confirm'), ('user_id.employee_id.parent_id.user_id', '=', uid)]"/>
+                    domain="[('state', '=', 'waiting_confirm'), ('user_id.employee_ids.parent_id.user_id', '=', uid)]"/>
                 <separator/>
                 <filter string="Chưa bắt đầu" name="state_todo"
                     domain="[('state', '=', 'todo')]"/>
@@ -223,7 +223,7 @@
             ('user_id', '=', uid),
             '&amp;',
                 ('state', '=', 'waiting_confirm'),
-                ('user_id.employee_id.parent_id.user_id', '=', uid)]</field>
+                ('user_id.employee_ids.parent_id.user_id', '=', uid)]</field>
         <field name="context">{'search_default_my_tasks': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
