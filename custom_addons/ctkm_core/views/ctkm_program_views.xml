@@ -26,6 +26,8 @@
                             <field name="date_end" invisible="1"/>
                             <field name="notify_code" placeholder="VD: TB-2026-001"/>
                             <field name="hour_quota" placeholder="VD: 8 giờ"/>
+                            <field name="checklist_progress_display" readonly="1"/>
+                            <field name="checklist_current_step" readonly="1"/>
                         </group>
                         <group name="right_program_details">
                             <field name="organizer_id"/>
@@ -70,6 +72,45 @@
                                         domain="[('active', '=', True), ('mien', '=', mien)]"
                                         options="{'no_create': True, 'no_quick_create': True}"/>
                                     <field name="notified" string="Đã gửi" readonly="1"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Tiến độ 19 bước" name="program_checklist">
+                            <group>
+                                <group>
+                                    <field name="checklist_progress_display" readonly="1"/>
+                                    <field name="checklist_current_step" readonly="1"/>
+                                </group>
+                                <group>
+                                    <div class="text-muted mb-2" colspan="2">
+                                        Đánh dấu từng bước theo quy trình CTKM.
+                                        Có thể đổi trạng thái hoặc tick cột <b>Xong</b>.
+                                    </div>
+                                    <button name="action_reset_checklist_defaults" type="object"
+                                        string="Tạo lại 19 bước chuẩn" class="btn-secondary"
+                                        confirm="Xóa checklist hiện tại và tạo lại 19 bước mặc định?"
+                                        invisible="checklist_line_ids"
+                                        groups="ctkm_core.group_ctkm_user"/>
+                                    <button name="action_reset_checklist_defaults" type="object"
+                                        string="Reset 19 bước chuẩn" class="btn-link"
+                                        confirm="Xóa checklist hiện tại và tạo lại 19 bước mặc định?"
+                                        invisible="not checklist_line_ids"
+                                        groups="ctkm_core.group_ctkm_manager"/>
+                                </group>
+                            </group>
+                            <field name="checklist_line_ids" nolabel="1">
+                                <list editable="bottom" default_order="sequence">
+                                    <field name="sequence" string="STT" width="60px"/>
+                                    <field name="name" string="Công việc"/>
+                                    <field name="state" string="Trạng thái" widget="badge"
+                                        decoration-info="state == 'todo'"
+                                        decoration-warning="state == 'progress'"
+                                        decoration-success="state == 'done'"/>
+                                    <field name="is_done" string="Xong" widget="boolean_toggle"/>
+                                    <field name="user_id" string="Phụ trách" widget="many2one_avatar_user"
+                                        options="{'no_create': True}"/>
+                                    <field name="done_date" string="Ngày xong"/>
+                                    <field name="note" string="Ghi chú"/>
                                 </list>
                             </field>
                         </page>

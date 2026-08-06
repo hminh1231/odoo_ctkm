@@ -104,6 +104,28 @@ class CtkmProgram(models.Model):
         string='Phạm vi thông báo',
         copy=True,
     )
+    checklist_line_ids = fields.One2many(
+        'ctkm.program.checklist.line',
+        'program_id',
+        string='Checklist công việc',
+        copy=True,
+    )
+    checklist_done_count = fields.Integer(
+        string='Số bước đã xong',
+        compute='_compute_checklist_progress',
+    )
+    checklist_total_count = fields.Integer(
+        string='Tổng số bước',
+        compute='_compute_checklist_progress',
+    )
+    checklist_progress_display = fields.Char(
+        string='Tiến độ checklist',
+        compute='_compute_checklist_progress',
+    )
+    checklist_current_step = fields.Char(
+        string='Đang ở bước',
+        compute='_compute_checklist_progress',
+    )
 
     @api.depends(
         'create_date', 'date_begin', 'notify_document_ids.name',
@@ -134,6 +156,61 @@ class CtkmProgram(models.Model):
                     if line.store_code_id
                 ]
             program.notify_scope_display = ', '.join(scopes) if scopes else ''
+
+    @api.depends(
+        'checklist_line_ids.state',
+        'checklist_line_ids.sequence',
+        'checklist_line_ids.name',
+    )
+    def _compute_checklist_progress(self):
+        for program in self:
+            lines = program.checklist_line_ids.sorted(lambda line: (line.sequence, line.id))
+            total = len(lines)
+            done = len(lines.filtered(lambda line: line.state == 'done'))
+            program.checklist_total_count = total
+            program.checklist_done_count = done
+            program.checklist_progress_display = (
+                _('Đã xong %s/%s') % (done, total) if total else _('Chưa có checklist')
+            )
+            current = lines.filtered(lambda line: line.state != 'done')[:1]
+            if current:
+                program.checklist_current_step = '%s. %s' % (current.sequence, current.name)
+            elif total:
+                program.checklist_current_step = _('Đã hoàn thành tất cả bước')
+            else:
+                program.checklist_current_step = False
+
+    def _ctkm_default_checklist_vals(self):
+        from .ctkm_program_checklist_line import CTKM_CHECKLIST_DEFAULT_STEPS
+        return [
+            {
+                'sequence': index,
+                'name': name,
+                'state': 'todo',
+            }
+            for index, name in enumerate(CTKM_CHECKLIST_DEFAULT_STEPS, start=1)
+        ]
+
+    def _ctkm_ensure_checklist_lines(self):
+        """Tạo 19 bước mặc định nếu chương trình chưa có checklist."""
+        Checklist = self.env['ctkm.program.checklist.line']
+        for program in self:
+            if program.checklist_line_ids:
+                continue
+            vals_list = [
+                {**vals, 'program_id': program.id}
+                for vals in program._ctkm_default_checklist_vals()
+            ]
+            if vals_list:
+                Checklist.create(vals_list)
+        return True
+
+    def action_reset_checklist_defaults(self):
+        """Xóa checklist hiện tại và tạo lại 19 bước chuẩn."""
+        self.ensure_one()
+        self.checklist_line_ids.unlink()
+        self._ctkm_ensure_checklist_lines()
+        return True
 
     def action_open_notify_code_detail(self):
         """Mở trang chi tiết theo mã số thông báo (từ báo cáo pivot)."""
@@ -213,6 +290,7 @@ class CtkmProgram(models.Model):
     def create(self, vals_list):
         programs = super().create(vals_list)
         programs._ctkm_link_notify_documents()
+        programs._ctkm_ensure_checklist_lines()
         return programs
 
     def write(self, vals):
