@@ -35,13 +35,39 @@ class CtkmProgramDiscussNotify(models.Model):
         return self.notify_line_ids.sorted(lambda line: (line.sequence, line.id))
 
     def _ctkm_first_notify_line(self):
-        """Dòng phạm vi đầu tiên (STT 1) — chỉ bước này được Gửi tin khởi động."""
+        """Dòng phạm vi đầu tiên (STT 1)."""
         return self._ctkm_ordered_notify_lines()[:1]
 
     def _ctkm_first_unsent_notify_line(self):
-        """Dòng phạm vi chưa gửi, theo thứ tự sequence/STT (dùng khi Chuyển tiếp)."""
+        """Dòng phạm vi chưa gửi, theo thứ tự sequence/STT."""
         self.ensure_one()
         return self._ctkm_ordered_notify_lines().filtered(lambda line: not line.notified)[:1]
+
+    def _ctkm_ordered_checklist_lines(self):
+        self.ensure_one()
+        return self.checklist_line_ids.sorted(lambda line: (line.sequence, line.id))
+
+    def _ctkm_first_pending_checklist_line(self):
+        """Bước tiến độ tiếp theo cần giao việc (có người phụ trách, chưa gửi tin, chưa xong)."""
+        self.ensure_one()
+        return self._ctkm_ordered_checklist_lines().filtered(
+            lambda line: line.user_id and not line.notified and line.state != 'done'
+        )[:1]
+
+    def _ctkm_next_checklist_line(self, current_line):
+        """Bước tiến độ kế tiếp (có phụ trách, chưa gửi tin) sau bước hiện tại."""
+        self.ensure_one()
+        if not current_line:
+            return self.env['ctkm.program.checklist.line']
+        found = False
+        for line in self._ctkm_ordered_checklist_lines():
+            if found:
+                if line.user_id and not line.notified:
+                    return line
+                continue
+            if line.id == current_line.id:
+                found = True
+        return self.env['ctkm.program.checklist.line']
 
     def _ctkm_notify_message_body_for_line(self, notify_line):
         self.ensure_one()
@@ -60,8 +86,33 @@ class CtkmProgramDiscussNotify(models.Model):
         lines.append(self._ctkm_notify_detail_button_markup())
         return Markup("<br/>").join(lines)
 
+    def _ctkm_checklist_work_message_body(self, checklist_line):
+        """Tin OdooBot giao việc cho người phụ trách một bước tiến độ."""
+        self.ensure_one()
+        lines = [
+            Markup("<b>%s</b>") % escape(self.name or ""),
+            Markup("Công việc của bạn: <b>%s</b>") % escape(
+                checklist_line.name or _("Bước tiến độ")
+            ),
+        ]
+        if checklist_line.sequence:
+            lines.insert(1, Markup("Bước STT: <b>%s</b>") % checklist_line.sequence)
+        if self.user_id:
+            lines.append(Markup("Người phụ trách CTKM: %s") % escape(self.user_id.name))
+        description = self._ctkm_notify_plain_text(self.description)
+        if description:
+            lines.append(Markup("Mô tả CTKM: %s") % escape(description))
+        if checklist_line.note:
+            lines.append(Markup("Ghi chú bước: %s") % escape(checklist_line.note))
+        lines.append(Markup(
+            "Vui lòng xử lý, bấm <b>Hoàn thành</b>, chờ xác nhận quản lý, "
+            "rồi <b>Chuyển tiếp</b> để giao bước sau."
+        ))
+        lines.append(self._ctkm_notify_detail_button_markup())
+        return Markup("<br/>").join(lines)
+
     def _ctkm_send_notify_line(self, notify_line, handover_note=False, handover_attachments=None):
-        """Gửi OdooBot + tạo task cho một dòng phạm vi."""
+        """Gửi OdooBot + tạo task cho một dòng phạm vi (giữ cho tương thích Chuyển tiếp cũ)."""
         self.ensure_one()
         users, skipped = notify_line._get_recipient_users()
         if not users:
@@ -123,33 +174,130 @@ class CtkmProgramDiscussNotify(models.Model):
         )
         return sent_users
 
-    def action_send_discuss_notification(self):
-        """Chỉ khởi động bước STT 1. Các bước sau chỉ qua Chuyển tiếp trên công việc."""
-        for program in self:
-            first_line = program._ctkm_first_notify_line()
-            if not first_line:
-                raise UserError(_("Vui lòng chọn ít nhất một người nhận trong phạm vi thông báo."))
+    def _ctkm_send_checklist_step_notify(self, checklist_line, handover_note=False, handover_attachments=None):
+        """Gửi OdooBot giao việc + tạo/cập nhật task cho một bước tiến độ."""
+        self.ensure_one()
+        checklist_line = checklist_line.sudo()
+        if not checklist_line or not checklist_line.exists():
+            return self.env["res.users"]
+        user = checklist_line.user_id
+        if not user or user.share or not user.partner_id:
+            raise UserError(_(
+                'Bước "%s" chưa có người phụ trách hợp lệ (cần tài khoản nội bộ).'
+            ) % (checklist_line.name or ""))
 
-            # Đã gửi bước đầu rồi → không được Gửi tin nhảy sang bước 2/3/...
-            if first_line.notified:
-                next_pending = program._ctkm_ordered_notify_lines().filtered(
-                    lambda line: not line.notified
+        if not handover_note and self.note:
+            handover_note = Markup("<p><b>%s</b></p>%s") % (
+                escape(_("Ghi chú chương trình")),
+                Markup(self.note),
+            )
+        if handover_attachments is None:
+            handover_attachments = self.notify_document_ids
+
+        body = self._ctkm_checklist_work_message_body(checklist_line)
+        sent = self.env["res.users"]
+        if not self._post_ctkm_bot_discuss_message(user, body):
+            raise UserError(_(
+                'Không gửi được OdooBot CTKM tới %s. Thử lại sau.'
+            ) % (user.name or ""))
+
+        sent = user
+        task = checklist_line._ctkm_ensure_task()
+        if task:
+            update_vals = {}
+            if handover_note and not task.handover_note:
+                update_vals["handover_note"] = handover_note
+            if update_vals:
+                task.sudo().write(update_vals)
+            if handover_attachments and not task.handover_document_ids:
+                copies = self.env["ctkm.task"]._duplicate_attachments_for_task(
+                    handover_attachments, task
                 )
-                if next_pending:
+                task.sudo().write({
+                    "handover_document_ids": [(6, 0, copies.ids)],
+                })
+            task._ensure_program_notify_documents()
+
+        checklist_vals = {
+            "notified": True,
+            "notified_date": fields.Datetime.now(),
+        }
+        if checklist_line.state == "todo":
+            checklist_vals["state"] = "progress"
+        checklist_line.with_context(ctkm_task_sync=True).write(checklist_vals)
+
+        self.message_post(
+            body=_(
+                "Đã giao việc bước <b>%(step)s</b> cho <b>%(user)s</b> qua OdooBot CTKM."
+            ) % {
+                "step": escape(checklist_line.name or ""),
+                "user": escape(user.name or ""),
+            },
+            subtype_xmlid="mail.mt_note",
+            body_is_html=True,
+        )
+        return sent
+
+    def action_send_discuss_notification(self):
+        """Gửi tin CTKM tới toàn bộ Phạm vi thông báo; khởi động bước tiến độ đầu tiên."""
+        for program in self:
+            users, skipped = program._ctkm_notify_recipient_users()
+            if not users:
+                if skipped:
                     raise UserError(_(
-                        "Đã gửi bước đầu \"%s\". "
-                        "Bước \"%s\" chỉ nhận tin khi người ở bước trước "
-                        "hoàn thành, được xác nhận quản lý và bấm Chuyển tiếp."
-                    ) % (
-                        first_line.step_label or "",
-                        next_pending[:1].step_label or "",
-                    ))
+                        "Phạm vi thông báo không có người nhận hợp lệ. "
+                        "Các nhân viên sau chưa có tài khoản nội bộ: %s"
+                    ) % ", ".join(skipped.mapped("name")))
                 raise UserError(_(
-                    "Đã gửi đủ các bước phạm vi thông báo. "
-                    "Bước tiếp theo chỉ mở khi người ở bước hiện tại bấm Chuyển tiếp."
+                    "Vui lòng chọn ít nhất một người nhận trong phạm vi thông báo."
                 ))
 
-            program._ctkm_send_notify_line(first_line)
+            all_lines = program._ctkm_ordered_notify_lines()
+            if all_lines and all(line.notified for line in all_lines):
+                raise UserError(_(
+                    "Đã gửi thông báo phạm vi cho chương trình này rồi."
+                ))
+
+            body = program._ctkm_notify_message_body()
+            sent_users = self.env["res.users"]
+            for user in users:
+                if program._post_ctkm_bot_discuss_message(user, body):
+                    sent_users |= user
+
+            if all_lines:
+                all_lines.write({
+                    "notified": True,
+                    "notified_date": fields.Datetime.now(),
+                })
+
+            log_parts = [
+                _("Đã gửi thông báo CTKM qua OdooBot tới <b>%s</b> người trong phạm vi.")
+                % len(sent_users)
+            ]
+            if skipped:
+                log_parts.append(
+                    _("Bỏ qua %s nhân viên chưa có tài khoản nội bộ: %s")
+                    % (len(skipped), ", ".join(skipped.mapped("name")))
+                )
+            if sent_users:
+                log_parts.append(_("Người nhận: %s") % ", ".join(sent_users.mapped("name")))
+            program.message_post(
+                body=Markup("<br/>").join(Markup("%s") % part for part in log_parts),
+                subtype_xmlid="mail.mt_note",
+            )
+
+            # Khởi động chuỗi tiến độ: chỉ bước đầu (chưa xong, có phụ trách) nhận tin việc
+            first_step = program._ctkm_first_pending_checklist_line()
+            if first_step:
+                program._ctkm_send_checklist_step_notify(first_step)
+            elif program.checklist_line_ids.filtered("user_id"):
+                program.message_post(
+                    body=_(
+                        "Không còn bước tiến độ nào cần giao việc "
+                        "(đã gửi tin hoặc đã đánh dấu xong)."
+                    ),
+                    subtype_xmlid="mail.mt_note",
+                )
 
         return {
             "type": "ir.actions.client",
@@ -157,8 +305,9 @@ class CtkmProgramDiscussNotify(models.Model):
             "params": {
                 "title": _("Gửi tin thành công"),
                 "message": _(
-                    "OdooBot CTKM đã gửi tới bước đầu (STT 1). "
-                    "Bước sau chỉ nhận tin khi bước trước bấm Chuyển tiếp."
+                    "OdooBot CTKM đã thông báo tới mọi người trong phạm vi. "
+                    "Người ở bước tiến độ tiếp theo chỉ nhận tin việc khi "
+                    "bước trước hoàn thành và bấm Chuyển tiếp."
                 ),
                 "type": "success",
                 "sticky": False,

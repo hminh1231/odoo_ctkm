@@ -54,10 +54,10 @@
                                     string="Gửi tin" class="btn-primary"
                                     icon="fa-paper-plane"/>
                                 <div class="text-muted mt-1">
-                                    <b>Gửi tin</b> chỉ gửi bước <b>STT 1</b>.
-                                    Bước sau chỉ nhận tin khi bước trước hoàn thành,
-                                    xác nhận quản lý và bấm <b>Chuyển tiếp</b>
-                                    (kèm ghi chú/file đẩy qua).
+                                    <b>Gửi tin</b> thông báo CTKM tới <b>tất cả</b> người trong phạm vi
+                                    qua OdooBot CTKM, và giao việc cho bước tiến độ đầu tiên còn việc.
+                                    Các bước tiến độ sau chỉ nhận tin khi bước trước
+                                    <b>Hoàn thành</b> → <b>Xác nhận quản lý</b> → <b>Chuyển tiếp</b>.
                                 </div>
                             </div>
                             <field name="notify_line_ids" nolabel="1">
@@ -83,8 +83,10 @@
                             </group>
                             <group>
                                 <div class="text-muted mb-2" colspan="2">
-                                    Đánh dấu từng bước theo quy trình CTKM.
-                                    Có thể đổi trạng thái hoặc tick cột <b>Xong</b>.
+                                    Sắp xếp người phụ trách từng bước.
+                                    Người phụ trách chỉ nhận tin việc qua OdooBot khi tới lượt
+                                    (Gửi tin cho bước đầu, hoặc bước trước bấm <b>Chuyển tiếp</b>).
+                                    Trên công việc: <b>Hoàn thành</b> → <b>Xác nhận quản lý</b> → <b>Chuyển tiếp</b>.
                                 </div>
                                 <button name="action_reset_checklist_defaults" type="object"
                                     string="Tạo lại bước chuẩn" class="btn-secondary"
@@ -112,6 +114,7 @@
                                     <field name="is_done" string="Xong" widget="boolean_toggle"/>
                                     <field name="user_id" string="Phụ trách" widget="many2one_avatar_user"
                                         options="{'no_create': True}"/>
+                                    <field name="notified" string="Đã giao việc" readonly="1" widget="boolean"/>
                                     <field name="done_date" string="Ngày xong"/>
                                     <field name="note" string="Ghi chú"/>
                                 </list>

@@ -454,7 +454,11 @@ class CtkmTask(models.Model):
 
     def write(self, vals):
         vals = dict(vals)
-        internal = self.env.context.get('ctkm_internal_state_write')
+        # Đồng bộ từ checklist / nút workflow dùng context nội bộ.
+        internal = (
+            self.env.context.get('ctkm_internal_state_write')
+            or self.env.context.get('ctkm_task_sync')
+        )
         user_set_state = 'state' in vals
 
         if user_set_state and not internal:
@@ -487,7 +491,7 @@ class CtkmTask(models.Model):
         if 'state' in vals and vals['state'] not in ('waiting_confirm', 'done'):
             vals['manager_confirmed'] = False
 
-        if vals.get('state') == 'done':
+        if vals.get('state') == 'done' and not internal:
             for task in self:
                 confirmed = (
                     vals['manager_confirmed']
@@ -646,7 +650,7 @@ class CtkmTask(models.Model):
         }
 
     def action_advance_stage(self):
-        """Chuyển tiếp bước phạm vi → gửi tin bước sau (kèm ghi chú/file)."""
+        """Chuyển tiếp → giao việc bước tiến độ tiếp theo (kèm ghi chú/file)."""
         self.ensure_one()
         if self.state != 'done':
             raise UserError(_(
@@ -663,19 +667,65 @@ class CtkmTask(models.Model):
             raise UserError(_('Công việc chưa gắn chương trình khuyến mãi.'))
 
         program = self.program_id.sudo()
-        current_line = self.notify_line_id.sudo()
+        current_checklist = self.checklist_line_id.sudo()
+        current_notify = self.notify_line_id.sudo()
+        step_label = (
+            current_checklist.name
+            or current_notify.step_label
+            or _('(không xác định)')
+        )
         self.write({'forwarded': True})
         self.message_post(
             body=_('Đã bấm <b>Chuyển tiếp</b> cho bước <b>%s</b>.')
-            % escape(current_line.step_label or _('(không xác định)')),
+            % escape(step_label),
             subtype_xmlid='mail.mt_note',
             body_is_html=True,
         )
 
-        # Task cũ không gắn bước phạm vi: giữ hành vi chuyển giai đoạn CTKM
-        if not current_line:
-            return self._ctkm_advance_program_stage(program)
+        # Ưu tiên chuỗi Tiến độ thực hiện
+        if current_checklist:
+            return self._ctkm_advance_checklist_step(program, current_checklist)
 
+        # Tương thích task cũ gắn Phạm vi thông báo
+        if current_notify:
+            return self._ctkm_advance_notify_line_step(program, current_notify)
+
+        return self._ctkm_advance_program_stage(program)
+
+    def _ctkm_advance_checklist_step(self, program, current_line):
+        """Sau Chuyển tiếp: gửi tin việc cho bước tiến độ kế tiếp."""
+        self.ensure_one()
+        next_line = program._ctkm_next_checklist_line(current_line)
+        if next_line:
+            handover_note, handover_docs = self._ctkm_collect_handover_from_checklist(
+                program, current_line
+            )
+            sent = program.sudo()._ctkm_send_checklist_step_notify(
+                next_line,
+                handover_note=handover_note,
+                handover_attachments=handover_docs.sudo() if handover_docs else handover_docs,
+            )
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Đã chuyển bước'),
+                    'message': _(
+                        'Đã gửi OdooBot CTKM giao việc bước "%(step)s" cho %(user)s, '
+                        'kèm ghi chú và tài liệu đã đẩy qua.'
+                    ) % {
+                        'step': next_line.name or '',
+                        'user': sent.name if sent else (next_line.user_id.name or ''),
+                    },
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
+        return self._ctkm_advance_program_stage(program)
+
+    def _ctkm_advance_notify_line_step(self, program, current_line):
+        """Giữ luồng Chuyển tiếp theo phạm vi thông báo (task cũ)."""
+        self.ensure_one()
         siblings = self.sudo().search([
             ('program_id', '=', program.id),
             ('notify_line_id', '=', current_line.id),
@@ -715,7 +765,6 @@ class CtkmTask(models.Model):
             handover_note, handover_docs = self._ctkm_collect_handover_from_line(
                 program, current_line
             )
-            # sudo: tạo task/file cho người bước sau không thuộc quyền user hiện tại
             sent = program.sudo()._ctkm_send_notify_line(
                 next_line,
                 handover_note=handover_note,
@@ -863,7 +912,7 @@ class CtkmTask(models.Model):
 
     @api.model
     def _ctkm_collect_handover_from_line(self, program, notify_line):
-        """Gom ghi chú/file chương trình + task đã chuyển tiếp của bước hiện tại."""
+        """Gom ghi chú/file chương trình + task đã chuyển tiếp của bước phạm vi."""
         program.ensure_one()
         note_parts = []
         docs = self.env['ir.attachment']
@@ -899,6 +948,43 @@ class CtkmTask(models.Model):
         handover_note = Markup('<hr/>').join(note_parts) if note_parts else False
         return handover_note, docs
 
+    @api.model
+    def _ctkm_collect_handover_from_checklist(self, program, checklist_line):
+        """Gom ghi chú/file từ bước tiến độ đã chuyển tiếp."""
+        program.ensure_one()
+        note_parts = []
+        docs = self.env['ir.attachment']
+        tasks = self.sudo().search([
+            ('program_id', '=', program.id),
+            ('checklist_line_id', '=', checklist_line.id),
+            ('forwarded', '=', True),
+        ], order='id')
+        if tasks and tasks[0].handover_note:
+            note_parts.append(Markup(tasks[0].handover_note))
+            docs |= tasks[0].handover_document_ids
+        elif program.note:
+            note_parts.append(
+                Markup('<p><b>%s</b></p>%s')
+                % (escape(_('Ghi chú chương trình')), Markup(program.note))
+            )
+        if not tasks or not tasks[0].handover_document_ids:
+            docs |= program.notify_document_ids
+
+        for task in tasks:
+            step = task.checklist_step_name or _('Bước trước')
+            worker = task.user_id.name or ''
+            if task.work_note:
+                note_parts.append(
+                    Markup('<p><b>%s</b></p>%s')
+                    % (
+                        escape(_('Ghi chú từ %s (%s)') % (worker, step)),
+                        Markup(task.work_note),
+                    )
+                )
+            docs |= task.work_document_ids
+        handover_note = Markup('<hr/>').join(note_parts) if note_parts else False
+        return handover_note, docs
+
     def _ctkm_sync_checklist_from_task(self, checklist_line_id=None, state=None, done_date=None):
         """Đồng bộ trạng thái/ngày xong từ công việc về bước checklist."""
         self.ensure_one()
@@ -918,7 +1004,11 @@ class CtkmTask(models.Model):
 
     @api.model
     def _ctkm_sync_task_from_checklist(self, checklist):
-        """Đồng bộ công việc từ bước checklist."""
+        """Đồng bộ công việc từ bước checklist (gán người / tiến độ trên CTKM).
+
+        Trạng thái Hoàn thành của task vẫn đi qua nút Hoàn thành / Xác nhận quản lý.
+        Checklist chỉ đẩy todo/progress; cột Xong cập nhật done_date, không ép task = done.
+        """
         if not checklist or not checklist.exists():
             return self.browse()
         Task = self.sudo()
@@ -929,15 +1019,21 @@ class CtkmTask(models.Model):
         if not task:
             return self.browse()
         vals = {}
-        if checklist.state:
-            mapped = {'todo': 'todo', 'progress': 'progress', 'done': 'done'}
-            vals['state'] = mapped.get(checklist.state, 'todo')
-        if checklist.done_date:
+        if checklist.user_id and task.user_id != checklist.user_id:
+            vals['user_id'] = checklist.user_id.id
+        if checklist.state in ('todo', 'progress'):
+            # Không ghi đè khi task đang chờ xác nhận / đã xong theo workflow.
+            if task.state not in ('waiting_confirm', 'done'):
+                vals['state'] = checklist.state
+        if checklist.done_date and task.done_date != checklist.done_date:
             vals['done_date'] = checklist.done_date
         if checklist.name and task.name != checklist.name:
             vals['name'] = checklist.name
         if vals and not task.env.context.get('ctkm_task_sync'):
-            task.with_context(ctkm_task_sync=True).write(vals)
+            task.with_context(
+                ctkm_task_sync=True,
+                ctkm_internal_state_write=True,
+            ).write(vals)
         return task
 
     @api.model
@@ -1023,20 +1119,35 @@ class CtkmTask(models.Model):
 
         user = self.env.user
         notified_users = program.notify_line_ids.notify_employee_ids.mapped('user_id')
+        checklist_users = program.checklist_line_ids.mapped('user_id')
         allowed = (
             user.has_group('ctkm_core.group_ctkm_user')
             or program.user_id == user
             or user in notified_users
+            or user in checklist_users
         )
         if not allowed:
             raise UserError(_('Bạn không có quyền mở công việc của chương trình này.'))
 
-        # Ưu tiên task bước gần nhất của user; nếu chưa có thì bước đã notified
+        # Ưu tiên task checklist đã giao việc / mới nhất của user
         Task = self.sudo()
         task = Task.search([
             ('program_id', '=', program.id),
             ('user_id', '=', user.id),
+            ('checklist_line_id', '!=', False),
+            ('forwarded', '=', False),
         ], order='id desc', limit=1)
+        if not task:
+            task = Task.search([
+                ('program_id', '=', program.id),
+                ('user_id', '=', user.id),
+            ], order='id desc', limit=1)
+        if not task:
+            checklist = program.checklist_line_ids.filtered(
+                lambda l: l.user_id == user and l.notified
+            ).sorted(lambda l: (l.sequence, l.id))[:1]
+            if checklist:
+                task = checklist._ctkm_ensure_task()
         if not task:
             line = program.notify_line_ids.filtered(
                 lambda l: user in l.notify_employee_ids.mapped('user_id') and l.notified

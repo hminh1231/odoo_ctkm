@@ -60,6 +60,17 @@ class CtkmProgramChecklistLine(models.Model):
         domain="[('share', '=', False)]",
     )
     note = fields.Char(string='Ghi chú')
+    notified = fields.Boolean(
+        string='Đã gửi tin việc',
+        default=False,
+        copy=False,
+        help='Đã gửi OdooBot CTKM cho người phụ trách bước này.',
+    )
+    notified_date = fields.Datetime(
+        string='Ngày gửi tin việc',
+        copy=False,
+        readonly=True,
+    )
 
     @api.depends('state')
     def _compute_is_done(self):
@@ -96,45 +107,51 @@ class CtkmProgramChecklistLine(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
+        # Chỉ đồng bộ task đã có; tạo task + gửi tin khi Gửi tin / Chuyển tiếp.
         if any(f in vals for f in ('state', 'done_date', 'user_id', 'name')) and not self.env.context.get('ctkm_task_sync'):
+            Task = self.env['ctkm.task']
             for line in self:
-                line._ctkm_ensure_task()
-                self.env['ctkm.task']._ctkm_sync_task_from_checklist(line)
+                existing = Task.search([
+                    ('program_id', '=', line.program_id.id),
+                    ('checklist_line_id', '=', line.id),
+                ], limit=1)
+                if existing:
+                    Task._ctkm_sync_task_from_checklist(line)
+                elif line.notified and line.user_id:
+                    line._ctkm_ensure_task()
+                    Task._ctkm_sync_task_from_checklist(line)
         return res
 
     def _ctkm_ensure_task(self):
-        """Đảm bảo mỗi bước checklist có người phụ trách thì có công việc tương ứng."""
+        """Một bước checklist = một công việc (theo checklist_line_id)."""
         self.ensure_one()
         if not self.user_id or not self.program_id:
             return self.env['ctkm.task']
         Task = self.env['ctkm.task'].sudo()
-        existing = Task.search([
-            ('program_id', '=', self.program_id.id),
-            ('user_id', '=', self.user_id.id),
-        ])
         task = Task.search([
             ('program_id', '=', self.program_id.id),
             ('checklist_line_id', '=', self.id),
         ], limit=1)
-        if not task and existing:
-            task = existing[:1]
-            if task.checklist_line_id and task.checklist_line_id != self.id:
-                return self.env['ctkm.task']
         if task:
             update_vals = {}
             if task.name != self.name:
                 update_vals['name'] = self.name
-            if not task.checklist_line_id:
-                update_vals['checklist_line_id'] = self.id
+            if task.user_id != self.user_id:
+                update_vals['user_id'] = self.user_id.id
             if update_vals and not task.env.context.get('ctkm_task_sync'):
-                task.with_context(ctkm_task_sync=True).write(update_vals)
+                task.with_context(
+                    ctkm_task_sync=True,
+                    ctkm_internal_state_write=True,
+                ).write(update_vals)
             return task
+        # Task mới luôn bắt đầu todo/progress; "Xong" trên checklist không tạo task = done.
+        initial_state = self.state if self.state in ('todo', 'progress') else 'todo'
         vals = {
             'program_id': self.program_id.id,
             'user_id': self.user_id.id,
             'process_date': fields.Date.context_today(self),
             'name': self.name,
-            'state': self.state or 'todo',
+            'state': initial_state,
             'company_id': self.program_id.company_id.id or self.env.company.id,
             'checklist_line_id': self.id,
         }
