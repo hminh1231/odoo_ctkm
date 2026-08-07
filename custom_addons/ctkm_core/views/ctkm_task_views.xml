@@ -173,6 +173,24 @@
                                 </group>
                             </group>
                         </page>
+                        <page string="Chi tiết công việc" name="task_detail">
+                            <group>
+                                <group string="Import Tem/Tag" invisible="not ('Đổ BB thay tem/tag (file tổng)' in (name or '') or 'Đổ BB thay tem/tag(file tổng)' in (name or ''))">
+                                    <field name="detail_tem_tag_file" filename="detail_tem_tag_filename"
+                                        options="{'accepted_file_extensions': '.xlsx'}"/>
+                                    <field name="detail_tem_tag_filename" invisible="1"/>
+                                </group>
+                                <group string="Ảnh tem/tag" invisible="not ('Chụp tem gửi lên group / chụp từng con tem' in (name or ''))">
+                                    <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
+                                        options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
+                                </group>
+                                <group string="Thông tin khác" invisible="('Đổ BB thay tem/tag (file tổng)' in (name or '') or 'Đổ BB thay tem/tag(file tổng)' in (name or '')) or ('Chụp tem gửi lên group / chụp từng con tem' in (name or ''))">
+                                    <div colspan="2" class="text-muted">
+                                        Đang để trống, sẽ bổ sung sau.
+                                    </div>
+                                </group>
+                            </group>
+                        </page>
                     </notebook>
                 </sheet>
                 <chatter/>

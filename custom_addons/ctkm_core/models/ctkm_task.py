@@ -174,6 +174,16 @@ class CtkmTask(models.Model):
         string='Tài liệu',
     )
 
+    detail_tem_tag_file = fields.Binary(string='File Excel Tem/Tag')
+    detail_tem_tag_filename = fields.Char(string='Tên file Excel')
+    detail_tem_photo_ids = fields.Many2many(
+        'ir.attachment',
+        'ctkm_task_detail_tem_photo_rel',
+        'task_id',
+        'attachment_id',
+        string='Ảnh tem/tag',
+    )
+
     # Bước phạm vi thông báo (Gửi tin tuần tự theo STT dòng)
     notify_line_id = fields.Many2one(
         'ctkm.program.notify.line',
