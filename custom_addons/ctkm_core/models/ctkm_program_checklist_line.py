@@ -107,7 +107,6 @@ class CtkmProgramChecklistLine(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        # Chỉ đồng bộ task đã có; tạo task + gửi tin khi Gửi tin / Chuyển tiếp.
         if any(f in vals for f in ('state', 'done_date', 'user_id', 'name')) and not self.env.context.get('ctkm_task_sync'):
             Task = self.env['ctkm.task']
             for line in self:
@@ -117,7 +116,7 @@ class CtkmProgramChecklistLine(models.Model):
                 ], limit=1)
                 if existing:
                     Task._ctkm_sync_task_from_checklist(line)
-                elif line.notified and line.user_id:
+                elif line.user_id:
                     line._ctkm_ensure_task()
                     Task._ctkm_sync_task_from_checklist(line)
         return res
