@@ -7,7 +7,7 @@ CTKM_CHECKLIST_DEFAULT_STEPS = [
     'Duyệt CTKM',
     'Lập thông báo CTKM, trình ký',
     'Phát hành thông báo CTKM đến các bộ phận',
-    'Đổ BB thay tem/tag(file tổng)  Lập danh sách hàng hóa, chốt số lượng',
+    'Đổ BB thay tem/tag(file tổng)',
     'Khai báo CTKM áp giá trên PM Linkq',
     'Lập BB thay tem, bàn giao cho KT kho  Kiểm tra BB thay tem tag',
     'Thiết kế mẫu tem/tag, Bảng nhận diện',

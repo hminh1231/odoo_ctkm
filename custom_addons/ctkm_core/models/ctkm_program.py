@@ -194,6 +194,7 @@ class CtkmProgram(models.Model):
     def _ctkm_ensure_checklist_lines(self):
         """Tạo các bước mặc định nếu chương trình chưa có checklist."""
         Checklist = self.env['ctkm.program.checklist.line']
+        today = fields.Date.context_today(self)
         for program in self:
             if program.checklist_line_ids:
                 continue
@@ -202,7 +203,9 @@ class CtkmProgram(models.Model):
                 for vals in program._ctkm_default_checklist_vals()
             ]
             if vals_list:
-                Checklist.create(vals_list)
+                lines = Checklist.create(vals_list)
+                for line in lines.sorted('sequence')[:3]:
+                    line.write({'state': 'done', 'done_date': today})
         return True
 
     def ctkm_ensure_checklist_tasks(self):
