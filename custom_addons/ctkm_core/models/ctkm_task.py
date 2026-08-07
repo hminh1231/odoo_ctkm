@@ -182,9 +182,21 @@ class CtkmTask(models.Model):
         index=True,
         copy=False,
     )
+    checklist_line_id = fields.Many2one(
+        'ctkm.program.checklist.line',
+        string='Bước checklist',
+        ondelete='set null',
+        index=True,
+        copy=False,
+    )
     notify_step_label = fields.Char(
         related='notify_line_id.step_label',
         string='Bước xử lý',
+        readonly=True,
+    )
+    checklist_step_name = fields.Char(
+        string='Tên bước checklist',
+        related='checklist_line_id.name',
         readonly=True,
     )
     forwarded = fields.Boolean(
@@ -211,8 +223,8 @@ class CtkmTask(models.Model):
     )
 
     _user_program_line_uniq = models.Constraint(
-        'UNIQUE(user_id, program_id, notify_line_id)',
-        'Bạn đã có công việc cho bước phạm vi này rồi.',
+        'UNIQUE(user_id, program_id, notify_line_id, checklist_line_id)',
+        'Bạn đã có công việc cho bước phạm vi / bước checklist này rồi.',
     )
 
     @api.depends_context('uid')
@@ -488,6 +500,13 @@ class CtkmTask(models.Model):
             manager_user = self.env.user
             for task in newly_confirmed:
                 task._notify_worker_manager_confirmed(manager_user)
+
+        if 'checklist_line_id' in vals or 'state' in vals or 'done_date' in vals:
+            self._ctkm_sync_checklist_from_task(
+                checklist_line_id=vals.get('checklist_line_id'),
+                state=vals.get('state'),
+                done_date=vals.get('done_date'),
+            )
 
         return res
 
@@ -870,6 +889,47 @@ class CtkmTask(models.Model):
         handover_note = Markup('<hr/>').join(note_parts) if note_parts else False
         return handover_note, docs
 
+    def _ctkm_sync_checklist_from_task(self, checklist_line_id=None, state=None, done_date=None):
+        """Đồng bộ trạng thái/ngày xong từ công việc về bước checklist."""
+        self.ensure_one()
+        checklist = self.checklist_line_id
+        if not checklist and checklist_line_id:
+            checklist = self.env['ctkm.program.checklist.line'].browse(checklist_line_id)
+        if not checklist or not checklist.exists():
+            return
+        vals = {}
+        if state:
+            mapped = {'todo': 'todo', 'progress': 'progress', 'waiting_confirm': 'progress', 'done': 'done'}
+            vals['state'] = mapped.get(state, state)
+        if done_date:
+            vals['done_date'] = done_date
+        if vals and not self.env.context.get('ctkm_checklist_sync'):
+            checklist.with_context(ctkm_checklist_sync=True).write(vals)
+
+    @api.model
+    def _ctkm_sync_task_from_checklist(self, checklist):
+        """Đồng bộ công việc từ bước checklist."""
+        if not checklist or not checklist.exists():
+            return self.browse()
+        Task = self.sudo()
+        task = Task.search([
+            ('program_id', '=', checklist.program_id.id),
+            ('checklist_line_id', '=', checklist.id),
+        ], limit=1)
+        if not task:
+            return self.browse()
+        vals = {}
+        if checklist.state:
+            mapped = {'todo': 'todo', 'progress': 'progress', 'done': 'done'}
+            vals['state'] = mapped.get(checklist.state, 'todo')
+        if checklist.done_date:
+            vals['done_date'] = checklist.done_date
+        if checklist.name and task.name != checklist.name:
+            vals['name'] = checklist.name
+        if vals and not task.env.context.get('ctkm_task_sync'):
+            task.with_context(ctkm_task_sync=True).write(vals)
+        return task
+
     @api.model
     def _get_or_create_for_program_user(
         self, program, user, notify_line=None,
@@ -889,6 +949,16 @@ class CtkmTask(models.Model):
         else:
             domain.append(('notify_line_id', '=', False))
         task = Task.search(domain, limit=1)
+        if not task and not notify_line:
+            checklist = program.checklist_line_ids.filtered(
+                lambda l: l.user_id == user
+            )[:1]
+            if checklist:
+                task = Task.search([
+                    ('program_id', '=', program.id),
+                    ('user_id', '=', user.id),
+                    ('checklist_line_id', '=', checklist.id),
+                ], limit=1)
         if task:
             vals = {}
             if handover_note and not task.handover_note:
@@ -910,6 +980,13 @@ class CtkmTask(models.Model):
             'notify_line_id': notify_line.id if notify_line else False,
             'handover_note': handover_note or False,
         }
+        if not notify_line:
+            checklist = program.checklist_line_ids.filtered(
+                lambda l: l.user_id == user
+            )[:1]
+            if checklist:
+                vals['checklist_line_id'] = checklist.id
+                vals['name'] = checklist.name
         try:
             with self.env.cr.savepoint():
                 task = Task.create(vals)

@@ -2,27 +2,24 @@
 
 from odoo import api, fields, models
 
-# 19 bước chuẩn quy trình CTKM (theo bảng công việc).
+# Các bước chuẩn quy trình CTKM (theo bảng công việc).
 CTKM_CHECKLIST_DEFAULT_STEPS = [
-    'MKT lập CTKM và duyệt chương trình với BGĐ',
     'Duyệt CTKM',
     'Lập thông báo CTKM, trình ký',
     'Phát hành thông báo CTKM đến các bộ phận',
-    'Đổ BB thay tem/tag (file tổng)',
+    'Đổ BB thay tem/tag(file tổng)  Lập danh sách hàng hóa, chốt số lượng',
     'Khai báo CTKM áp giá trên PM Linkq',
-    'Lập BB thay tem, bàn giao cho KT kho; Kiểm tra BB thay tem tag',
+    'Lập BB thay tem, bàn giao cho KT kho  Kiểm tra BB thay tem tag',
     'Thiết kế mẫu tem/tag, Bảng nhận diện',
-    'KT áp giá',
+    'KT áp giá lên phần mềm linkq',
     'In tem, Tag',
-    'Bàn giao Tem Tag cho CH; Thu hồi tem tag cũ',
+    'Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ',
     'Nhận tem tag mới',
     'Thay tem Tag',
-    'Chụp tem gửi lên group / chụp từng con tem',
+    'Chụp team gửi lên group / chụp từng con tem',
     'Kiểm tra hình ảnh tem tag',
-    'Kế toán áp giá CTKM lên PM Link Q; Lập báo cáo cửa hàng đã thay tem tag / chưa thay tem / đã áp giá',
-    'Hậu kiểm CTKM; Giám sát đi kiểm tra thay tem',
-    'KTDT lập biên bản phạt nếu phát hiện gian lận, sai sót',
-    'Tổng hợp báo cáo',
+    'Kế toán áp giá CTKM lên PM Link Q Lập báo cáo cửa hàng đã thay tem tag: cửa hàng nào chưa thay tem Lập báo cáo cửa hàng đã áp giá',
+    'Hậu kiểm CTKM Giám sát đi kiểm tra thay tem',
 ]
 
 
@@ -96,3 +93,59 @@ class CtkmProgramChecklistLine(models.Model):
                 'done_date': line.done_date or today,
             })
         return True
+
+    def write(self, vals):
+        res = super().write(vals)
+        if any(f in vals for f in ('state', 'done_date', 'user_id', 'name')) and not self.env.context.get('ctkm_task_sync'):
+            for line in self:
+                line._ctkm_ensure_task()
+                self.env['ctkm.task']._ctkm_sync_task_from_checklist(line)
+        return res
+
+    def _ctkm_ensure_task(self):
+        """Đảm bảo mỗi bước checklist có người phụ trách thì có công việc tương ứng."""
+        self.ensure_one()
+        if not self.user_id or not self.program_id:
+            return self.env['ctkm.task']
+        Task = self.env['ctkm.task'].sudo()
+        existing = Task.search([
+            ('program_id', '=', self.program_id.id),
+            ('user_id', '=', self.user_id.id),
+        ])
+        task = Task.search([
+            ('program_id', '=', self.program_id.id),
+            ('checklist_line_id', '=', self.id),
+        ], limit=1)
+        if not task and existing:
+            task = existing[:1]
+            if task.checklist_line_id and task.checklist_line_id != self.id:
+                return self.env['ctkm.task']
+        if task:
+            update_vals = {}
+            if task.name != self.name:
+                update_vals['name'] = self.name
+            if not task.checklist_line_id:
+                update_vals['checklist_line_id'] = self.id
+            if update_vals and not task.env.context.get('ctkm_task_sync'):
+                task.with_context(ctkm_task_sync=True).write(update_vals)
+            return task
+        vals = {
+            'program_id': self.program_id.id,
+            'user_id': self.user_id.id,
+            'process_date': fields.Date.context_today(self),
+            'name': self.name,
+            'state': self.state or 'todo',
+            'company_id': self.program_id.company_id.id or self.env.company.id,
+            'checklist_line_id': self.id,
+        }
+        if self.done_date:
+            vals['done_date'] = self.done_date
+        try:
+            with self.env.cr.savepoint():
+                return Task.create(vals)
+        except Exception:
+            return Task.search([
+                ('program_id', '=', self.program_id.id),
+                ('checklist_line_id', '=', self.id),
+            ], limit=1)
+

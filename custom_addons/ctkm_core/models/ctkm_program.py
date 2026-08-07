@@ -192,7 +192,7 @@ class CtkmProgram(models.Model):
         ]
 
     def _ctkm_ensure_checklist_lines(self):
-        """Tạo 19 bước mặc định nếu chương trình chưa có checklist."""
+        """Tạo các bước mặc định nếu chương trình chưa có checklist."""
         Checklist = self.env['ctkm.program.checklist.line']
         for program in self:
             if program.checklist_line_ids:
@@ -205,8 +205,16 @@ class CtkmProgram(models.Model):
                 Checklist.create(vals_list)
         return True
 
+    def _ctkm_ensure_checklist_tasks(self):
+        """Đảm bảo mỗi bước checklist có người phụ trách thì có công việc tương ứng."""
+        for program in self:
+            for line in program.checklist_line_ids.filtered(lambda l: l.user_id):
+                line._ctkm_ensure_task()
+        return True
+
+
     def action_reset_checklist_defaults(self):
-        """Xóa checklist hiện tại và tạo lại 19 bước chuẩn."""
+        """Xóa checklist hiện tại và tạo lại các bước chuẩn."""
         self.ensure_one()
         self.checklist_line_ids.unlink()
         self._ctkm_ensure_checklist_lines()

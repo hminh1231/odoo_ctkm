@@ -75,28 +75,31 @@
                                 </list>
                             </field>
                         </page>
-                        <page string="Tiến độ 19 bước" name="program_checklist">
+                        <page string="Tiến độ thực hiện" name="program_checklist">
                             <group>
                                 <group>
                                     <field name="checklist_progress_display" readonly="1"/>
                                     <field name="checklist_current_step" readonly="1"/>
-                                </group>
-                                <group>
-                                    <div class="text-muted mb-2" colspan="2">
-                                        Đánh dấu từng bước theo quy trình CTKM.
-                                        Có thể đổi trạng thái hoặc tick cột <b>Xong</b>.
-                                    </div>
-                                    <button name="action_reset_checklist_defaults" type="object"
-                                        string="Tạo lại 19 bước chuẩn" class="btn-secondary"
-                                        confirm="Xóa checklist hiện tại và tạo lại 19 bước mặc định?"
-                                        invisible="checklist_line_ids"
-                                        groups="ctkm_core.group_ctkm_user"/>
-                                    <button name="action_reset_checklist_defaults" type="object"
-                                        string="Reset 19 bước chuẩn" class="btn-link"
-                                        confirm="Xóa checklist hiện tại và tạo lại 19 bước mặc định?"
-                                        invisible="not checklist_line_ids"
-                                        groups="ctkm_core.group_ctkm_manager"/>
-                                </group>
+                            </group>
+                            <group>
+                                <div class="text-muted mb-2" colspan="2">
+                                    Đánh dấu từng bước theo quy trình CTKM.
+                                    Có thể đổi trạng thái hoặc tick cột <b>Xong</b>.
+                                </div>
+                                <button name="action_reset_checklist_defaults" type="object"
+                                    string="Tạo lại bước chuẩn" class="btn-secondary"
+                                    confirm="Xóa checklist hiện tại và tạo lại bước mặc định?"
+                                    invisible="checklist_line_ids"
+                                    groups="ctkm_core.group_ctkm_user"/>
+                                <button name="action_reset_checklist_defaults" type="object"
+                                    string="Reset bước chuẩn" class="btn-link"
+                                    confirm="Xóa checklist hiện tại và tạo lại bước mặc định?"
+                                    invisible="not checklist_line_ids"
+                                    groups="ctkm_core.group_ctkm_manager"/>
+                                <button name="_ctkm_ensure_checklist_tasks" type="object"
+                                    string="Tạo công việc từ bước" class="btn-primary"
+                                    groups="ctkm_core.group_ctkm_manager"/>
+                            </group>
                             </group>
                             <field name="checklist_line_ids" nolabel="1">
                                 <list editable="bottom" default_order="sequence">
