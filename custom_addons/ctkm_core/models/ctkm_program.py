@@ -205,7 +205,7 @@ class CtkmProgram(models.Model):
                 Checklist.create(vals_list)
         return True
 
-    def _ctkm_ensure_checklist_tasks(self):
+    def ctkm_ensure_checklist_tasks(self):
         """Đảm bảo mỗi bước checklist có người phụ trách thì có công việc tương ứng."""
         for program in self:
             for line in program.checklist_line_ids.filtered(lambda l: l.user_id):

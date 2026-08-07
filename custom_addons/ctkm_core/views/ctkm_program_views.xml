@@ -96,7 +96,7 @@
                                     confirm="Xóa checklist hiện tại và tạo lại bước mặc định?"
                                     invisible="not checklist_line_ids"
                                     groups="ctkm_core.group_ctkm_manager"/>
-                                <button name="_ctkm_ensure_checklist_tasks" type="object"
+                                <button name="ctkm_ensure_checklist_tasks" type="object"
                                     string="Tạo công việc từ bước" class="btn-primary"
                                     groups="ctkm_core.group_ctkm_manager"/>
                             </group>
