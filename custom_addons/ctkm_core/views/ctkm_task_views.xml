@@ -32,12 +32,13 @@
                 <header>
                     <field name="is_task_assignee" invisible="1"/>
                     <field name="can_confirm_as_manager" invisible="1"/>
+                    <field name="checklist_need_manager_confirm" invisible="1"/>
                     <button name="action_mark_done" type="object"
                         string="Hoàn thành" class="btn-primary" icon="fa-check"
                         invisible="not is_task_assignee or manager_confirmed or state == 'done'"/>
                     <button name="action_manager_confirm" type="object"
                         string="Xác nhận quản lý" class="btn-primary" icon="fa-check-square-o"
-                        invisible="not can_confirm_as_manager or state != 'waiting_confirm' or manager_confirmed"/>
+                        invisible="not can_confirm_as_manager or state != 'waiting_confirm' or manager_confirmed or not checklist_need_manager_confirm"/>
                     <button name="action_advance_stage" type="object"
                         string="Chuyển tiếp" class="btn-secondary" icon="fa-forward"
                         invisible="state != 'done' or not manager_confirmed or forwarded"/>
@@ -153,7 +154,7 @@
                                 </group>
                             </group>
                         </page>
-                        <page string="Xác nhận quản lý" name="task_manager_confirm">
+                        <page string="Xác nhận quản lý" name="task_manager_confirm" invisible="not checklist_need_manager_confirm">
                             <group>
                                 <group>
                                     <field name="manager_confirmed"
@@ -176,9 +177,13 @@
                         <page string="Chi tiết công việc" name="task_detail">
                             <group>
                                 <group string="Import Tem/Tag" invisible="not ('Đổ BB thay tem/tag (file tổng)' in (name or '') or 'Đổ BB thay tem/tag(file tổng)' in (name or ''))">
-                                    <field name="detail_tem_tag_file" filename="detail_tem_tag_filename"
-                                        options="{'accepted_file_extensions': '.xlsx'}"/>
-                                    <field name="detail_tem_tag_filename" invisible="1"/>
+                                    <div class="text-muted mb-2" colspan="2">
+                                        Nhấn <b>Import Tem/Tag</b> để tải lên file Excel theo mẫu Kho Tem/Tag.
+                                    </div>
+                                    <button name="action_open_tem_tag_import" type="object"
+                                        string="Import Tem/Tag" class="btn-primary"
+                                        icon="fa-file-excel-o"
+                                        invisible="not ('Đổ BB thay tem/tag (file tổng)' in (name or '') or 'Đổ BB thay tem/tag(file tổng)' in (name or ''))"/>
                                 </group>
                                 <group string="Ảnh tem/tag" invisible="not ('Chụp tem gửi lên group / chụp từng con tem' in (name or ''))">
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"

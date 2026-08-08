@@ -11,5 +11,14 @@ class CtkmStage(models.Model):
     name = fields.Char(string='Tên giai đoạn', required=True, translate=True)
     sequence = fields.Integer(string='Thứ tự', default=10)
     description = fields.Text(string='Mô tả')
+    user_id = fields.Many2one(
+        'res.users',
+        string='Phụ trách',
+        domain="[('share', '=', False)]",
+    )
+    need_manager_confirm = fields.Boolean(
+        string='Cần quản lý xác nhận',
+        default=True,
+    )
     pipe_end = fields.Boolean(string='Kết thúc')
     fold = fields.Boolean(string='Gộp')

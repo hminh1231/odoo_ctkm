@@ -60,6 +60,10 @@ class CtkmTask(models.Model):
         string='Được phép xác nhận quản lý',
         compute='_compute_can_confirm_as_manager',
     )
+    checklist_need_manager_confirm = fields.Boolean(
+        string='Checklist cần quản lý xác nhận',
+        compute='_compute_checklist_need_manager_confirm',
+    )
     is_task_assignee = fields.Boolean(
         string='Là người nhận việc',
         compute='_compute_is_task_assignee',
@@ -253,6 +257,15 @@ class CtkmTask(models.Model):
         uid = self.env.user.id
         for task in self:
             task.is_task_assignee = task.user_id.id == uid
+
+    @api.depends('checklist_line_id', 'checklist_line_id.need_manager_confirm')
+    def _compute_checklist_need_manager_confirm(self):
+        for task in self:
+            task.checklist_need_manager_confirm = (
+                task.checklist_line_id.need_manager_confirm
+                if task.checklist_line_id
+                else True
+            )
 
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
@@ -528,6 +541,7 @@ class CtkmTask(models.Model):
         """Người làm việc báo hoàn thành → gửi tin quản lý xác nhận."""
         notified = self.browse()
         already_waiting = self.browse()
+        directly_done = self.browse()
         for task in self:
             if task.user_id != self.env.user and not self.env.user.has_group(
                 'ctkm_core.group_ctkm_manager'
@@ -535,11 +549,24 @@ class CtkmTask(models.Model):
                 raise UserError(_(
                     'Chỉ người nhận việc mới được bấm Hoàn thành.'
                 ))
-            # Đã chờ xác nhận rồi: không gửi tin trùng cho quản lý.
-            if task.state == 'waiting_confirm' and not task.manager_confirmed:
+            if task.state == 'done' and task.manager_confirmed:
                 already_waiting |= task
                 continue
-            if task.state == 'done' and task.manager_confirmed:
+            checklist = task.checklist_line_id
+            need_confirm = (
+                checklist.need_manager_confirm
+                if checklist
+                else True
+            )
+            if not need_confirm:
+                task.with_context(ctkm_internal_state_write=True).write({
+                    'state': 'done',
+                    'manager_confirmed': True,
+                    'done_date': task.done_date or fields.Date.context_today(task),
+                })
+                directly_done |= task
+                continue
+            if task.state == 'waiting_confirm' and not task.manager_confirmed:
                 already_waiting |= task
                 continue
             manager_user = task._get_org_chart_manager_user()
@@ -557,6 +584,20 @@ class CtkmTask(models.Model):
             task.with_context(ctkm_internal_state_write=True).write(vals)
             task._notify_org_manager_confirm()
             notified |= task
+
+        if directly_done:
+            title = _('Đã hoàn thành')
+            message = _('Công việc đã được đánh dấu Hoàn thành (không cần xác nhận quản lý).')
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': title,
+                    'message': message,
+                    'type': 'success',
+                    'sticky': False,
+                },
+            }
 
         if notified:
             title = _('Đã gửi hoàn thành')
@@ -1022,13 +1063,14 @@ class CtkmTask(models.Model):
         if checklist.user_id and task.user_id != checklist.user_id:
             vals['user_id'] = checklist.user_id.id
         if checklist.state in ('todo', 'progress'):
-            # Không ghi đè khi task đang chờ xác nhận / đã xong theo workflow.
             if task.state not in ('waiting_confirm', 'done'):
                 vals['state'] = checklist.state
         if checklist.done_date and task.done_date != checklist.done_date:
             vals['done_date'] = checklist.done_date
         if checklist.name and task.name != checklist.name:
             vals['name'] = checklist.name
+        if 'need_manager_confirm' in checklist._fields and task.checklist_need_manager_confirm != checklist.need_manager_confirm:
+            pass
         if vals and not task.env.context.get('ctkm_task_sync'):
             task.with_context(
                 ctkm_task_sync=True,
@@ -1199,4 +1241,23 @@ class CtkmTask(models.Model):
             'target': 'self',
             'task_id': task.id,
             'menu_id': app_menu_id,
+        }
+
+    def action_open_tem_tag_import(self):
+        self.ensure_one()
+        if not self.program_id:
+            raise UserError(_('Công việc chưa gắn chương trình khuyến mãi.'))
+        action = self.env.ref('ctkm_inventory.action_ctkm_inventory_import_wizard', raise_if_not_found=False)
+        if not action:
+            raise UserError(_('Module Kho Tem/Tag chưa cài đặt.'))
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Import Tem/Tag'),
+            'res_model': 'ctkm.inventory.import.wizard',
+            'view_mode': 'form',
+            'view_id': self.env.ref('ctkm_inventory.view_ctkm_inventory_import_wizard_form').id,
+            'target': 'new',
+            'context': {
+                'default_program_id': self.program_id.id,
+            },
         }

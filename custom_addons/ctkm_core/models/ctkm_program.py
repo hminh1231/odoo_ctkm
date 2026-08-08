@@ -56,7 +56,6 @@ class CtkmProgram(models.Model):
         string='Phạm vi áp dụng',
         compute='_compute_notify_report_fields',
     )
-    tag_ids = fields.Many2many('ctkm.tag', string='Nhãn', readonly=False)
     task_ids = fields.One2many(
         'ctkm.task', 'program_id', string='Công việc',
     )
@@ -181,14 +180,38 @@ class CtkmProgram(models.Model):
                 program.checklist_current_step = False
 
     def _ctkm_default_checklist_vals(self):
-        from .ctkm_program_checklist_line import CTKM_CHECKLIST_DEFAULT_STEPS
+        stages = self.env['ctkm.stage'].search([], order='sequence, id')
+        if stages:
+            return [
+                {
+                    'sequence': stage.sequence,
+                    'name': stage.name,
+                    'state': 'todo',
+                    'user_id': stage.user_id.id,
+                    'need_manager_confirm': stage.need_manager_confirm,
+                }
+                for stage in stages
+            ]
         return [
-            {
-                'sequence': index,
-                'name': name,
-                'state': 'todo',
-            }
-            for index, name in enumerate(CTKM_CHECKLIST_DEFAULT_STEPS, start=1)
+            {'sequence': index, 'name': name, 'state': 'todo'}
+            for index, name in enumerate([
+                'Duyệt CTKM',
+                'Lập thông báo CTKM, trình ký',
+                'Phát hành thông báo CTKM đến các bộ phận',
+                'Đổ BB thay tem/tag(file tổng)',
+                'Khai báo CTKM áp giá trên PM Linkq',
+                'Lập BB thay tem, bàn giao cho KT kho  Kiểm tra BB thay tem tag',
+                'Thiết kế mẫu tem/tag, Bảng nhận diện',
+                'KT áp giá lên phần mềm linkq',
+                'In tem, Tag',
+                'Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ',
+                'Nhận tem tag mới',
+                'Thay tem Tag',
+                'Chụp team gửi lên group / chụp từng con tem',
+                'Kiểm tra hình ảnh tem tag',
+                'Kế toán áp giá CTKM lên PM Link Q Lập báo cáo cửa hàng đã thay tem tag: cửa hàng nào chưa thay tem Lập báo cáo cửa hàng đã áp giá',
+                'Hậu kiểm CTKM Giám sát đi kiểm tra thay tem',
+            ], start=1)
         ]
 
     def _ctkm_ensure_checklist_lines(self):

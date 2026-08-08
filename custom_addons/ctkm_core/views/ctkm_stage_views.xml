@@ -1,7 +1,6 @@
 <?xml version="1.0"?>
 <odoo><data>
 
-    <!-- Stage List View -->
     <record model="ir.ui.view" id="view_ctkm_stage_tree">
         <field name="name">ctkm.stage.list</field>
         <field name="model">ctkm.stage</field>
@@ -9,6 +8,8 @@
             <list string="Giai đoạn" editable="bottom">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
+                <field name="user_id" widget="many2one_avatar_user"/>
+                <field name="need_manager_confirm" widget="boolean_toggle"/>
                 <field name="description"/>
                 <field name="pipe_end"/>
                 <field name="fold"/>
@@ -16,7 +17,30 @@
         </field>
     </record>
 
-    <!-- Stage Action -->
+    <record model="ir.ui.view" id="view_ctkm_stage_form">
+        <field name="name">ctkm.stage.form</field>
+        <field name="model">ctkm.stage</field>
+        <field name="arch" type="xml">
+            <form string="Giai đoạn">
+                <sheet>
+                    <group>
+                        <field name="sequence"/>
+                        <field name="name"/>
+                        <field name="user_id"/>
+                        <field name="need_manager_confirm"/>
+                    </group>
+                    <group>
+                        <field name="description" colspan="2"/>
+                    </group>
+                    <group>
+                        <field name="pipe_end"/>
+                        <field name="fold"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
     <record model="ir.actions.act_window" id="action_ctkm_stage_view">
        <field name="name">Giai đoạn</field>
        <field name="res_model">ctkm.stage</field>
@@ -30,34 +54,6 @@
 
     <record id="menu_ctkm_stage" model="ir.ui.menu">
         <field name="action" ref="action_ctkm_stage_view"/>
-    </record>
-
-    <!-- Tag List View -->
-    <record model="ir.ui.view" id="view_ctkm_tag_tree">
-        <field name="name">ctkm.tag.list</field>
-        <field name="model">ctkm.tag</field>
-        <field name="arch" type="xml">
-            <list string="Nhãn" editable="bottom">
-                <field name="name"/>
-                <field name="color" widget="color_picker"/>
-            </list>
-        </field>
-    </record>
-
-    <!-- Tag Action -->
-    <record model="ir.actions.act_window" id="action_ctkm_tag_view">
-       <field name="name">Nhãn</field>
-       <field name="res_model">ctkm.tag</field>
-       <field name="view_mode">list,form</field>
-       <field name="help" type="html">
-          <p class="o_view_nocontent_smiling_face">
-            Tạo nhãn mới
-          </p>
-       </field>
-    </record>
-
-    <record id="menu_ctkm_tag" model="ir.ui.menu">
-        <field name="action" ref="action_ctkm_tag_view"/>
     </record>
 
 </data></odoo>

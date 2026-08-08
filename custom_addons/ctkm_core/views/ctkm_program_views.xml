@@ -107,13 +107,14 @@
                                 <list editable="bottom" default_order="sequence">
                                     <field name="sequence" string="STT" width="60px"/>
                                     <field name="name" string="Công việc"/>
+                                    <field name="user_id" string="Phụ trách" widget="many2one_avatar_user"
+                                        options="{'no_create': True}"/>
+                                    <field name="need_manager_confirm" string="Cần quản lý xác nhận" widget="boolean_toggle"/>
                                     <field name="state" string="Trạng thái" widget="badge"
                                         decoration-info="state == 'todo'"
                                         decoration-warning="state == 'progress'"
                                         decoration-success="state == 'done'"/>
                                     <field name="is_done" string="Xong" widget="boolean_toggle"/>
-                                    <field name="user_id" string="Phụ trách" widget="many2one_avatar_user"
-                                        options="{'no_create': True}"/>
                                     <field name="notified" string="Đã giao việc" readonly="1" widget="boolean"/>
                                     <field name="done_date" string="Ngày xong"/>
                                     <field name="note" string="Ghi chú"/>
@@ -171,7 +172,6 @@
                 <field name="date_begin" readonly="1"/>
                 <field name="date_end" readonly="1"/>
                 <field name="notify_code" optional="show"/>
-                <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" optional="hide"/>
                 <field name="stage_id" readonly="1"/>
                 <field name="message_needaction" readonly="1" column_invisible="True"/>
             </list>

@@ -6,6 +6,5 @@ from . import ctkm_program_notify_line
 from . import ctkm_program_checklist_line
 from . import ctkm_notify_report
 from . import ctkm_stage
-from . import ctkm_tag
 from . import ctkm_task
 from . import ir_attachment

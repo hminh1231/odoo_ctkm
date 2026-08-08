@@ -2,26 +2,6 @@
 
 from odoo import api, fields, models
 
-# Các bước chuẩn quy trình CTKM (theo bảng công việc).
-CTKM_CHECKLIST_DEFAULT_STEPS = [
-    'Duyệt CTKM',
-    'Lập thông báo CTKM, trình ký',
-    'Phát hành thông báo CTKM đến các bộ phận',
-    'Đổ BB thay tem/tag(file tổng)',
-    'Khai báo CTKM áp giá trên PM Linkq',
-    'Lập BB thay tem, bàn giao cho KT kho  Kiểm tra BB thay tem tag',
-    'Thiết kế mẫu tem/tag, Bảng nhận diện',
-    'KT áp giá lên phần mềm linkq',
-    'In tem, Tag',
-    'Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ',
-    'Nhận tem tag mới',
-    'Thay tem Tag',
-    'Chụp team gửi lên group / chụp từng con tem',
-    'Kiểm tra hình ảnh tem tag',
-    'Kế toán áp giá CTKM lên PM Link Q Lập báo cáo cửa hàng đã thay tem tag: cửa hàng nào chưa thay tem Lập báo cáo cửa hàng đã áp giá',
-    'Hậu kiểm CTKM Giám sát đi kiểm tra thay tem',
-]
-
 
 class CtkmProgramChecklistLine(models.Model):
     _name = 'ctkm.program.checklist.line'
@@ -58,6 +38,10 @@ class CtkmProgramChecklistLine(models.Model):
         'res.users',
         string='Người phụ trách',
         domain="[('share', '=', False)]",
+    )
+    need_manager_confirm = fields.Boolean(
+        string='Cần quản lý xác nhận',
+        default=True,
     )
     note = fields.Char(string='Ghi chú')
     notified = fields.Boolean(
@@ -107,7 +91,7 @@ class CtkmProgramChecklistLine(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        if any(f in vals for f in ('state', 'done_date', 'user_id', 'name')) and not self.env.context.get('ctkm_task_sync'):
+        if any(f in vals for f in ('state', 'done_date', 'user_id', 'name', 'need_manager_confirm')) and not self.env.context.get('ctkm_task_sync'):
             Task = self.env['ctkm.task']
             for line in self:
                 existing = Task.search([
