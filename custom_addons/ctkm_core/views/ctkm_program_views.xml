@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<odoo noupdate="0">
+<odoo><data noupdate="0">
 
     <!-- Form View -->
     <record model="ir.ui.view" id="view_ctkm_program_form">
@@ -308,4 +308,4 @@
         <field name="action" ref="action_ctkm_program_report"/>
     </record>
 
-</odoo>
+</data></odoo>

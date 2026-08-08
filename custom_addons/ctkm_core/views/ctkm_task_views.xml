@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<odoo noupdate="0">
+<odoo>
+<data noupdate="0">
 
     <!-- List: gọn như hình 3 -->
     <record id="view_ctkm_task_list" model="ir.ui.view">
@@ -267,4 +268,5 @@
         <field name="action" ref="action_ctkm_task_my"/>
     </record>
 
+</data>
 </odoo>
