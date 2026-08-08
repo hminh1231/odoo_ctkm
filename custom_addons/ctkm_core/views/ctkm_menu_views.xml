@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<odoo><data>
+<odoo noupdate="0">
 
     <!-- App CTKM: mọi user nội bộ thấy.
          Chương trình KM / Cấu hình vẫn chỉ CTKM User / Manager. -->
@@ -40,4 +40,4 @@
 
     </menuitem>
 
-</data></odoo>
+</odoo>

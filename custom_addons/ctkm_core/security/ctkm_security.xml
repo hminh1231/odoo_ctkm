@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<odoo>
-    <data noupdate="0">
+<odoo noupdate="0">
         <record model="res.groups.privilege" id="res_groups_privilege_ctkm">
             <field name="name">Chương trình khuyến mãi</field>
             <field name="sequence">19</field>
@@ -88,5 +87,4 @@
             <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
-    </data>
-</odoo>
+    </odoo>
