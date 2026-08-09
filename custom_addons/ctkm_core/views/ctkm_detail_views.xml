@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<odoo><data noupdate="0">
+<odoo noupdate="0">
 
     <record model="ir.ui.view" id="view_ctkm_program_detail_line_tree">
         <field name="name">ctkm.program.detail.line.list</field>
@@ -113,4 +113,4 @@
         <field name="action" ref="action_ctkm_program_detail_view"/>
     </record>
 
-</data></odoo>
+</odoo>

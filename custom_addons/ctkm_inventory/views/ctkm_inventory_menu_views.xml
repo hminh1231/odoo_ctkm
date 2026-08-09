@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<odoo><data noupdate="0">
+<odoo noupdate="0">
 
     <menuitem name="Kho"
         id="menu_ctkm_inventory_root"
@@ -14,4 +14,4 @@
         action="action_ctkm_inventory_tem_tag"
         groups="ctkm_core.group_ctkm_user"/>
 
-</data></odoo>
+</odoo>
