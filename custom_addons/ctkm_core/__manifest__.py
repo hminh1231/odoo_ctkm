@@ -14,6 +14,7 @@ Module cung cấp quản lý các chương trình khuyến mãi.
     'data': [
         'security/ctkm_security.xml',
         'security/ir.model.access.csv',
+        'data/ctkm_stage_default.xml',
         'views/ctkm_menu_views.xml',
         'views/ctkm_stage_views.xml',
         'views/ctkm_program_views.xml',

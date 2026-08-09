@@ -549,7 +549,7 @@ class CtkmTask(models.Model):
                 raise UserError(_(
                     'Chỉ người nhận việc mới được bấm Hoàn thành.'
                 ))
-            if task.state == 'done' and task.manager_confirmed:
+            if task.state == 'done':
                 already_waiting |= task
                 continue
             checklist = task.checklist_line_id
@@ -559,9 +559,11 @@ class CtkmTask(models.Model):
                 else True
             )
             if not need_confirm:
+                # Không cần xác nhận quản lý: nhân viên bấm Hoàn thành là xong,
+                # không tìm quản lý trên org chart và không gửi tin xác nhận.
                 task.with_context(ctkm_internal_state_write=True).write({
                     'state': 'done',
-                    'manager_confirmed': True,
+                    'manager_confirmed': False,
                     'done_date': task.done_date or fields.Date.context_today(task),
                 })
                 directly_done |= task
@@ -606,11 +608,8 @@ class CtkmTask(models.Model):
                 'tới quản lý trực tiếp.'
             )
         else:
-            title = _('Đã gửi trước đó')
-            message = _(
-                'Công việc đang chờ xác nhận quản lý. '
-                'Không gửi thêm tin nhắn Discuss.'
-            )
+            title = _('Đã xử lý')
+            message = _('Công việc này đã ở trạng thái hoàn thành.')
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
@@ -698,7 +697,7 @@ class CtkmTask(models.Model):
                 'Chỉ chuyển tiếp được sau khi đã bấm Hoàn thành '
                 '(trạng thái công việc phải là Hoàn thành).'
             ))
-        if not self.manager_confirmed:
+        if self.checklist_need_manager_confirm and not self.manager_confirmed:
             raise UserError(_(
                 'Cần có Xác nhận quản lý trước khi chuyển tiếp.'
             ))

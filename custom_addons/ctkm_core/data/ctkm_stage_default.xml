@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- Các bước mặc định (Giai đoạn) được tạo khi cài module.
+         Mỗi chương trình (CTKM) sẽ lấy các bước này vào "Tiến độ thực hiện". -->
+
+    <record id="ctkm_stage_1" model="ctkm.stage">
+        <field name="sequence">1</field>
+        <field name="name">Duyệt CTKM</field>
+    </record>
+
+    <record id="ctkm_stage_2" model="ctkm.stage">
+        <field name="sequence">2</field>
+        <field name="name">Lập thông báo CTKM, trình ký</field>
+    </record>
+
+    <record id="ctkm_stage_3" model="ctkm.stage">
+        <field name="sequence">3</field>
+        <field name="name">Phát hành thông báo CTKM đến các bộ phận</field>
+    </record>
+
+    <record id="ctkm_stage_4" model="ctkm.stage">
+        <field name="sequence">4</field>
+        <field name="name">Đổ BB thay tem/tag(file tổng)</field>
+    </record>
+
+    <record id="ctkm_stage_5" model="ctkm.stage">
+        <field name="sequence">5</field>
+        <field name="name">Khai báo CTKM áp giá trên PM Linkq</field>
+    </record>
+
+    <record id="ctkm_stage_6" model="ctkm.stage">
+        <field name="sequence">6</field>
+        <field name="name">Lập BB thay tem, bàn giao cho KT kho  Kiểm tra BB thay tem tag</field>
+    </record>
+
+    <record id="ctkm_stage_7" model="ctkm.stage">
+        <field name="sequence">7</field>
+        <field name="name">Thiết kế mẫu tem/tag, Bảng nhận diện</field>
+    </record>
+
+    <record id="ctkm_stage_8" model="ctkm.stage">
+        <field name="sequence">8</field>
+        <field name="name">KT áp giá lên phần mềm linkq</field>
+    </record>
+
+    <record id="ctkm_stage_9" model="ctkm.stage">
+        <field name="sequence">9</field>
+        <field name="name">In tem, Tag</field>
+    </record>
+
+    <record id="ctkm_stage_10" model="ctkm.stage">
+        <field name="sequence">10</field>
+        <field name="name">Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ</field>
+    </record>
+
+    <record id="ctkm_stage_11" model="ctkm.stage">
+        <field name="sequence">11</field>
+        <field name="name">Nhận tem tag mới</field>
+    </record>
+
+    <record id="ctkm_stage_12" model="ctkm.stage">
+        <field name="sequence">12</field>
+        <field name="name">Thay tem Tag</field>
+    </record>
+
+    <record id="ctkm_stage_13" model="ctkm.stage">
+        <field name="sequence">13</field>
+        <field name="name">Chụp team gửi lên group / chụp từng con tem</field>
+    </record>
+
+    <record id="ctkm_stage_14" model="ctkm.stage">
+        <field name="sequence">14</field>
+        <field name="name">Kiểm tra hình ảnh tem tag</field>
+    </record>
+
+    <record id="ctkm_stage_15" model="ctkm.stage">
+        <field name="sequence">15</field>
+        <field name="name">Kế toán áp giá CTKM lên PM Link Q Lập báo cáo cửa hàng đã thay tem tag: cửa hàng nào chưa thay tem Lập báo cáo cửa hàng đã áp giá</field>
+    </record>
+
+    <record id="ctkm_stage_16" model="ctkm.stage">
+        <field name="sequence">16</field>
+        <field name="name">Hậu kiểm CTKM Giám sát đi kiểm tra thay tem</field>
+    </record>
+
+</odoo>

@@ -40,7 +40,7 @@
                         invisible="not can_confirm_as_manager or state != 'waiting_confirm' or manager_confirmed or not checklist_need_manager_confirm"/>
                     <button name="action_advance_stage" type="object"
                         string="Chuyển tiếp" class="btn-secondary" icon="fa-forward"
-                        invisible="state != 'done' or not manager_confirmed or forwarded"/>
+                        invisible="state != 'done' or (not manager_confirmed and checklist_need_manager_confirm) or forwarded"/>
                     <field name="forwarded" invisible="1"/>
                     <field name="program_stage_id" widget="statusbar"/>
                     <field name="state" invisible="1"/>
