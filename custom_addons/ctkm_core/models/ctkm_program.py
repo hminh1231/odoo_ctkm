@@ -184,6 +184,7 @@ class CtkmProgram(models.Model):
         if stages:
             return [
                 {
+                    'stage_id': stage.id,
                     'sequence': stage.sequence,
                     'name': stage.name,
                     'state': 'todo',
@@ -213,6 +214,62 @@ class CtkmProgram(models.Model):
                 'Hậu kiểm CTKM Giám sát đi kiểm tra thay tem',
             ], start=1)
         ]
+
+    def _ctkm_sync_checklist_from_stages(self):
+        """Đồng bộ 'Tiến độ thực hiện' của mỗi CTKM theo các bước (Giai đoạn) hiện tại.
+
+        Mỗi bước trong 'Cấu hình -> Giai đoạn' sẽ tương ứng với một dòng checklist
+        trong 'Tiến độ thực hiện' của từng chương trình (khớp theo stage_id, fallback
+        theo tên). Tiến độ (state/done_date) của các dòng đã khớp được giữ nguyên.
+        """
+        Checklist = self.env['ctkm.program.checklist.line']
+        stages = self.env['ctkm.stage'].search([], order='sequence, id')
+        stage_ids = stages.ids
+        for program in self:
+            lines = program.checklist_line_ids
+            by_stage = {line.stage_id.id: line for line in lines if line.stage_id}
+            by_name = {}
+            for line in lines:
+                if not line.stage_id and line.name not in by_name:
+                    by_name[line.name] = line
+
+            to_unlink = self.env['ctkm.program.checklist.line']
+            created = []
+            for stage in stages:
+                line = by_stage.get(stage.id)
+                if not line and stage.name in by_name:
+                    line = by_name.pop(stage.name)
+                if line:
+                    line.write({
+                        'stage_id': stage.id,
+                        'sequence': stage.sequence,
+                        'name': stage.name,
+                        'user_id': stage.user_id.id,
+                        'need_manager_confirm': stage.need_manager_confirm,
+                    })
+                else:
+                    created.append({
+                        'program_id': program.id,
+                        'stage_id': stage.id,
+                        'sequence': stage.sequence,
+                        'name': stage.name,
+                        'state': 'todo',
+                        'user_id': stage.user_id.id,
+                        'need_manager_confirm': stage.need_manager_confirm,
+                    })
+
+            # Gỡ các dòng không còn tương ứng với giai đoạn nào.
+            for line in lines:
+                if line.stage_id and line.stage_id.id not in stage_ids:
+                    to_unlink |= line
+            for line in by_name.values():
+                to_unlink |= line
+            if to_unlink:
+                to_unlink.unlink()
+            if created:
+                Checklist.create(created)
+                program.ctkm_ensure_checklist_tasks()
+        return True
 
     def _ctkm_ensure_checklist_lines(self):
         """Tạo các bước mặc định nếu chương trình chưa có checklist."""

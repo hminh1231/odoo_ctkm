@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from odoo import fields, models
+from odoo import api, fields, models
 
 
 class CtkmStage(models.Model):
@@ -22,3 +22,21 @@ class CtkmStage(models.Model):
     )
     pipe_end = fields.Boolean(string='Kết thúc')
     fold = fields.Boolean(string='Gộp')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        recs = super().create(vals_list)
+        self.env['ctkm.program'].sudo().search([])._ctkm_sync_checklist_from_stages()
+        return recs
+
+    def write(self, vals):
+        res = super().write(vals)
+        if any(f in vals for f in ('name', 'sequence', 'user_id', 'need_manager_confirm')):
+            self.env['ctkm.program'].sudo().search([])._ctkm_sync_checklist_from_stages()
+        return res
+
+    def unlink(self):
+        programs = self.env['ctkm.program'].sudo().search([])
+        res = super().unlink()
+        programs._ctkm_sync_checklist_from_stages()
+        return res

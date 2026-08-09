@@ -15,6 +15,12 @@ class CtkmProgramChecklistLine(models.Model):
         ondelete='cascade',
         index=True,
     )
+    stage_id = fields.Many2one(
+        'ctkm.stage',
+        string='Giai đoạn',
+        ondelete='set null',
+        index=True,
+    )
     sequence = fields.Integer(string='STT', default=10, required=True)
     name = fields.Char(string='Công việc', required=True)
     state = fields.Selection(
