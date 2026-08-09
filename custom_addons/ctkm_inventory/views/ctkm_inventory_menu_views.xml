@@ -1,17 +1,19 @@
 <?xml version="1.0"?>
 <odoo noupdate="0">
 
-    <menuitem name="Kho"
-        id="menu_ctkm_inventory_root"
-        sequence="2"
-        parent="ctkm_core.ctkm_main_menu"
-        groups="ctkm_core.group_ctkm_user"/>
+    <record id="menu_ctkm_inventory_root" model="ir.ui.menu">
+        <field name="name">Kho</field>
+        <field name="sequence">2</field>
+        <field name="parent_id" ref="ctkm_core.ctkm_main_menu"/>
+        <field name="groups_id" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+    </record>
 
-    <menuitem name="Tem/Tag"
-        id="menu_ctkm_inventory_tem_tag"
-        sequence="1"
-        parent="menu_ctkm_inventory_root"
-        action="action_ctkm_inventory_tem_tag"
-        groups="ctkm_core.group_ctkm_user"/>
+    <record id="menu_ctkm_inventory_tem_tag" model="ir.ui.menu">
+        <field name="name">Tem/Tag</field>
+        <field name="sequence">1</field>
+        <field name="parent_id" ref="menu_ctkm_inventory_root"/>
+        <field name="action" ref="action_ctkm_inventory_tem_tag"/>
+        <field name="groups_id" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+    </record>
 
 </odoo>
