@@ -49,6 +49,8 @@
                     <field name="program_id" invisible="1"/>
                     <field name="company_id" invisible="1"/>
                     <field name="name" invisible="1"/>
+                    <field name="is_tem_tag_import_task" invisible="1"/>
+                    <field name="is_tem_photo_task" invisible="1"/>
                     <field name="program_kanban_state" widget="statusbar"
                         class="ms-auto float-end"/>
                     <div class="oe_title">
@@ -175,20 +177,20 @@
                         </page>
                         <page string="Chi tiết công việc" name="task_detail">
                             <group>
-                                <group string="Import Tem/Tag" invisible="not ('Đổ BB thay tem/tag (file tổng)' in (name or '') or 'Đổ BB thay tem/tag(file tổng)' in (name or ''))">
+                                <group string="Import Tem/Tag" invisible="not is_tem_tag_import_task">
                                     <div class="text-muted mb-2" colspan="2">
                                         Nhấn <b>Import Tem/Tag</b> để tải lên file Excel theo mẫu Kho Tem/Tag.
                                     </div>
                                     <button name="action_open_tem_tag_import" type="object"
                                         string="Import Tem/Tag" class="btn-primary"
                                         icon="fa-file-excel-o"
-                                        invisible="not ('Đổ BB thay tem/tag (file tổng)' in (name or '') or 'Đổ BB thay tem/tag(file tổng)' in (name or ''))"/>
+                                        invisible="not is_tem_tag_import_task"/>
                                 </group>
-                                <group string="Ảnh tem/tag" invisible="not ('Chụp tem gửi lên group / chụp từng con tem' in (name or ''))">
+                                <group string="Ảnh tem/tag" invisible="not is_tem_photo_task">
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
-                                <group string="Thông tin khác" invisible="('Đổ BB thay tem/tag (file tổng)' in (name or '') or 'Đổ BB thay tem/tag(file tổng)' in (name or '')) or ('Chụp tem gửi lên group / chụp từng con tem' in (name or ''))">
+                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task">
                                     <div colspan="2" class="text-muted">
                                         Đang để trống, sẽ bổ sung sau.
                                     </div>

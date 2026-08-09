@@ -15,7 +15,7 @@ from markupsafe import Markup, escape
 
 from odoo import _, fields, models
 from odoo.addons.ctkm_inventory.models.ctkm_inventory_tem_tag import _normalize_store_code
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 
 
 _MAIN_NS = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
@@ -47,6 +47,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
 
     def action_import(self):
         self.ensure_one()
+        self._check_import_allowed()
         raw_file = self._decode_upload()
         frames = self._read_excel_frames(raw_file)
         visible_sheet_names = self._get_visible_sheet_names(raw_file)
@@ -72,7 +73,9 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 'import_filename': self.filename,
             })
 
-        Inventory = self.env['ctkm.inventory.tem.tag']
+        # Người nhận việc bước "Đổ BB thay tem/tag" là nhân viên thường: họ chỉ được
+        # ghi kho Tem/Tag thông qua wizard này (đã kiểm tra quyền ở trên).
+        Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
         if self.replace_existing and records_by_program_date:
             domain = ['|'] * (len(records_by_program_date) - 1)
             for program_id, inventory_date in records_by_program_date:
@@ -83,7 +86,44 @@ class CtkmInventoryImportWizard(models.TransientModel):
 
         created = Inventory.create(values)
         self._notify_imported_tem_tags(created)
-        action = self.env.ref('ctkm_inventory.action_ctkm_inventory_tem_tag').read()[0]
+        return self._import_result_action(created)
+
+    def _check_import_allowed(self):
+        """CTKM user/manager, hoặc người được giao đúng bước import của CTKM này."""
+        self.ensure_one()
+        if self.env.user.has_group('ctkm_core.group_ctkm_user'):
+            return
+        if self.program_id and self._user_import_tasks():
+            return
+        raise AccessError(_(
+            'Bạn chỉ được import Tem/Tag cho chương trình khuyến mãi có công việc '
+            '"Đổ BB thay tem/tag (file tổng)" được giao cho bạn.'
+        ))
+
+    def _user_import_tasks(self):
+        """Công việc bước import Tem/Tag của người dùng hiện tại trên CTKM đã chọn."""
+        self.ensure_one()
+        tasks = self.env['ctkm.task'].sudo().search([
+            ('user_id', '=', self.env.user.id),
+            ('program_id', '=', self.program_id.id),
+        ])
+        return tasks.filtered('is_tem_tag_import_task')
+
+    def _import_result_action(self, created):
+        """Mở danh sách vừa import; nhân viên thường chỉ nhận thông báo kết quả."""
+        self.ensure_one()
+        if not self.env.user.has_group('ctkm_core.group_ctkm_user'):
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'type': 'success',
+                    'title': _('Import Tem/Tag'),
+                    'message': _('Đã import %s dòng Tem/Tag.') % len(created),
+                    'next': {'type': 'ir.actions.act_window_close'},
+                },
+            }
+        action = self.env.ref('ctkm_inventory.action_ctkm_inventory_tem_tag').sudo().read()[0]
         action.update({
             'name': _('Tem/Tag đã import'),
             'domain': [('id', 'in', created.ids)],

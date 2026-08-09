@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import re
+import unicodedata
 
 from markupsafe import Markup, escape
 from psycopg2 import IntegrityError
@@ -10,6 +12,18 @@ from odoo.exceptions import UserError
 from odoo.tools import html2plaintext
 
 _logger = logging.getLogger(__name__)
+
+# Nhận diện bước công việc theo tên (đã bỏ dấu / bỏ ký tự đặc biệt) để không phụ
+# thuộc vào khoảng trắng hay lỗi chính tả nhỏ khi đặt tên giai đoạn.
+TEM_TAG_IMPORT_TASK_MARKERS = ('dobbthaytemtag',)
+TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
+
+
+def normalize_step_key(value):
+    """Chuẩn hóa tên bước: chữ thường, bỏ dấu, chỉ giữ chữ và số."""
+    text = unicodedata.normalize('NFD', (value or '').lower())
+    text = ''.join(char for char in text if unicodedata.category(char) != 'Mn')
+    return re.sub(r'[^a-z0-9]+', '', text.replace('đ', 'd'))
 
 
 class CtkmTask(models.Model):
@@ -67,6 +81,15 @@ class CtkmTask(models.Model):
     is_task_assignee = fields.Boolean(
         string='Là người nhận việc',
         compute='_compute_is_task_assignee',
+    )
+    is_tem_tag_import_task = fields.Boolean(
+        string='Bước import Tem/Tag',
+        compute='_compute_task_step_flags',
+        help='Công việc thuộc bước "Đổ BB thay tem/tag (file tổng)".',
+    )
+    is_tem_photo_task = fields.Boolean(
+        string='Bước chụp ảnh tem/tag',
+        compute='_compute_task_step_flags',
     )
     support_employee_ids = fields.Many2many(
         'hr.employee',
@@ -265,6 +288,24 @@ class CtkmTask(models.Model):
                 task.checklist_line_id.need_manager_confirm
                 if task.checklist_line_id
                 else True
+            )
+
+    @api.depends('name', 'checklist_step_name')
+    def _compute_task_step_flags(self):
+        for task in self:
+            keys = [
+                key
+                for key in (
+                    normalize_step_key(task.name),
+                    normalize_step_key(task.checklist_step_name),
+                )
+                if key
+            ]
+            task.is_tem_tag_import_task = any(
+                marker in key for key in keys for marker in TEM_TAG_IMPORT_TASK_MARKERS
+            )
+            task.is_tem_photo_task = any(
+                marker in key for key in keys for marker in TEM_PHOTO_TASK_MARKERS
             )
 
     def _get_worker_employee(self):
@@ -1246,6 +1287,8 @@ class CtkmTask(models.Model):
         self.ensure_one()
         if not self.program_id:
             raise UserError(_('Công việc chưa gắn chương trình khuyến mãi.'))
+        if not self.is_tem_tag_import_task:
+            raise UserError(_('Công việc này không phải bước import Tem/Tag.'))
         action = self.env.ref('ctkm_inventory.action_ctkm_inventory_import_wizard', raise_if_not_found=False)
         if not action:
             raise UserError(_('Module Kho Tem/Tag chưa cài đặt.'))
@@ -1258,5 +1301,6 @@ class CtkmTask(models.Model):
             'target': 'new',
             'context': {
                 'default_program_id': self.program_id.id,
+                'ctkm_import_task_id': self.id,
             },
         }

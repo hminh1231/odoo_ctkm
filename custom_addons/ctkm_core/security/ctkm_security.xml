@@ -40,6 +40,17 @@
             <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
+        <!-- Người nhận việc: xem CTKM của công việc được giao (form công việc, wizard import...) -->
+        <record id="ctkm_program_rule_task_assignee" model="ir.rule">
+            <field name="name">CTKM: người nhận việc xem CTKM được giao</field>
+            <field name="model_id" ref="model_ctkm_program"/>
+            <field name="domain_force">[('task_ids.user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
         <!-- Quản lý org-chart: xem CTKM của cấp dưới (để xác nhận hoàn thành + xem tài liệu) -->
         <record id="ctkm_program_rule_org_manager" model="ir.rule">
             <field name="name">CTKM: quản lý org-chart xem CTKM cấp dưới</field>
