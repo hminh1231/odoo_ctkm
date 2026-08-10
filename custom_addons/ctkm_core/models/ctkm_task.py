@@ -78,10 +78,19 @@ class CtkmTask(models.Model):
     checklist_need_manager_confirm = fields.Boolean(
         string='Checklist cần quản lý xác nhận',
         compute='_compute_checklist_need_manager_confirm',
+        store=True,
+        readonly=False,
     )
     is_task_assignee = fields.Boolean(
         string='Là người nhận việc',
         compute='_compute_is_task_assignee',
+    )
+    is_my_turn = fields.Boolean(
+        string='Đến lượt tôi',
+        compute='_compute_is_my_turn',
+        search='_search_is_my_turn',
+        help='True khi công việc đang cần người dùng hiện tại xử lý (chưa xong, '
+             'chưa chờ người khác xác nhận).',
     )
     is_tem_tag_import_task = fields.Boolean(
         string='Bước import Tem/Tag',
@@ -292,6 +301,27 @@ class CtkmTask(models.Model):
         uid = self.env.user.id
         for task in self:
             task.is_task_assignee = task.user_id.id == uid
+
+    @api.depends('user_id', 'state', 'manager_confirmed')
+    @api.depends_context('uid')
+    def _compute_is_my_turn(self):
+        uid = self.env.user.id
+        for task in self:
+            if task.user_id.id != uid:
+                task.is_my_turn = False
+                continue
+            # Đến lượt tôi xử lý khi chưa xong và chưa chờ người khác (quản lý) xác nhận.
+            task.is_my_turn = bool(task.state in ('todo', 'progress'))
+
+    def _search_is_my_turn(self, operator, value):
+        if operator in ('=', True) and value:
+            return [('user_id', '=', self.env.uid), ('state', 'in', ('todo', 'progress'))]
+        if operator in ('=', False) and not value:
+            return ['|', ('user_id', '!=', self.env.uid), ('state', 'not in', ('todo', 'progress'))]
+        # Cho các tổ hợp khác, lọc theo user rồi xử lý bằng Python.
+        candidates = self.search([('user_id', '=', self.env.uid)])
+        matching = candidates.filtered(lambda t: (t.state in ('todo', 'progress')) == value)
+        return [('id', 'in', matching.ids)]
 
     @api.depends('checklist_line_id', 'checklist_line_id.need_manager_confirm')
     def _compute_checklist_need_manager_confirm(self):
@@ -632,7 +662,7 @@ class CtkmTask(models.Model):
                 continue
             checklist = task.checklist_line_id
             need_confirm = (
-                checklist.need_manager_confirm
+                task.checklist_need_manager_confirm
                 if checklist
                 else True
             )
@@ -1147,12 +1177,22 @@ class CtkmTask(models.Model):
         if checklist.name and task.name != checklist.name:
             vals['name'] = checklist.name
         if 'need_manager_confirm' in checklist._fields and task.checklist_need_manager_confirm != checklist.need_manager_confirm:
-            pass
+            vals['checklist_need_manager_confirm'] = checklist.need_manager_confirm
         if vals and not task.env.context.get('ctkm_task_sync'):
             task.with_context(
                 ctkm_task_sync=True,
                 ctkm_internal_state_write=True,
             ).write(vals)
+        # Nếu đang chờ xác nhận quản lý mà giờ không còn cần, tự động hoàn thành.
+        if not checklist.need_manager_confirm and task.state == 'waiting_confirm':
+            task.with_context(
+                ctkm_task_sync=True,
+                ctkm_internal_state_write=True,
+            ).write({
+                'state': 'done',
+                'manager_confirmed': False,
+                'done_date': task.done_date or fields.Date.context_today(task),
+            })
         return task
 
     @api.model
