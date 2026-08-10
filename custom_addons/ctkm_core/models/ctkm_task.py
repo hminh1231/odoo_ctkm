@@ -679,11 +679,14 @@ class CtkmTask(models.Model):
                 already_waiting |= task
                 continue
             checklist = task.checklist_line_id
-            need_confirm = (
-                task.checklist_need_manager_confirm
-                if checklist
-                else True
-            )
+            # Ưu tiên giá trị trực tiếp trên bước (live); nếu chưa có, dùng trường
+            # tính toán của công việc. Dùng OR để không bị kẹt do giá trị tính toán cũ.
+            need_confirm = True
+            if checklist:
+                need_confirm = bool(
+                    task.checklist_need_manager_confirm
+                    or checklist.need_manager_confirm
+                )
             if not need_confirm:
                 # Không cần xác nhận quản lý: nhân viên bấm Hoàn thành là xong,
                 # không tìm quản lý trên org chart và không gửi tin xác nhận.
@@ -695,6 +698,16 @@ class CtkmTask(models.Model):
                 directly_done |= task
                 continue
             if task.state == 'waiting_confirm' and not task.manager_confirmed:
+                # Đang chờ xác nhận nhưng bước này thực tế không cần quản lý
+                # (do cấu hình thay đổi): hoàn thành luôn, tránh kẹt không có nút.
+                if checklist and not checklist.need_manager_confirm:
+                    task.with_context(ctkm_internal_state_write=True).write({
+                        'state': 'done',
+                        'manager_confirmed': False,
+                        'done_date': task.done_date or fields.Date.context_today(task),
+                    })
+                    directly_done |= task
+                    continue
                 already_waiting |= task
                 continue
             manager_user = task._get_org_chart_manager_user()
