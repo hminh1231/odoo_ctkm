@@ -34,6 +34,11 @@ class CtkmInventoryTemTag(models.Model):
     )
     quantity = fields.Float(string='Quantity', default=0.0)
     import_filename = fields.Char(string='File nhập', readonly=True)
+    replaced = fields.Boolean(
+        string='Đã thay',
+        default=False,
+        help='Nhân viên đánh dấu đã thay tem/tag thực tế tại cửa hàng (bước 12).',
+    )
 
     @api.depends('store')
     def _compute_store_key(self):
@@ -46,6 +51,8 @@ class CtkmInventoryTemTag(models.Model):
         codes = []
         if 'employee_ma_bo_phan_id' in user._fields and user.employee_ma_bo_phan_id:
             codes.append(user.employee_ma_bo_phan_id.code)
+        if 'employee_store_id' in user._fields and user.employee_store_id:
+            codes.append(user.employee_store_id.code)
         if 'employee_id' in user._fields and user.employee_id:
             employee = user.employee_id.sudo()
             if 'ma_bo_phan' in employee._fields:
@@ -54,10 +61,12 @@ class CtkmInventoryTemTag(models.Model):
                 codes.append(employee.ma_bo_phan_id.code)
             if 'store_id' in employee._fields and employee.store_id:
                 codes.append(employee.store_id.code)
+                codes.append(employee.store_id.name)
             if 'current_version_id' in employee._fields and employee.current_version_id:
                 version = employee.current_version_id
                 if 'store_id' in version._fields and version.store_id:
                     codes.append(version.store_id.code)
+                    codes.append(version.store_id.name)
 
         keys = []
         for code in codes:

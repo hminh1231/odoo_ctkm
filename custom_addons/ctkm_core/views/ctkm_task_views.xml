@@ -51,6 +51,7 @@
                     <field name="name" invisible="1"/>
                     <field name="is_tem_tag_import_task" invisible="1"/>
                     <field name="is_tem_photo_task" invisible="1"/>
+                    <field name="is_tem_replace_task" invisible="1"/>
                     <field name="program_kanban_state" widget="statusbar"
                         class="ms-auto float-end"/>
                     <div class="oe_title">
@@ -190,7 +191,21 @@
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
-                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task">
+                                <group string="Đã thay tem/tag" invisible="not is_tem_replace_task">
+                                    <div colspan="2" class="text-muted mb-2">
+                                        Đánh dấu <b>Đã thay</b> cho từng Mã vật tư thuộc cửa hàng của bạn trong chương trình này.
+                                    </div>
+                                    <field name="tem_tag_replace_ids" nolabel="1" colspan="2"
+                                        context="{'edit': True, 'create': False, 'delete': False}">
+                                        <list editable="bottom">
+                                            <field name="material_code" readonly="1"/>
+                                            <field name="store" readonly="1" optional="show"/>
+                                            <field name="date" readonly="1" optional="hide"/>
+                                            <field name="replaced"/>
+                                        </list>
+                                    </field>
+                                </group>
+                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task">
                                     <div colspan="2" class="text-muted">
                                         Đang để trống, sẽ bổ sung sau.
                                     </div>

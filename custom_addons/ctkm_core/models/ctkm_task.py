@@ -17,6 +17,7 @@ _logger = logging.getLogger(__name__)
 # thuộc vào khoảng trắng hay lỗi chính tả nhỏ khi đặt tên giai đoạn.
 TEM_TAG_IMPORT_TASK_MARKERS = ('dobbthaytemtag',)
 TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
+TEM_REPLACE_TASK_MARKERS = ('thaytemtag',)
 
 
 def normalize_step_key(value):
@@ -90,6 +91,16 @@ class CtkmTask(models.Model):
     is_tem_photo_task = fields.Boolean(
         string='Bước chụp ảnh tem/tag',
         compute='_compute_task_step_flags',
+    )
+    is_tem_replace_task = fields.Boolean(
+        string='Bước thay tem/tag',
+        compute='_compute_task_step_flags',
+    )
+    tem_tag_replace_ids = fields.One2many(
+        'ctkm.inventory.tem.tag',
+        compute='_compute_tem_tag_replace_ids',
+        string='Tem/Tag đã thay',
+        help='Tem/Tag của CTKM này thuộc cửa hàng của nhân viên, để đánh dấu "Đã thay".',
     )
     support_employee_ids = fields.Many2many(
         'hr.employee',
@@ -307,6 +318,21 @@ class CtkmTask(models.Model):
             task.is_tem_photo_task = any(
                 marker in key for key in keys for marker in TEM_PHOTO_TASK_MARKERS
             )
+            task.is_tem_replace_task = any(
+                marker in key for key in keys for marker in TEM_REPLACE_TASK_MARKERS
+            )
+
+    @api.depends('program_id', 'user_id')
+    def _compute_tem_tag_replace_ids(self):
+        for task in self:
+            records = self.env['ctkm.inventory.tem.tag']
+            if task.program_id and task.user_id:
+                domain = [('program_id', '=', task.program_id.id)]
+                store_keys = records.current_user_store_keys()
+                if store_keys:
+                    domain = domain + [('store_key', 'in', store_keys)]
+                records = records.search(domain, order='date desc, material_code, store')
+            task.tem_tag_replace_ids = records
 
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
