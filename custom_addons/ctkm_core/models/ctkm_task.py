@@ -83,12 +83,12 @@ class CtkmTask(models.Model):
         string='Là người nhận việc',
         compute='_compute_is_task_assignee',
     )
-    is_my_turn = fields.Boolean(
-        string='Đến lượt tôi',
-        compute='_compute_is_my_turn',
-        search='_search_is_my_turn',
-        help='True khi công việc đang cần người dùng hiện tại xử lý (chưa xong, '
-             'chưa chờ người khác xác nhận).',
+    is_current_stage_task = fields.Boolean(
+        string='Bước hiện tại',
+        compute='_compute_is_current_stage_task',
+        search='_search_is_current_stage_task',
+        help='True khi công việc thuộc bước (giai đoạn) hiện tại của CTKM, '
+             'tức là đến lượt xử lý lúc này (không phải bước tương lai).',
     )
     is_tem_tag_import_task = fields.Boolean(
         string='Bước import Tem/Tag',
@@ -302,23 +302,47 @@ class CtkmTask(models.Model):
 
     @api.depends('user_id', 'state', 'manager_confirmed')
     @api.depends_context('uid')
-    def _compute_is_my_turn(self):
-        uid = self.env.user.id
+    def _compute_is_current_stage_task(self):
         for task in self:
-            if task.user_id.id != uid:
-                task.is_my_turn = False
+            program = task.program_id
+            current_stage = program.stage_id if program else False
+            if not current_stage:
+                task.is_current_stage_task = False
                 continue
-            # Đến lượt tôi xử lý khi chưa xong và chưa chờ người khác (quản lý) xác nhận.
-            task.is_my_turn = bool(task.state in ('todo', 'progress'))
+            task_stage = task.program_stage_id
+            if not task_stage and task.checklist_line_id:
+                task_stage = task.checklist_line_id.stage_id
+            task.is_current_stage_task = bool(task_stage and task_stage.id == current_stage.id)
 
-    def _search_is_my_turn(self, operator, value):
+    def _search_is_current_stage_task(self, operator, value):
+        # Chỉ hỗ trợ các tổ hợp cơ bản; còn lại lọc bằng Python.
         if operator in ('=', True) and value:
-            return [('user_id', '=', self.env.uid), ('state', 'in', ('todo', 'progress'))]
+            progs = self.env['ctkm.program'].search([])
+            stage_ids = progs.filtered('stage_id').mapped('stage_id').ids
+            if not stage_ids:
+                return [('id', '=', False)]
+            tasks = self.search([
+                ('user_id', '=', self.env.uid),
+                '|',
+                ('stage_id', 'in', stage_ids),
+                ('checklist_line_id.stage_id', 'in', stage_ids),
+            ])
+            return [('id', 'in', tasks.ids)]
         if operator in ('=', False) and not value:
-            return ['|', ('user_id', '!=', self.env.uid), ('state', 'not in', ('todo', 'progress'))]
-        # Cho các tổ hợp khác, lọc theo user rồi xử lý bằng Python.
+            progs = self.env['ctkm.program'].search([])
+            stage_ids = progs.filtered('stage_id').mapped('stage_id').ids
+            if not stage_ids:
+                return [('id', '!=', False)]
+            tasks = self.search([
+                ('user_id', '=', self.env.uid),
+                '|',
+                ('stage_id', 'in', stage_ids),
+                ('checklist_line_id.stage_id', 'in', stage_ids),
+            ])
+            return [('id', 'not in', tasks.ids)]
+        # Các tổ hợp hiếm: lọc bằng Python qua compute.
         candidates = self.search([('user_id', '=', self.env.uid)])
-        matching = candidates.filtered(lambda t: (t.state in ('todo', 'progress')) == value)
+        matching = candidates.filtered(lambda t: t.is_current_stage_task == value)
         return [('id', 'in', matching.ids)]
 
     @api.depends('checklist_line_id', 'checklist_line_id.need_manager_confirm')
