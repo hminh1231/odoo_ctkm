@@ -1080,8 +1080,8 @@ class CtkmTask(models.Model):
             vals['state'] = mapped.get(state, state)
         if done_date:
             vals['done_date'] = done_date
-        if vals and not self.env.context.get('ctkm_checklist_sync'):
-            checklist.with_context(ctkm_checklist_sync=True).write(vals)
+        if vals and not self.env.context.get('ctkm_task_sync'):
+            checklist.sudo().with_context(ctkm_task_sync=True).write(vals)
 
     @api.model
     def _ctkm_sync_task_from_checklist(self, checklist):

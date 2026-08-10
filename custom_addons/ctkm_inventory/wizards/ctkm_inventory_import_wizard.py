@@ -85,7 +85,12 @@ class CtkmInventoryImportWizard(models.TransientModel):
             Inventory.search(domain).unlink()
 
         created = Inventory.create(values)
-        self._notify_imported_tem_tags(created)
+        # Thông báo Discuss không được làm hỏng (và rollback) toàn bộ import.
+        try:
+            with self.env.cr.savepoint():
+                self._notify_imported_tem_tags(created)
+        except Exception:
+            _logger.exception('ctkm_inventory: gửi thông báo Tem/Tag thất bại')
         return self._import_result_action(created)
 
     def _check_import_allowed(self):
@@ -197,7 +202,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
         return tem_tag or material_code or _('Không có mã')
 
     def _get_store_recipient_users(self, store_key):
-        Employee = self.env['hr.employee'].sudo()
+        Employee = self.env['hr.employee'].sudo().with_context(active_test=True)
         employees = Employee.search([('active', '=', True), ('user_id', '!=', False)])
         employees = employees.filtered(
             lambda employee: store_key in self._employee_store_keys(employee)
