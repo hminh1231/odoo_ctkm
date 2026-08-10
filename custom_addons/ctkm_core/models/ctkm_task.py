@@ -78,8 +78,6 @@ class CtkmTask(models.Model):
     checklist_need_manager_confirm = fields.Boolean(
         string='Checklist cần quản lý xác nhận',
         compute='_compute_checklist_need_manager_confirm',
-        store=True,
-        readonly=False,
     )
     is_task_assignee = fields.Boolean(
         string='Là người nhận việc',
@@ -1176,8 +1174,6 @@ class CtkmTask(models.Model):
             vals['done_date'] = checklist.done_date
         if checklist.name and task.name != checklist.name:
             vals['name'] = checklist.name
-        if 'need_manager_confirm' in checklist._fields and task.checklist_need_manager_confirm != checklist.need_manager_confirm:
-            vals['checklist_need_manager_confirm'] = checklist.need_manager_confirm
         if vals and not task.env.context.get('ctkm_task_sync'):
             task.with_context(
                 ctkm_task_sync=True,
