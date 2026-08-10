@@ -100,7 +100,6 @@ class CtkmTask(models.Model):
         'ctkm.task.tem.tag.replace.line',
         'task_id',
         compute='_compute_tem_tag_replace_ids',
-        inverse='_fill_tem_tag_replace_ids',
         string='Tem/Tag đã thay',
         help='Tem/Tag của CTKM này thuộc cửa hàng của nhân viên, để đánh dấu "Đã thay".',
     )
@@ -339,18 +338,12 @@ class CtkmTask(models.Model):
             lines = []
             for row in rows:
                 lines.append((0, 0, {
-                    'tem_tag_id': row.id,
                     'material_code': row.material_code,
                     'store': row.store,
                     'date': row.date,
                     'replaced': row.replaced,
                 }))
             task.tem_tag_replace_ids = lines
-
-    def _fill_tem_tag_replace_ids(self):
-        # Trạng thái 'replaced' đã được ghi về ctkm.inventory.tem.tag trong
-        # write() của bản ghi transient; ở đây không cần làm gì thêm.
-        return
 
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
