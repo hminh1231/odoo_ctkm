@@ -623,9 +623,13 @@ class CtkmTask(models.Model):
                     ))
             vals['state'] = 'done'
         elif 'manager_confirmed' in vals and not vals['manager_confirmed']:
-            next_state = vals.get('state')
-            if next_state is None or next_state == 'done':
-                vals['state'] = 'waiting_confirm'
+            # Bỏ tick xác nhận → hạ về chờ xác nhận.
+            # Không ghi đè khi workflow nội bộ chủ động đánh dấu done
+            # (bước không cần xác nhận quản lý: state=done + manager_confirmed=False).
+            if not (internal and vals.get('state') == 'done'):
+                next_state = vals.get('state')
+                if next_state is None or next_state == 'done':
+                    vals['state'] = 'waiting_confirm'
 
         if 'state' in vals and vals['state'] not in ('waiting_confirm', 'done'):
             vals['manager_confirmed'] = False
@@ -663,10 +667,40 @@ class CtkmTask(models.Model):
 
         return res
 
+    def _ctkm_task_needs_manager_confirm(self):
+        """Nguồn đúng: toggle 'Cần quản lý xác nhận' trên bước checklist."""
+        self.ensure_one()
+        if self.checklist_line_id:
+            return bool(self.checklist_line_id.need_manager_confirm)
+        return True
+
+    def _ctkm_notify_reload(self, title, message, notif_type='success'):
+        """Toast + reload form để hiện/ẩn đúng nút Hoàn thành / Chuyển tiếp."""
+        params = {
+            'title': title,
+            'message': message,
+            'type': notif_type,
+            'sticky': False,
+        }
+        if len(self) == 1:
+            params['next'] = {
+                'type': 'ir.actions.act_window',
+                'res_model': self._name,
+                'res_id': self.id,
+                'view_mode': 'form',
+                'views': [(False, 'form')],
+                'target': 'current',
+            }
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': params,
+        }
+
     def action_mark_done(self):
         """Người làm việc báo hoàn thành → gửi tin quản lý xác nhận."""
         notified = self.browse()
-        already_waiting = self.browse()
+        already_done = self.browse()
         directly_done = self.browse()
         for task in self:
             if task.user_id != self.env.user and not self.env.user.has_group(
@@ -676,17 +710,10 @@ class CtkmTask(models.Model):
                     'Chỉ người nhận việc mới được bấm Hoàn thành.'
                 ))
             if task.state == 'done':
-                already_waiting |= task
+                already_done |= task
                 continue
             checklist = task.checklist_line_id
-            # Ưu tiên giá trị trực tiếp trên bước (live); nếu chưa có, dùng trường
-            # tính toán của công việc. Dùng OR để không bị kẹt do giá trị tính toán cũ.
-            need_confirm = True
-            if checklist:
-                need_confirm = bool(
-                    task.checklist_need_manager_confirm
-                    or checklist.need_manager_confirm
-                )
+            need_confirm = task._ctkm_task_needs_manager_confirm()
             if not need_confirm:
                 # Không cần xác nhận quản lý: nhân viên bấm Hoàn thành là xong,
                 # không tìm quản lý trên org chart và không gửi tin xác nhận.
@@ -698,8 +725,7 @@ class CtkmTask(models.Model):
                 directly_done |= task
                 continue
             if task.state == 'waiting_confirm' and not task.manager_confirmed:
-                # Đang chờ xác nhận nhưng bước này thực tế không cần quản lý
-                # (do cấu hình thay đổi): hoàn thành luôn, tránh kẹt không có nút.
+                # Đang chờ xác nhận nhưng bước đã tắt "Cần quản lý xác nhận".
                 if checklist and not checklist.need_manager_confirm:
                     task.with_context(ctkm_internal_state_write=True).write({
                         'state': 'done',
@@ -708,7 +734,7 @@ class CtkmTask(models.Model):
                     })
                     directly_done |= task
                     continue
-                already_waiting |= task
+                already_done |= task
                 continue
             manager_user = task._get_org_chart_manager_user()
             if not manager_user:
@@ -726,39 +752,39 @@ class CtkmTask(models.Model):
             task._notify_org_manager_confirm()
             notified |= task
 
+        target = (directly_done or notified or already_done)[:1]
         if directly_done:
-            title = _('Đã hoàn thành')
-            message = _('Công việc đã được đánh dấu Hoàn thành (không cần xác nhận quản lý).')
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': title,
-                    'message': message,
-                    'type': 'success',
-                    'sticky': False,
-                },
-            }
-
-        if notified:
-            title = _('Đã gửi hoàn thành')
-            message = _(
-                'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
-                'tới quản lý trực tiếp.'
+            return target._ctkm_notify_reload(
+                _('Đã hoàn thành'),
+                _(
+                    'Công việc đã hoàn thành (không cần xác nhận quản lý). '
+                    'Bấm Chuyển tiếp để giao bước sau.'
+                ),
             )
-        else:
-            title = _('Đã xử lý')
-            message = _('Công việc này đã ở trạng thái hoàn thành.')
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': title,
-                'message': message,
-                'type': 'success' if notified else 'warning',
-                'sticky': False,
-            },
-        }
+        if notified:
+            return target._ctkm_notify_reload(
+                _('Đã gửi hoàn thành'),
+                _(
+                    'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
+                    'tới quản lý trực tiếp.'
+                ),
+            )
+        if already_done:
+            pending_forward = already_done.filtered(
+                lambda t: t.state == 'done' and not t.forwarded
+            )
+            if pending_forward:
+                return pending_forward[:1]._ctkm_notify_reload(
+                    _('Đã hoàn thành'),
+                    _('Công việc đã xong. Bấm Chuyển tiếp để giao bước sau.'),
+                    'warning',
+                )
+            return target._ctkm_notify_reload(
+                _('Đã xử lý'),
+                _('Công việc này đã ở trạng thái hoàn thành.'),
+                'warning',
+            )
+        return True
 
     def action_manager_confirm(self):
         """Quản lý xác nhận hoàn thành → thông báo cho người nhận việc."""
@@ -778,19 +804,14 @@ class CtkmTask(models.Model):
                 'manager_confirmed': True,
                 'state': 'done',
             })
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Đã xác nhận'),
-                'message': _(
-                    'Đã xác nhận quản lý. OdooBot CTKM đã thông báo '
-                    'cho người nhận việc.'
-                ),
-                'type': 'success',
-                'sticky': False,
-            },
-        }
+        return (self[:1])._ctkm_notify_reload(
+            _('Đã xác nhận'),
+            _(
+                'Đã xác nhận quản lý. OdooBot CTKM đã thông báo '
+                'cho người nhận việc. Người nhận việc bấm Chuyển tiếp '
+                'để giao bước sau.'
+            ),
+        )
 
     def action_notify_support(self):
         """Gửi thông báo Discuss cho người hỗ trợ / bàn giao."""
@@ -836,7 +857,7 @@ class CtkmTask(models.Model):
                 'Chỉ chuyển tiếp được sau khi đã bấm Hoàn thành '
                 '(trạng thái công việc phải là Hoàn thành).'
             ))
-        if self.checklist_need_manager_confirm and not self.manager_confirmed:
+        if self._ctkm_task_needs_manager_confirm() and not self.manager_confirmed:
             raise UserError(_(
                 'Cần có Xác nhận quản lý trước khi chuyển tiếp.'
             ))
@@ -1213,6 +1234,8 @@ class CtkmTask(models.Model):
                 ctkm_internal_state_write=True,
             ).write(vals)
         # Nếu đang chờ xác nhận quản lý mà giờ không còn cần, tự động hoàn thành.
+        # Invalidate compute để form hiện nút Chuyển tiếp đúng.
+        task.invalidate_recordset(['checklist_need_manager_confirm'])
         if not checklist.need_manager_confirm and task.state == 'waiting_confirm':
             task.with_context(
                 ctkm_task_sync=True,
@@ -1244,9 +1267,7 @@ class CtkmTask(models.Model):
             domain.append(('notify_line_id', '=', False))
         task = Task.search(domain, limit=1)
         if not task and not notify_line:
-            checklist = program.checklist_line_ids.filtered(
-                lambda l: l.user_id == user
-            )[:1]
+            checklist = self._ctkm_pick_checklist_line_for_user(program, user)
             if checklist:
                 task = Task.search([
                     ('program_id', '=', program.id),
@@ -1275,9 +1296,7 @@ class CtkmTask(models.Model):
             'handover_note': handover_note or False,
         }
         if not notify_line:
-            checklist = program.checklist_line_ids.filtered(
-                lambda l: l.user_id == user
-            )[:1]
+            checklist = self._ctkm_pick_checklist_line_for_user(program, user)
             if checklist:
                 vals['checklist_line_id'] = checklist.id
                 vals['name'] = checklist.name
@@ -1294,6 +1313,45 @@ class CtkmTask(models.Model):
             task.handover_document_ids = [(6, 0, copies.ids)]
         task._ensure_program_notify_documents()
         return task
+
+    @api.model
+    def _ctkm_pick_checklist_line_for_user(self, program, user):
+        """Bước checklist đúng lượt của user: đã giao việc / chưa xong, theo STT."""
+        lines = program.checklist_line_ids.filtered(
+            lambda line: line.user_id == user
+        ).sorted(lambda line: (line.sequence, line.id))
+        if not lines:
+            return self.env['ctkm.program.checklist.line']
+        active = lines.filtered(
+            lambda line: line.notified and line.state != 'done'
+        )[:1]
+        if active:
+            return active
+        pending = lines.filtered(lambda line: line.state != 'done')[:1]
+        if pending:
+            return pending
+        return lines[:1]
+
+    @api.model
+    def _ctkm_find_current_checklist_task(self, program, user):
+        """Mở task của bước đang tới lượt, không lấy task id mới nhất."""
+        Task = self.sudo()
+        checklist = self._ctkm_pick_checklist_line_for_user(program, user)
+        if checklist:
+            task = Task.search([
+                ('program_id', '=', program.id),
+                ('user_id', '=', user.id),
+                ('checklist_line_id', '=', checklist.id),
+                ('forwarded', '=', False),
+            ], limit=1)
+            if task:
+                return task
+            return checklist._ctkm_ensure_task()
+        return Task.search([
+            ('program_id', '=', program.id),
+            ('user_id', '=', user.id),
+            ('forwarded', '=', False),
+        ], order='id desc', limit=1)
 
     @api.model
     def action_open_for_program(self, program_id):
@@ -1317,25 +1375,9 @@ class CtkmTask(models.Model):
         if not allowed:
             raise UserError(_('Bạn không có quyền mở công việc của chương trình này.'))
 
-        # Ưu tiên task checklist đã giao việc / mới nhất của user
-        Task = self.sudo()
-        task = Task.search([
-            ('program_id', '=', program.id),
-            ('user_id', '=', user.id),
-            ('checklist_line_id', '!=', False),
-            ('forwarded', '=', False),
-        ], order='id desc', limit=1)
-        if not task:
-            task = Task.search([
-                ('program_id', '=', program.id),
-                ('user_id', '=', user.id),
-            ], order='id desc', limit=1)
-        if not task:
-            checklist = program.checklist_line_ids.filtered(
-                lambda l: l.user_id == user and l.notified
-            ).sorted(lambda l: (l.sequence, l.id))[:1]
-            if checklist:
-                task = checklist._ctkm_ensure_task()
+        # Chọn đúng bước đang tới lượt (theo STT), không lấy task id mới nhất
+        # (Hạnh phụ trách nhiều bước → id mới nhất dễ nhảy thẳng bước 16).
+        task = self._ctkm_find_current_checklist_task(program, user)
         if not task:
             line = program.notify_line_ids.filtered(
                 lambda l: user in l.notify_employee_ids.mapped('user_id') and l.notified

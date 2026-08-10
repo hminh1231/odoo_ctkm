@@ -34,6 +34,9 @@
                     <field name="is_task_assignee" invisible="1"/>
                     <field name="can_confirm_as_manager" invisible="1"/>
                     <field name="checklist_need_manager_confirm" invisible="1"/>
+                    <field name="manager_confirmed" invisible="1"/>
+                    <field name="state" invisible="1"/>
+                    <field name="forwarded" invisible="1"/>
                     <button name="action_mark_done" type="object"
                         string="Hoàn thành" class="btn-primary" icon="fa-check"
                         invisible="not is_task_assignee or manager_confirmed or state == 'done'"/>
@@ -42,10 +45,8 @@
                         invisible="not can_confirm_as_manager or state != 'waiting_confirm' or manager_confirmed or not checklist_need_manager_confirm"/>
                     <button name="action_advance_stage" type="object"
                         string="Chuyển tiếp" class="btn-secondary" icon="fa-forward"
-                        invisible="state != 'done' or (not manager_confirmed and checklist_need_manager_confirm) or forwarded"/>
-                    <field name="forwarded" invisible="1"/>
+                        invisible="state != 'done' or forwarded or (checklist_need_manager_confirm and not manager_confirmed)"/>
                     <field name="program_stage_id" widget="statusbar"/>
-                    <field name="state" invisible="1"/>
                 </header>
                 <sheet>
                     <field name="program_id" invisible="1"/>
