@@ -129,7 +129,7 @@ class CtkmTask(models.Model):
     program_id = fields.Many2one(
         'ctkm.program',
         string='Chương trình KM',
-        ondelete='set null',
+        ondelete='cascade',
         index=True,
         tracking=True,
     )
@@ -306,40 +306,36 @@ class CtkmTask(models.Model):
         for task in self:
             program = task.program_id
             current_stage = program.stage_id if program else False
-            if not current_stage:
-                task.is_current_stage_task = False
-                continue
             task_stage = task.program_stage_id
             if not task_stage and task.checklist_line_id:
                 task_stage = task.checklist_line_id.stage_id
-            task.is_current_stage_task = bool(task_stage and task_stage.id == current_stage.id)
+            is_current_stage = bool(
+                current_stage and task_stage and task_stage.id == current_stage.id
+            )
+            is_actionable = task.state in ('todo', 'progress', 'waiting_confirm')
+            # "Bước hiện tại": bước đang ở giai đoạn hiện tại CỦA CTKM, hoặc bước
+            # nhân viên cần xử lý (chưa xong) — không hiện các bước tương lai đã xong.
+            task.is_current_stage_task = is_current_stage or (
+                is_actionable and bool(task_stage or not current_stage)
+            )
 
     def _search_is_current_stage_task(self, operator, value):
-        # Chỉ hỗ trợ các tổ hợp cơ bản; còn lại lọc bằng Python.
         if operator in ('=', True) and value:
             progs = self.env['ctkm.program'].search([])
             stage_ids = progs.filtered('stage_id').mapped('stage_id').ids
-            if not stage_ids:
-                return [('id', '=', False)]
-            tasks = self.search([
-                ('user_id', '=', self.env.uid),
-                '|',
-                ('stage_id', 'in', stage_ids),
-                ('checklist_line_id.stage_id', 'in', stage_ids),
-            ])
-            return [('id', 'in', tasks.ids)]
+            domain = [('user_id', '=', self.env.uid)]
+            if stage_ids:
+                domain = domain + [('checklist_line_id.stage_id', 'in', stage_ids)]
+            domain = domain + [('state', 'in', ('todo', 'progress', 'waiting_confirm'))]
+            return domain
         if operator in ('=', False) and not value:
             progs = self.env['ctkm.program'].search([])
             stage_ids = progs.filtered('stage_id').mapped('stage_id').ids
-            if not stage_ids:
-                return [('id', '!=', False)]
-            tasks = self.search([
-                ('user_id', '=', self.env.uid),
-                '|',
-                ('stage_id', 'in', stage_ids),
-                ('checklist_line_id.stage_id', 'in', stage_ids),
-            ])
-            return [('id', 'not in', tasks.ids)]
+            domain = [('user_id', '=', self.env.uid)]
+            if stage_ids:
+                domain = domain + [('checklist_line_id.stage_id', 'in', stage_ids)]
+            domain = domain + [('state', 'not in', ('todo', 'progress', 'waiting_confirm'))]
+            return domain
         # Các tổ hợp hiếm: lọc bằng Python qua compute.
         candidates = self.search([('user_id', '=', self.env.uid)])
         matching = candidates.filtered(lambda t: t.is_current_stage_task == value)
