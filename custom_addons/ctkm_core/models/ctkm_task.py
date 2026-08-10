@@ -97,8 +97,10 @@ class CtkmTask(models.Model):
         compute='_compute_task_step_flags',
     )
     tem_tag_replace_ids = fields.One2many(
-        'ctkm.inventory.tem.tag',
+        'ctkm.task.tem.tag.replace.line',
+        'task_id',
         compute='_compute_tem_tag_replace_ids',
+        inverse='_fill_tem_tag_replace_ids',
         string='Tem/Tag đã thay',
         help='Tem/Tag của CTKM này thuộc cửa hàng của nhân viên, để đánh dấu "Đã thay".',
     )
@@ -325,14 +327,30 @@ class CtkmTask(models.Model):
     @api.depends('program_id', 'user_id')
     def _compute_tem_tag_replace_ids(self):
         for task in self:
-            records = self.env['ctkm.inventory.tem.tag']
-            if task.program_id and task.user_id:
-                domain = [('program_id', '=', task.program_id.id)]
-                store_keys = records.current_user_store_keys()
-                if store_keys:
-                    domain = domain + [('store_key', 'in', store_keys)]
-                records = records.search(domain, order='date desc, material_code, store')
-            task.tem_tag_replace_ids = records
+            task.tem_tag_replace_ids = [(5, 0, 0)]
+            if not (task.program_id and task.user_id):
+                continue
+            tem_tag = task.env['ctkm.inventory.tem.tag']
+            domain = [('program_id', '=', task.program_id.id)]
+            store_keys = tem_tag.current_user_store_keys()
+            if store_keys:
+                domain = domain + [('store_key', 'in', store_keys)]
+            rows = tem_tag.search(domain, order='date desc, material_code, store')
+            lines = []
+            for row in rows:
+                lines.append((0, 0, {
+                    'tem_tag_id': row.id,
+                    'material_code': row.material_code,
+                    'store': row.store,
+                    'date': row.date,
+                    'replaced': row.replaced,
+                }))
+            task.tem_tag_replace_ids = lines
+
+    def _fill_tem_tag_replace_ids(self):
+        # Trạng thái 'replaced' đã được ghi về ctkm.inventory.tem.tag trong
+        # write() của bản ghi transient; ở đây không cần làm gì thêm.
+        return
 
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
