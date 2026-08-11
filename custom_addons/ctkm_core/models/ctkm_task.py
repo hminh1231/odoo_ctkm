@@ -125,6 +125,12 @@ class CtkmTask(models.Model):
     )
     handover_quantity = fields.Float(string='Số lượng bàn giao')
     recovery_quantity = fields.Float(string='Số lượng thu hồi')
+    recover_ids = fields.One2many(
+        'ctkm.task.tem.tag.recover.line',
+        'task_id',
+        string='Thu hồi tem',
+        help='Các Tem/Tag thu hồi ở bước 10; bị xóa khỏi Kho khi bấm Hoàn thành.',
+    )
     verifier_id = fields.Many2one(
         'hr.employee',
         string='Người kiểm soát',
@@ -935,6 +941,13 @@ class CtkmTask(models.Model):
             task.with_context(ctkm_internal_state_write=True).write(vals)
             task._notify_org_manager_confirm()
             notified |= task
+
+        # Bước 10 "Thu hồi tem": xóa Tem/Tag đã chọn khỏi Kho ngay khi bấm Hoàn thành.
+        done_tasks = (directly_done | already_done).filtered(
+            lambda t: t.is_tem_handover_task and t.recover_ids
+        )
+        if done_tasks:
+            done_tasks.recover_ids._ctkm_recover_inventory()
 
         target = (directly_done or notified or already_done)[:1]
         if directly_done:

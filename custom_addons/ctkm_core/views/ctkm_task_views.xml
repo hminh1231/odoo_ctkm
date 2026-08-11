@@ -199,15 +199,19 @@
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
-                                <group string="Bàn giao / Thu hồi tem/tag"
-                                    invisible="not is_tem_handover_task">
+                                <group string="Thu hồi tem" invisible="not is_tem_handover_task">
                                     <div colspan="2" class="text-muted mb-2">
-                                        Nhập số lượng tem/tag bàn giao và thu hồi tem tag cũ của bước này.
+                                        Chọn <b>Chương trình khuyến mãi</b>, sau đó chọn các <b>Tem/Tag</b>
+                                        cần thu hồi. Khi bấm <b>Hoàn thành</b>, các Tem/Tag đã chọn sẽ bị
+                                        xóa khỏi <b>Kho</b> của ứng dụng.
                                     </div>
-                                    <field name="handover_quantity" colspan="2"
-                                        placeholder="Nhập Số lượng bàn giao"/>
-                                    <field name="recovery_quantity" colspan="2"
-                                        placeholder="Nhập Số lượng thu hồi"/>
+                                    <field name="recover_ids" nolabel="1" colspan="2">
+                                        <list editable="bottom" create="1" delete="1">
+                                            <field name="program_id" required="1"/>
+                                            <field name="tem_tag_ids" widget="many2many"
+                                                domain="[('program_id', '=', program_id)]"/>
+                                        </list>
+                                    </field>
                                 </group>
                                 <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task or is_tem_handover_task">
                                     <div colspan="2" class="text-muted">
@@ -216,7 +220,11 @@
                                 </group>
                             </group>
                             <group string="Chi tiết tem/tag"
-                                invisible="not is_tem_replace_task and not is_tem_tag_import_task">
+                                invisible="not is_tem_handover_task and not is_tem_replace_task and not is_tem_tag_import_task">
+                                <div colspan="2" class="text-muted mb-2"
+                                    invisible="not is_tem_handover_task">
+                                    Tem/tag hiện có trong Kho của chương trình này (tất cả cửa hàng).
+                                </div>
                                 <div colspan="2" class="text-muted mb-2"
                                     invisible="not is_tem_replace_task">
                                     Nhập <b>Tổng SL đã thay</b> cho từng Mã vật tư thuộc cửa hàng của bạn trong chương trình này.
@@ -225,7 +233,8 @@
                                     invisible="not is_tem_tag_import_task">
                                     Tem/tag đã đổ từ file tổng (tất cả cửa hàng). Số lượng đã thay do cửa hàng cập nhật ở bước <b>Thay tem Tag</b>.
                                 </div>
-                                <div colspan="2" class="mb-2">
+                                <div colspan="2" class="mb-2"
+                                    invisible="not is_tem_handover_task and not is_tem_tag_import_task">
                                     <button name="action_refresh_tem_tag_lines" type="object"
                                         string="Làm mới danh sách" class="btn-secondary btn-sm"
                                         icon="fa-refresh"/>
