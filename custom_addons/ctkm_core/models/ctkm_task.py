@@ -20,10 +20,13 @@ TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
 # Bước 12 "Thay tem Tag" phải khớp tuyệt đối: nhiều bước khác (bước 4, 6, 15)
 # cũng chứa chuỗi "thaytemtag" trong tên nên không dùng so khớp chứa được.
 TEM_REPLACE_TASK_KEYS = ('thaytemtag',)
+# Bước 10 "Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ".
+TEM_HANDOVER_TASK_MARKERS = ('bangiaotemtag', 'thuhoitentagcu')
 # Ưu tiên nhận diện theo giai đoạn mặc định (bền hơn khi bước bị đổi tên).
 TEM_TAG_IMPORT_STAGE_XMLID = 'ctkm_core.ctkm_stage_4'
 TEM_REPLACE_STAGE_XMLID = 'ctkm_core.ctkm_stage_12'
 TEM_PHOTO_STAGE_XMLID = 'ctkm_core.ctkm_stage_13'
+TEM_HANDOVER_STAGE_XMLID = 'ctkm_core.ctkm_stage_10'
 # Các trường kho Tem/Tag được gom vào bảng "Chi tiết tem/tag".
 TEM_TAG_LINE_KEY_FIELDS = ('material_code', 'store')
 
@@ -113,6 +116,25 @@ class CtkmTask(models.Model):
         string='Bước thay tem/tag',
         compute='_compute_task_step_flags',
         store=True,
+    )
+    is_tem_handover_task = fields.Boolean(
+        string='Bước bàn giao / thu hồi tem/tag',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc thuộc bước "Bàn giao Tem Tag cho CH Thu hồi tem tag cũ".',
+    )
+    handover_quantity = fields.Float(string='Số lượng bàn giao')
+    recovery_quantity = fields.Float(string='Số lượng thu hồi')
+    verifier_id = fields.Many2one(
+        'hr.employee',
+        string='Người kiểm soát',
+        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng người này kiểm soát '
+             'thay vì quản lý theo organization chart.',
+    )
+    is_verifier = fields.Boolean(
+        string='Là người kiểm soát',
+        compute='_compute_is_verifier',
+        help='True khi người dùng hiện tại là Người kiểm soát của công việc.',
     )
     tem_tag_replace_ids = fields.One2many(
         'ctkm.task.tem.tag.replace.line',
@@ -311,6 +333,16 @@ class CtkmTask(models.Model):
         for task in self:
             task.is_task_assignee = task.user_id.id == uid
 
+    @api.depends('verifier_id', 'verifier_id.user_id')
+    @api.depends_context('uid')
+    def _compute_is_verifier(self):
+        uid = self.env.user.id
+        for task in self:
+            task.is_verifier = bool(
+                task.verifier_id and task.verifier_id.user_id
+                and task.verifier_id.user_id.id == uid
+            )
+
     @api.depends('user_id', 'state', 'manager_confirmed')
     @api.depends_context('uid')
     def _compute_is_current_stage_task(self):
@@ -369,6 +401,7 @@ class CtkmTask(models.Model):
                 ('import', TEM_TAG_IMPORT_STAGE_XMLID),
                 ('replace', TEM_REPLACE_STAGE_XMLID),
                 ('photo', TEM_PHOTO_STAGE_XMLID),
+                ('handover', TEM_HANDOVER_STAGE_XMLID),
             )
         }
         for task in self:
@@ -395,9 +428,14 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['replace'])
                 or any(key in TEM_REPLACE_TASK_KEYS for key in keys)
             )
+            is_handover = (
+                (stage_id and stage_id == stage_ids['handover'])
+                or any(marker in key for key in keys for marker in TEM_HANDOVER_TASK_MARKERS)
+            )
             task.is_tem_tag_import_task = bool(is_import)
             task.is_tem_photo_task = bool(is_photo)
             task.is_tem_replace_task = bool(is_replace and not is_import)
+            task.is_tem_handover_task = bool(is_handover)
 
     @api.model
     def _ctkm_step_stage_id(self, xmlid):
@@ -517,8 +555,15 @@ class CtkmTask(models.Model):
         )
 
     def _get_org_chart_manager_user(self):
-        """Quản lý trực tiếp theo org chart (parent_id)."""
+        """Quản lý trực tiếp theo org chart (parent_id), hoặc Người kiểm soát bước.
+
+        Khi bước có 'Người kiểm soát' (verifier), ưu tiên dùng người đó thay vì
+        quản lý theo organization chart.
+        """
         self.ensure_one()
+        verifier_user = self._get_verifier_user()
+        if verifier_user:
+            return verifier_user
         employee = self._get_worker_employee()
         manager = employee.parent_id.sudo() if employee else self.env['hr.employee']
         user = manager.user_id
@@ -526,13 +571,26 @@ class CtkmTask(models.Model):
             return user
         return self.env['res.users']
 
+    def _get_verifier_user(self):
+        """User của Người kiểm soát (nếu bước có cấu hình)."""
+        self.ensure_one()
+        if not self.verifier_id or not self.verifier_id.user_id:
+            return self.env['res.users']
+        user = self.verifier_id.user_id
+        if user.active and not user.share and user.partner_id:
+            return user
+        return self.env['res.users']
+
     def _user_can_confirm_as_manager(self, user):
-        """Chỉ quản lý org-chart (hoặc CTKM Administrator) được xác nhận."""
+        """Người kiểm soát của bước (nếu có), quản lý org-chart, hoặc CTKM Admin."""
         self.ensure_one()
         if not user or user.share:
             return False
         if user.has_group('ctkm_core.group_ctkm_manager'):
             return True
+        if self.verifier_id:
+            verifier_user = self._get_verifier_user()
+            return bool(verifier_user and verifier_user.id == user.id)
         manager_user = self._get_org_chart_manager_user()
         return bool(manager_user and manager_user.id == user.id)
 
@@ -1354,6 +1412,9 @@ class CtkmTask(models.Model):
             vals['done_date'] = checklist.done_date
         if checklist.name and task.name != checklist.name:
             vals['name'] = checklist.name
+        verifier = checklist.verifier_id
+        if (verifier or task.verifier_id) and task.verifier_id != verifier:
+            vals['verifier_id'] = verifier.id if verifier else False
         if vals and not task.env.context.get('ctkm_task_sync'):
             task.with_context(
                 ctkm_task_sync=True,

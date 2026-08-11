@@ -33,6 +33,7 @@
                 <header>
                     <field name="is_task_assignee" invisible="1"/>
                     <field name="can_confirm_as_manager" invisible="1"/>
+                    <field name="is_verifier" invisible="1"/>
                     <field name="checklist_need_manager_confirm" invisible="1"/>
                     <field name="manager_confirmed" invisible="1"/>
                     <field name="state" invisible="1"/>
@@ -55,6 +56,7 @@
                     <field name="is_tem_tag_import_task" invisible="1"/>
                     <field name="is_tem_photo_task" invisible="1"/>
                     <field name="is_tem_replace_task" invisible="1"/>
+                    <field name="is_tem_handover_task" invisible="1"/>
                     <field name="program_kanban_state" widget="statusbar"
                         class="ms-auto float-end"/>
                     <div class="oe_title">
@@ -160,18 +162,21 @@
                             </group>
                         </page>
                         <page string="Xác nhận quản lý" name="task_manager_confirm" invisible="not checklist_need_manager_confirm">
-                            <group>
                                 <group>
-                                    <field name="manager_confirmed"
-                                        readonly="state != 'waiting_confirm' or not can_confirm_as_manager"/>
+                                    <group>
+                                        <field name="verifier_id" readonly="1"
+                                            invisible="not verifier_id"/>
+                                        <field name="manager_confirmed"
+                                            readonly="state != 'waiting_confirm' or not can_confirm_as_manager"/>
                                     <div colspan="2" class="text-muted"
                                         invisible="state == 'waiting_confirm'">
                                         Chỉ xác nhận được sau khi công việc đã bấm Hoàn thành.
                                     </div>
-                                    <div colspan="2" class="text-muted"
-                                        invisible="state != 'waiting_confirm' or can_confirm_as_manager">
-                                        Chỉ quản lý trực tiếp (theo organization chart) mới được tick xác nhận.
-                                    </div>
+                                        <div colspan="2" class="text-muted"
+                                            invisible="state != 'waiting_confirm' or can_confirm_as_manager">
+                                            <t t-if="verifier_id">Chỉ <b>Người kiểm soát</b> (<span t-out="verifier_id.name"/>) mới được tick xác nhận.</t>
+                                            <t t-else="">Chỉ quản lý trực tiếp (theo organization chart) mới được tick xác nhận.</t>
+                                        </div>
                                     <div colspan="2" class="text-muted"
                                         invisible="state != 'waiting_confirm' or not can_confirm_as_manager or manager_confirmed">
                                         Bấm nút <b>Xác nhận quản lý</b> trên đầu form, hoặc tick ô bên trên.
@@ -194,7 +199,17 @@
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
-                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task">
+                                <group string="Bàn giao / Thu hồi tem/tag"
+                                    invisible="not is_tem_handover_task">
+                                    <div colspan="2" class="text-muted mb-2">
+                                        Nhập số lượng tem/tag bàn giao và thu hồi tem tag cũ của bước này.
+                                    </div>
+                                    <field name="handover_quantity" colspan="2"
+                                        placeholder="Nhập Số lượng bàn giao"/>
+                                    <field name="recovery_quantity" colspan="2"
+                                        placeholder="Nhập Số lượng thu hồi"/>
+                                </group>
+                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task or is_tem_handover_task">
                                     <div colspan="2" class="text-muted">
                                         Đang để trống, sẽ bổ sung sau.
                                     </div>

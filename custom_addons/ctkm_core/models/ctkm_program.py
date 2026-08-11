@@ -190,6 +190,7 @@ class CtkmProgram(models.Model):
                     'state': 'todo',
                     'user_id': stage.user_id.id,
                     'need_manager_confirm': stage.need_manager_confirm,
+                    'verifier_id': stage.verifier_id.id,
                 }
                 for stage in stages
             ]
@@ -246,6 +247,7 @@ class CtkmProgram(models.Model):
                         'name': stage.name,
                         'user_id': stage.user_id.id,
                         'need_manager_confirm': stage.need_manager_confirm,
+                        'verifier_id': stage.verifier_id.id,
                     })
                 else:
                     created.append({
@@ -256,6 +258,7 @@ class CtkmProgram(models.Model):
                         'state': 'todo',
                         'user_id': stage.user_id.id,
                         'need_manager_confirm': stage.need_manager_confirm,
+                        'verifier_id': stage.verifier_id.id,
                     })
 
             # Gỡ các dòng không còn tương ứng với giai đoạn nào.

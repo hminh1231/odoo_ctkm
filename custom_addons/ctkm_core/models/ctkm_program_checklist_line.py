@@ -49,6 +49,13 @@ class CtkmProgramChecklistLine(models.Model):
         string='Cần quản lý xác nhận',
         default=True,
     )
+    verifier_id = fields.Many2one(
+        'hr.employee',
+        string='Người kiểm soát',
+        domain="[('user_id.share', '=', False)]",
+        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng người này kiểm soát '
+             'thay vì quản lý theo organization chart.',
+    )
     note = fields.Char(string='Ghi chú')
     notified = fields.Boolean(
         string='Đã gửi tin việc',

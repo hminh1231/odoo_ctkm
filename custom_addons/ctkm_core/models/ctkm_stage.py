@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 
 
 class CtkmStage(models.Model):
@@ -20,18 +21,30 @@ class CtkmStage(models.Model):
         string='Cần quản lý xác nhận',
         default=True,
     )
+    verifier_id = fields.Many2one(
+        'hr.employee',
+        string='Người kiểm soát',
+        domain="[('user_id.share', '=', False)]",
+        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng người này kiểm soát '
+             'thay vì quản lý theo organization chart.',
+    )
     pipe_end = fields.Boolean(string='Kết thúc')
     fold = fields.Boolean(string='Gộp')
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        recs = super().create(vals_list)
-        self.env['ctkm.program'].sudo().search([])._ctkm_sync_checklist_from_stages()
-        return recs
+    @api.constrains('verifier_id', 'need_manager_confirm')
+    def _check_verifier_needs_confirm(self):
+        for stage in self:
+            if stage.verifier_id and not stage.need_manager_confirm:
+                raise ValidationError(_(
+                    'Chỉ được chọn "Người kiểm soát" khi bật "Cần quản lý xác nhận".'
+                ))
 
     def write(self, vals):
         res = super().write(vals)
-        if any(f in vals for f in ('name', 'sequence', 'user_id', 'need_manager_confirm')):
+        if any(
+            f in vals
+            for f in ('name', 'sequence', 'user_id', 'need_manager_confirm', 'verifier_id')
+        ):
             self.env['ctkm.program'].sudo().search([])._ctkm_sync_checklist_from_stages()
         return res
 
