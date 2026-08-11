@@ -194,25 +194,40 @@
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
-                                <group string="Đã thay tem/tag" invisible="not is_tem_replace_task">
-                                    <div colspan="2" class="text-muted mb-2">
-                                        Đánh dấu <b>Đã thay</b> cho từng Mã vật tư thuộc cửa hàng của bạn trong chương trình này.
-                                    </div>
-                                    <field name="tem_tag_replace_ids" nolabel="1" colspan="2"
-                                        context="{'edit': True, 'create': False, 'delete': False}">
-                                        <list editable="bottom">
-                                            <field name="material_code" readonly="1"/>
-                                            <field name="store" readonly="1" optional="show"/>
-                                            <field name="date" readonly="1" optional="hide"/>
-                                            <field name="replaced" readonly="0"/>
-                                        </list>
-                                    </field>
-                                </group>
                                 <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task">
                                     <div colspan="2" class="text-muted">
                                         Đang để trống, sẽ bổ sung sau.
                                     </div>
                                 </group>
+                            </group>
+                            <group string="Chi tiết tem/tag"
+                                invisible="not is_tem_replace_task and not is_tem_tag_import_task">
+                                <div colspan="2" class="text-muted mb-2"
+                                    invisible="not is_tem_replace_task">
+                                    Nhập <b>Tổng SL đã thay</b> cho từng Mã vật tư thuộc cửa hàng của bạn trong chương trình này.
+                                </div>
+                                <div colspan="2" class="text-muted mb-2"
+                                    invisible="not is_tem_tag_import_task">
+                                    Tem/tag đã đổ từ file tổng (tất cả cửa hàng). Số lượng đã thay do cửa hàng cập nhật ở bước <b>Thay tem Tag</b>.
+                                </div>
+                                <div colspan="2" class="mb-2">
+                                    <button name="action_refresh_tem_tag_lines" type="object"
+                                        string="Làm mới danh sách" class="btn-secondary btn-sm"
+                                        icon="fa-refresh"/>
+                                </div>
+                                <field name="tem_tag_replace_ids" nolabel="1" colspan="2"
+                                    readonly="not is_tem_replace_task">
+                                    <list editable="bottom" create="0" delete="0">
+                                        <field name="material_code" readonly="1"/>
+                                        <field name="store" readonly="1"
+                                            column_invisible="parent.is_tem_replace_task"/>
+                                        <field name="date" readonly="1" optional="hide"/>
+                                        <field name="total_quantity" readonly="1" sum="Tổng SL"/>
+                                        <field name="replaced_quantity" sum="Tổng SL đã thay"/>
+                                        <field name="remaining_quantity" readonly="1"
+                                            sum="Tổng SL chưa thay"/>
+                                    </list>
+                                </field>
                             </group>
                         </page>
                     </notebook>

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'CTKM Kho',
-    'version': '1.6',
+    'version': '1.7',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý tồn kho tem/tag cho CTKM',
     'depends': ['ctkm_core', 'hr_store', 'base_import'],

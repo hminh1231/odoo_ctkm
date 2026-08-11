@@ -17,7 +17,15 @@ _logger = logging.getLogger(__name__)
 # thuộc vào khoảng trắng hay lỗi chính tả nhỏ khi đặt tên giai đoạn.
 TEM_TAG_IMPORT_TASK_MARKERS = ('dobbthaytemtag',)
 TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
-TEM_REPLACE_TASK_MARKERS = ('thaytemtag',)
+# Bước 12 "Thay tem Tag" phải khớp tuyệt đối: nhiều bước khác (bước 4, 6, 15)
+# cũng chứa chuỗi "thaytemtag" trong tên nên không dùng so khớp chứa được.
+TEM_REPLACE_TASK_KEYS = ('thaytemtag',)
+# Ưu tiên nhận diện theo giai đoạn mặc định (bền hơn khi bước bị đổi tên).
+TEM_TAG_IMPORT_STAGE_XMLID = 'ctkm_core.ctkm_stage_4'
+TEM_REPLACE_STAGE_XMLID = 'ctkm_core.ctkm_stage_12'
+TEM_PHOTO_STAGE_XMLID = 'ctkm_core.ctkm_stage_13'
+# Các trường kho Tem/Tag được gom vào bảng "Chi tiết tem/tag".
+TEM_TAG_LINE_KEY_FIELDS = ('material_code', 'store')
 
 
 def normalize_step_key(value):
@@ -93,22 +101,25 @@ class CtkmTask(models.Model):
     is_tem_tag_import_task = fields.Boolean(
         string='Bước import Tem/Tag',
         compute='_compute_task_step_flags',
+        store=True,
         help='Công việc thuộc bước "Đổ BB thay tem/tag (file tổng)".',
     )
     is_tem_photo_task = fields.Boolean(
         string='Bước chụp ảnh tem/tag',
         compute='_compute_task_step_flags',
+        store=True,
     )
     is_tem_replace_task = fields.Boolean(
         string='Bước thay tem/tag',
         compute='_compute_task_step_flags',
+        store=True,
     )
     tem_tag_replace_ids = fields.One2many(
         'ctkm.task.tem.tag.replace.line',
         'task_id',
-        compute='_compute_tem_tag_replace_ids',
-        string='Tem/Tag đã thay',
-        help='Tem/Tag của CTKM này thuộc cửa hàng của nhân viên, để đánh dấu "Đã thay".',
+        string='Chi tiết tem/tag',
+        help='Tem/Tag của CTKM này: bước 4 xem toàn bộ cửa hàng, '
+             'bước 12 chỉ cửa hàng của người nhận việc.',
     )
     support_employee_ids = fields.Many2many(
         'hr.employee',
@@ -350,8 +361,16 @@ class CtkmTask(models.Model):
                 else True
             )
 
-    @api.depends('name', 'checklist_step_name')
+    @api.depends('name', 'checklist_line_id.name', 'checklist_line_id.stage_id')
     def _compute_task_step_flags(self):
+        stage_ids = {
+            flag: self._ctkm_step_stage_id(xmlid)
+            for flag, xmlid in (
+                ('import', TEM_TAG_IMPORT_STAGE_XMLID),
+                ('replace', TEM_REPLACE_STAGE_XMLID),
+                ('photo', TEM_PHOTO_STAGE_XMLID),
+            )
+        }
         for task in self:
             keys = [
                 key
@@ -361,37 +380,131 @@ class CtkmTask(models.Model):
                 )
                 if key
             ]
-            task.is_tem_tag_import_task = any(
-                marker in key for key in keys for marker in TEM_TAG_IMPORT_TASK_MARKERS
+            stage_id = task.checklist_line_id.stage_id.id
+            is_import = (
+                (stage_id and stage_id == stage_ids['import'])
+                or any(marker in key for key in keys for marker in TEM_TAG_IMPORT_TASK_MARKERS)
             )
-            task.is_tem_photo_task = any(
-                marker in key for key in keys for marker in TEM_PHOTO_TASK_MARKERS
+            is_photo = (
+                (stage_id and stage_id == stage_ids['photo'])
+                or any(marker in key for key in keys for marker in TEM_PHOTO_TASK_MARKERS)
             )
-            task.is_tem_replace_task = any(
-                marker in key for key in keys for marker in TEM_REPLACE_TASK_MARKERS
+            # So khớp tuyệt đối để bước 4 / 6 / 15 (tên cũng chứa "thay tem tag")
+            # không bị nhận nhầm thành bước 12.
+            is_replace = (
+                (stage_id and stage_id == stage_ids['replace'])
+                or any(key in TEM_REPLACE_TASK_KEYS for key in keys)
             )
+            task.is_tem_tag_import_task = bool(is_import)
+            task.is_tem_photo_task = bool(is_photo)
+            task.is_tem_replace_task = bool(is_replace and not is_import)
 
-    @api.depends('program_id', 'user_id')
-    def _compute_tem_tag_replace_ids(self):
+    @api.model
+    def _ctkm_step_stage_id(self, xmlid):
+        stage = self.env.ref(xmlid, raise_if_not_found=False)
+        return stage.id if stage else False
+
+    # --- Bảng "Chi tiết tem/tag" (bước 4 và bước 12) ---
+
+    def _ctkm_tem_tag_store_keys(self):
+        """Mã cửa hàng (HRM 'Cửa hàng' / 'Mã bộ phận') của người nhận việc."""
+        self.ensure_one()
+        tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
+        if hasattr(tem_tag, 'store_keys_for_user'):
+            return tem_tag.store_keys_for_user(self.user_id)
+        return tem_tag.current_user_store_keys()
+
+    def _ctkm_tem_tag_line_values(self):
+        """Gom kho Tem/Tag của CTKM theo (Mã vật tư, Store) cho bảng chi tiết."""
+        self.ensure_one()
+        if 'ctkm.inventory.tem.tag' not in self.env:
+            return []
+        if not self.program_id:
+            return []
+        if not (self.is_tem_tag_import_task or self.is_tem_replace_task):
+            return []
+        tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
+        domain = [('program_id', '=', self.program_id.id)]
+        if self.is_tem_replace_task:
+            # Bước 12: chỉ Mã vật tư thuộc cửa hàng của nhân viên nhận việc.
+            store_keys = self._ctkm_tem_tag_store_keys()
+            if not store_keys:
+                return []
+            domain = domain + [('store_key', 'in', store_keys)]
+        groups = tem_tag._read_group(
+            domain,
+            list(TEM_TAG_LINE_KEY_FIELDS),
+            ['quantity:sum', 'replaced_quantity:sum', 'date:max'],
+        )
+        values = []
+        for material_code, store, quantity, replaced_quantity, last_date in groups:
+            values.append({
+                'material_code': material_code or False,
+                'store': store or False,
+                'date': last_date or False,
+                'total_quantity': quantity or 0.0,
+                'replaced_quantity': replaced_quantity or 0.0,
+            })
+        values.sort(key=lambda vals: (vals['material_code'] or '', vals['store'] or ''))
+        return values
+
+    def _ctkm_sync_tem_tag_lines(self):
+        """Dựng lại bảng "Chi tiết tem/tag" từ dữ liệu kho Tem/Tag hiện tại."""
+        Line = self.env['ctkm.task.tem.tag.replace.line'].sudo().with_context(
+            ctkm_tem_tag_line_sync=True,
+        )
         for task in self:
-            task.tem_tag_replace_ids = [(5, 0, 0)]
-            if not (task.program_id and task.user_id):
-                continue
-            tem_tag = task.env['ctkm.inventory.tem.tag']
-            domain = [('program_id', '=', task.program_id.id)]
-            store_keys = tem_tag.current_user_store_keys()
-            if store_keys:
-                domain = domain + [('store_key', 'in', store_keys)]
-            rows = tem_tag.search(domain, order='date desc, material_code, store')
-            lines = []
-            for row in rows:
-                lines.append((0, 0, {
-                    'material_code': row.material_code,
-                    'store': row.store,
-                    'date': row.date,
-                    'replaced': row.replaced,
-                }))
-            task.tem_tag_replace_ids = lines
+            values = task._ctkm_tem_tag_line_values()
+            existing = {}
+            obsolete = Line.browse()
+            for line in task.sudo().tem_tag_replace_ids:
+                key = (line.material_code or '', line.store or '')
+                if key in existing:
+                    obsolete |= line
+                else:
+                    existing[key] = line
+            to_create = []
+            for vals in values:
+                key = (vals['material_code'] or '', vals['store'] or '')
+                line = existing.pop(key, None)
+                if not line:
+                    to_create.append(dict(vals, task_id=task.id))
+                    continue
+                changes = {
+                    field: value
+                    for field, value in vals.items()
+                    if line[field] != value
+                }
+                if changes:
+                    line.with_context(ctkm_tem_tag_line_sync=True).write(changes)
+            if to_create:
+                Line.create(to_create)
+            obsolete |= Line.browse([line.id for line in existing.values()])
+            if obsolete:
+                obsolete.unlink()
+
+    @api.model
+    def _ctkm_sync_tem_tag_lines_for_programs(self, program_ids):
+        """Cập nhật bảng chi tiết của mọi công việc bước 4 / bước 12 của CTKM."""
+        program_ids = [program_id for program_id in (program_ids or []) if program_id]
+        if not program_ids:
+            return self.browse()
+        tasks = self.sudo().search([
+            ('program_id', 'in', program_ids),
+            '|',
+            ('is_tem_tag_import_task', '=', True),
+            ('is_tem_replace_task', '=', True),
+        ])
+        tasks._ctkm_sync_tem_tag_lines()
+        return tasks
+
+    def action_refresh_tem_tag_lines(self):
+        """Nút 'Làm mới' bảng Chi tiết tem/tag trên form công việc."""
+        self.sudo()._ctkm_sync_tem_tag_lines()
+        return self._ctkm_notify_reload(
+            _('Đã làm mới'),
+            _('Bảng Chi tiết tem/tag đã cập nhật theo dữ liệu kho Tem/Tag.'),
+        )
 
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
@@ -591,6 +704,14 @@ class CtkmTask(models.Model):
         if self.state in ('waiting_confirm', 'done') and not self.done_date:
             self.done_date = fields.Date.context_today(self)
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        tasks = super().create(vals_list)
+        # Công việc bước 4 / bước 12 được tạo sau khi đã import kho Tem/Tag
+        # (hoặc bước trước chuyển tiếp) → dựng bảng "Chi tiết tem/tag" ngay.
+        tasks.sudo()._ctkm_sync_tem_tag_lines()
+        return tasks
+
     def write(self, vals):
         vals = dict(vals)
         # Đồng bộ từ checklist / nút workflow dùng context nội bộ.
@@ -664,6 +785,11 @@ class CtkmTask(models.Model):
                 state=vals.get('state'),
                 done_date=vals.get('done_date'),
             )
+
+        # Đổi CTKM / người nhận việc / bước → bảng "Chi tiết tem/tag" phải đổi theo
+        # (bước 12 lọc theo cửa hàng của người nhận việc).
+        if {'program_id', 'user_id', 'name', 'checklist_line_id'} & set(vals):
+            self.sudo()._ctkm_sync_tem_tag_lines()
 
         return res
 

@@ -115,8 +115,31 @@ class CtkmInventoryImportWizard(models.TransientModel):
         return tasks.filtered('is_tem_tag_import_task')
 
     def _import_result_action(self, created):
-        """Mở danh sách vừa import; nhân viên thường chỉ nhận thông báo kết quả."""
+        """Mở lại công việc vừa import (để cập nhật bảng Chi tiết tem/tag),
+        hoặc mở danh sách Tem/Tag khi import từ menu Kho."""
         self.ensure_one()
+        task = self._ctkm_import_source_task()
+        if task:
+            # Bảng "Chi tiết tem/tag" của bước 4 / bước 12 được dựng lại từ kho:
+            # mở lại form công việc để nhân viên thấy dữ liệu ngay.
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'type': 'success',
+                    'title': _('Import Tem/Tag'),
+                    'message': _('Đã import %s dòng Tem/Tag.') % len(created),
+                    'sticky': False,
+                    'next': {
+                        'type': 'ir.actions.act_window',
+                        'res_model': 'ctkm.task',
+                        'res_id': task.id,
+                        'view_mode': 'form',
+                        'views': [(False, 'form')],
+                        'target': 'current',
+                    },
+                },
+            }
         if not self.env.user.has_group('ctkm_core.group_ctkm_user'):
             return {
                 'type': 'ir.actions.client',
@@ -134,6 +157,17 @@ class CtkmInventoryImportWizard(models.TransientModel):
             'domain': [('id', 'in', created.ids)],
         })
         return action
+
+    def _ctkm_import_source_task(self):
+        """Công việc CTKM đã mở wizard này (nút Import Tem/Tag ở bước 4)."""
+        self.ensure_one()
+        task_id = self.env.context.get('ctkm_import_task_id')
+        if not task_id:
+            return self.env['ctkm.task']
+        task = self.env['ctkm.task'].sudo().browse(int(task_id)).exists()
+        if not task or task.user_id.id != self.env.uid:
+            return self.env['ctkm.task']
+        return self.env['ctkm.task'].browse(task.id)
 
     def _notify_imported_tem_tags(self, records):
         grouped = self._group_tem_tag_records_by_store(records.sudo())

@@ -14,6 +14,8 @@
                 <field name="tem_tag"/>
                 <field name="store"/>
                 <field name="quantity"/>
+                <field name="replaced_quantity" optional="show"/>
+                <field name="replaced" optional="hide" widget="boolean_toggle" readonly="1"/>
                 <field name="import_filename" optional="hide"/>
             </list>
         </field>
@@ -33,6 +35,8 @@
                         <field name="tem_tag"/>
                         <field name="store"/>
                         <field name="quantity"/>
+                        <field name="replaced_quantity"/>
+                        <field name="replaced" readonly="1"/>
                         <field name="import_filename" readonly="1"/>
                     </group>
                 </sheet>
