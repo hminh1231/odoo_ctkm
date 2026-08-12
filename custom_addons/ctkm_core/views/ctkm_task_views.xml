@@ -211,10 +211,7 @@
                                     <field name="recover_ids" nolabel="1" colspan="2">
                                         <list editable="bottom" create="1" delete="1">
                                             <field name="program_id" required="1"/>
-                                            <field name="tem_tag_ids" widget="many2many"
-                                                context="{'active_model': 'ctkm.inventory.tem.tag'}"
-                                                options="{'no_create': True, 'no_open': True}"
-                                                domain="[('program_id', '=', program_id)]"/>
+                                            <field name="tem_tag_ids"/>
                                         </list>
                                     </field>
                                 </group>

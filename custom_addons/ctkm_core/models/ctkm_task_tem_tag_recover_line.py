@@ -48,6 +48,22 @@ class CtkmTaskTemTagRecoverLine(models.Model):
                     ids.append(item)
         return self.env['ctkm.inventory.tem.tag'].sudo().browse(ids)
 
+    @api.onchange('program_id')
+    def _onchange_program_id(self):
+        """Chỉ cho chọn Tem/Tag thuộc chương trình đã chọn."""
+        if 'ctkm.inventory.tem.tag' not in self.env:
+            return
+        TemTag = self.env['ctkm.inventory.tem.tag'].sudo()
+        if self.program_id:
+            domain = [('program_id', '=', self.program_id.id)]
+            # Giữ lại các id đã chọn mà vẫn thuộc chương trình này.
+            kept = TemTag.search(domain).ids
+            current = [i for i in (self.tem_tag_ids or []) if i in kept]
+            self.tem_tag_ids = current
+            return {'domain': {'tem_tag_ids': domain}}
+        self.tem_tag_ids = []
+        return {'domain': {'tem_tag_ids': [('id', '=', False)]}}
+
     def _ctkm_recover_inventory(self):
         """Xóa các Tem/Tag đã chọn khỏi Kho Tem/Tag của ứng dụng."""
         if 'ctkm.inventory.tem.tag' not in self.env:
