@@ -173,9 +173,12 @@
                                         Chỉ xác nhận được sau khi công việc đã bấm Hoàn thành.
                                     </div>
                                         <div colspan="2" class="text-muted"
-                                            invisible="state != 'waiting_confirm' or can_confirm_as_manager">
-                                            <t t-if="verifier_id">Chỉ <b>Người kiểm soát</b> (<span t-out="verifier_id.name"/>) mới được tick xác nhận.</t>
-                                            <t t-else="">Chỉ quản lý trực tiếp (theo organization chart) mới được tick xác nhận.</t>
+                                            invisible="state != 'waiting_confirm' or can_confirm_as_manager or not verifier_id">
+                                            Chỉ <b>Người kiểm soát</b> (<field name="verifier_id" readonly="1" nolabel="1"/>) mới được tick xác nhận.
+                                        </div>
+                                        <div colspan="2" class="text-muted"
+                                            invisible="state != 'waiting_confirm' or can_confirm_as_manager or verifier_id">
+                                            Chỉ quản lý trực tiếp (theo organization chart) mới được tick xác nhận.
                                         </div>
                                     <div colspan="2" class="text-muted"
                                         invisible="state != 'waiting_confirm' or not can_confirm_as_manager or manager_confirmed">
