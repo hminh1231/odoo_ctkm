@@ -9,6 +9,9 @@ class CtkmTaskTemTagRecoverLine(models.Model):
     Mỗi dòng chọn một Chương trình khuyến mãi và các Tem/Tag (bản ghi kho
     ``ctkm.inventory.tem.tag``) cần thu hồi. Khi công việc bước này bấm
     <b>Hoàn thành</b>, các Tem/Tag đã chọn sẽ bị xóa khỏi "Kho" của ứng dụng.
+
+    Các Tem/Tag được lưu bằng danh sách id (Json) thay vì many2many cứng, để
+    module này không phụ thuộc load-order vào module kho Tem/Tag.
     """
 
     _name = 'ctkm.task.tem.tag.recover.line'
@@ -29,26 +32,27 @@ class CtkmTaskTemTagRecoverLine(models.Model):
         required=True,
         ondelete='cascade',
     )
-    tem_tag_ids = fields.Many2many(
-        'ctkm.inventory.tem.tag',
-        'ctkm_task_recover_line_tem_tag_rel',
-        'line_id',
-        'tem_tag_id',
+    tem_tag_ids = fields.Json(
         string='Tem/Tag',
-        domain="[('program_id', '=', program_id)]",
-        help='Chọn các Tem/Tag cần thu hồi (sẽ bị xóa khỏi Kho khi Hoàn thành).',
+        help='Danh sách id các Tem/Tag cần thu hồi (sẽ bị xóa khỏi Kho khi Hoàn thành).',
     )
+
+    def _ctkm_tem_tag_records(self):
+        """Trả về recordset ctkm.inventory.tem.tag từ danh sách id (nếu module có)."""
+        if 'ctkm.inventory.tem.tag' not in self.env:
+            return self.env['ctkm.inventory.tem.tag']
+        ids = []
+        for line in self.sudo():
+            for item in (line.tem_tag_ids or []) or []:
+                if isinstance(item, int) and item not in ids:
+                    ids.append(item)
+        return self.env['ctkm.inventory.tem.tag'].sudo().browse(ids)
 
     def _ctkm_recover_inventory(self):
         """Xóa các Tem/Tag đã chọn khỏi Kho Tem/Tag của ứng dụng."""
         if 'ctkm.inventory.tem.tag' not in self.env:
-            return self.browse()
-        tem_tag = self.env['ctkm.inventory.tem.tag'].sudo().with_context(
-            ctkm_tem_tag_line_sync=True,
-        )
-        to_unlink = tem_tag.browse()
-        for line in self.sudo():
-            to_unlink |= line.tem_tag_ids
-        if to_unlink:
-            to_unlink.unlink()
-        return to_unlink
+            return self.env['ctkm.inventory.tem.tag']
+        records = self._ctkm_tem_tag_records()
+        if records:
+            records.with_context(ctkm_tem_tag_line_sync=True).unlink()
+        return records
