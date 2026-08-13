@@ -1198,7 +1198,7 @@ class CtkmTask(models.Model):
                         'kèm ghi chú và tài liệu đã đẩy qua.'
                     ) % {
                         'step': next_line.name or '',
-                        'user': sent.name if sent else (next_line.user_ids[:1].name or ''),
+                        'user': ", ".join(sent.mapped('name')) if sent else (next_line.user_ids[:1].name or ''),
                     },
                     'type': 'success',
                     'sticky': False,
