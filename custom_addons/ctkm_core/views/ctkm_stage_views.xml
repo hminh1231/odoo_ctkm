@@ -11,7 +11,7 @@
                 <field name="user_id" string="Phụ trách" widget="many2one_avatar_user"/>
                 <field name="need_manager_confirm" string="Cần quản lý xác nhận" widget="boolean_toggle"/>
                 <field name="verifier_id" string="Người kiểm soát"
-                    column_invisible="not need_manager_confirm"/>
+                    invisible="not need_manager_confirm"/>
             </list>
         </field>
     </record>
