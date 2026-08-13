@@ -107,7 +107,7 @@ class CtkmProgramChecklistLine(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        if any(f in vals for f in ('state', 'done_date', 'user_ids', 'name', 'need_manager_confirm')) and not self.env.context.get('ctkm_task_sync'):
+        if any(f in vals for f in ('state', 'done_date', 'user_ids', 'name', 'need_manager_confirm', 'verifier_id')) and not self.env.context.get('ctkm_task_sync'):
             Task = self.env['ctkm.task']
             for line in self:
                 existing = Task.search([
@@ -148,6 +148,7 @@ class CtkmProgramChecklistLine(models.Model):
         vals = {
             'program_id': self.program_id.id,
             'user_ids': [(6, 0, self.user_ids.ids)],
+            'verifier_id': self.verifier_id.id if self.verifier_id else False,
             'process_date': fields.Date.context_today(self),
             'name': self.name,
             'state': initial_state,
