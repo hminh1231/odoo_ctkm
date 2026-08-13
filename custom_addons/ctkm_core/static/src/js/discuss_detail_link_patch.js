@@ -55,7 +55,7 @@ import { patch } from "@web/core/utils/patch";
 
 const CTKM_DETAIL_BTN_SELECTOR =
     "a.o_ctkm_notify_detail_btn, a.o_ctkm_manager_confirm_btn, a.o_ctkm_task_open_btn";
-const CTKM_TASKS_PATH = "/odoo/ctkm.task";
+const CTKM_TASKS_PATH = "/odoo/ctkm-my-tasks";
 
 function extractCtkmProgramId(link) {
     const fromDataset = Number(
