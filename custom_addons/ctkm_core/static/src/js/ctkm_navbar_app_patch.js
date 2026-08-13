@@ -16,15 +16,6 @@ function findCtkmAppMenu(menuService) {
     );
 }
 
-function findCtkmMyTasksMenu(menuService) {
-    const all = menuService.getAll();
-    return (
-        all.find((m) => m.xmlid === "ctkm_core.menu_ctkm_my_tasks") ||
-        all.find((m) => m.actionPath === "ctkm-my-tasks") ||
-        all.find((m) => String(m.name || "").includes("Công việc của tôi"))
-    );
-}
-
 function isCtkmTaskContext(action, controller, pathname) {
     const resModel =
         action?.res_model ||
@@ -45,27 +36,6 @@ function isCtkmTaskContext(action, controller, pathname) {
     return false;
 }
 
-/**
- * Deep link /odoo/ctkm.task/<id> không gắn được app menu → thanh trên trống.
- * Chuyển sang /odoo/ctkm-my-tasks/<id>?menu_id=... (có path action).
- */
-function redirectCtkmModelUrlToAction(menuService) {
-    const path = browser.location?.pathname || "";
-    const match = path.match(/^\/odoo\/ctkm\.task\/(\d+)\/?$/);
-    if (!match) {
-        return false;
-    }
-    const taskId = match[1];
-    const taskMenu = findCtkmMyTasksMenu(menuService);
-    const appMenu = findCtkmAppMenu(menuService);
-    const menuId = appMenu?.appID || appMenu?.id || taskMenu?.appID || "";
-    const url = menuId
-        ? `/odoo/ctkm-my-tasks/${taskId}?menu_id=${menuId}`
-        : `/odoo/ctkm-my-tasks/${taskId}`;
-    browser.location.replace(url);
-    return true;
-}
-
 patch(WebClient.prototype, {
     setup() {
         super.setup(...arguments);
@@ -75,11 +45,6 @@ patch(WebClient.prototype, {
     },
 
     async loadRouterState() {
-        // Redirect trước khi load state nếu đang ở URL model thuần.
-        if (redirectCtkmModelUrlToAction(this.menuService)) {
-            // Trang sẽ reload sang URL mới; trả về true để tránh default app.
-            return true;
-        }
         const loaded = await super.loadRouterState(...arguments);
         this._ctkmEnsureNavbarApp();
         return loaded;

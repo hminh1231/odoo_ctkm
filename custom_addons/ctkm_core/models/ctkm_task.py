@@ -55,6 +55,12 @@ class CtkmTask(models.Model):
         tracking=True,
     )
     done_date = fields.Date(string='Ngày hoàn thành', tracking=True)
+    total_days = fields.Integer(
+        string='Tổng số ngày',
+        compute='_compute_total_days',
+        store=True,
+        help='Ngày hoàn thành trừ ngày bắt đầu, tính khi bấm Hoàn thành.',
+    )
     state = fields.Selection(
         selection=[
             ('todo', 'Chưa xử lý'),
@@ -354,6 +360,16 @@ class CtkmTask(models.Model):
     def _compute_program_badge_image(self):
         for task in self:
             task.program_badge_image = task.program_id.sudo().badge_image or False
+
+    @api.depends('process_date', 'done_date')
+    def _compute_total_days(self):
+        for task in self:
+            if task.process_date and task.done_date:
+                task.total_days = max(
+                    0, (task.done_date - task.process_date).days
+                )
+            else:
+                task.total_days = 0
 
     @api.depends('user_ids')
     @api.depends_context('uid')
@@ -664,7 +680,8 @@ class CtkmTask(models.Model):
                 app_menu = app_menu.parent_id
             app_menu_id = app_menu.id
         # Dùng model path (ctkm.task), không dùng action path (ctkm-my-tasks)
-        # để tránh webclient gọi RPC với model sai.
+        # để tránh webclient gọi RPC với model sai. App CTKM trên thanh menu
+        # do menu_id + ctkm_navbar_app_patch.js đảm nhiệm.
         url = '/odoo/ctkm.task/%s' % self.id
         if app_menu_id:
             url = '%s?menu_id=%s' % (url, app_menu_id)
@@ -672,7 +689,7 @@ class CtkmTask(models.Model):
 
     def _ctkm_manager_confirm_button_markup(self):
         self.ensure_one()
-        href = '/odoo/ctkm.task/%s' % self.id
+        href, _app_menu_id = self._ctkm_task_form_url()
         return Markup(
             '<div class="o_ctkm_notify_detail mt-2">'
             '<a class="btn btn-primary btn-sm o_ctkm_manager_confirm_btn" '
@@ -700,7 +717,7 @@ class CtkmTask(models.Model):
 
     def _ctkm_worker_confirmed_button_markup(self):
         self.ensure_one()
-        href = '/odoo/ctkm.task/%s' % self.id
+        href, _app_menu_id = self._ctkm_task_form_url()
         return Markup(
             '<div class="o_ctkm_notify_detail mt-2">'
             '<a class="btn btn-primary btn-sm o_ctkm_task_open_btn" '
