@@ -5,7 +5,7 @@
         <field name="name">Kho</field>
         <field name="sequence">2</field>
         <field name="parent_id" ref="ctkm_core.ctkm_main_menu"/>
-        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+        <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
     </record>
 
     <record id="menu_ctkm_inventory_tem_tag" model="ir.ui.menu">
@@ -13,7 +13,7 @@
         <field name="sequence">1</field>
         <field name="parent_id" ref="menu_ctkm_inventory_root"/>
         <field name="action" ref="action_ctkm_inventory_tem_tag"/>
-        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+        <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
     </record>
 
 </odoo>

@@ -24,14 +24,6 @@
         <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
     </record>
 
-    <record id="menu_ctkm_my_inventory" model="ir.ui.menu">
-        <field name="name">Kho</field>
-        <field name="sequence">3</field>
-        <field name="parent_id" ref="ctkm_core.ctkm_main_menu"/>
-        <field name="action" ref="ctkm_inventory.action_ctkm_inventory_tem_tag"/>
-        <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
-    </record>
-
     <record id="menu_ctkm_report" model="ir.ui.menu">
         <field name="name">Báo cáo</field>
         <field name="sequence">3</field>
