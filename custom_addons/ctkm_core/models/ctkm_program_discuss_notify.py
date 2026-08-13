@@ -55,14 +55,14 @@ class CtkmProgramDiscussNotify(models.Model):
         )[:1]
 
     def _ctkm_next_checklist_line(self, current_line):
-        """Bước tiến độ kế tiếp (có phụ trách, chưa gửi tin) sau bước hiện tại."""
+        """Bước tiến độ kế tiếp theo STT, không bỏ qua bước chưa xong của người khác."""
         self.ensure_one()
         if not current_line:
             return self.env['ctkm.program.checklist.line']
         found = False
         for line in self._ctkm_ordered_checklist_lines():
             if found:
-                if line.user_ids and not line.notified:
+                if line.state != 'done':
                     return line
                 continue
             if line.id == current_line.id:

@@ -416,46 +416,46 @@ class CtkmTask(models.Model):
                 and task.verifier_id.user_id.id == uid
             )
 
-    @api.depends('user_ids', 'state', 'manager_confirmed')
+    @api.depends(
+        'user_ids', 'state', 'forwarded', 'program_id',
+        'checklist_line_id', 'checklist_line_id.state',
+        'checklist_line_id.sequence', 'program_id.checklist_line_ids.state',
+        'program_id.checklist_line_ids.sequence',
+    )
     @api.depends_context('uid')
     def _compute_is_current_stage_task(self):
+        first_pending = {}
+        for program in self.mapped('program_id'):
+            if not program:
+                continue
+            lines = program.checklist_line_ids.sorted(
+                lambda line: (line.sequence, line.id)
+            )
+            first_pending[program.id] = lines.filtered(
+                lambda line: line.state != 'done'
+            )[:1]
         for task in self:
-            program = task.program_id
-            current_stage = program.stage_id if program else False
-            task_stage = task.program_stage_id
-            if not task_stage and task.checklist_line_id:
-                task_stage = task.checklist_line_id.stage_id
-            is_current_stage = bool(
-                current_stage and task_stage and task_stage.id == current_stage.id
-            )
-            is_actionable = task.state in ('todo', 'progress', 'waiting_confirm')
-            # "Bước hiện tại": bước đang ở giai đoạn hiện tại CỦA CTKM, hoặc bước
-            # nhân viên cần xử lý (chưa xong) — không hiện các bước tương lai đã xong.
-            task.is_current_stage_task = is_current_stage or (
-                is_actionable and bool(task_stage or not current_stage)
-            )
+            if task.state == 'done' and not task.forwarded:
+                task.is_current_stage_task = True
+                continue
+            current = first_pending.get(task.program_id.id)
+            if current and task.checklist_line_id:
+                task.is_current_stage_task = (
+                    task.checklist_line_id.id == current.id
+                    and task.state in ('todo', 'progress', 'waiting_confirm', 'done')
+                )
+                continue
+            task.is_current_stage_task = False
 
     def _search_is_current_stage_task(self, operator, value):
-        if operator in ('=', True) and value:
-            progs = self.env['ctkm.program'].search([])
-            stage_ids = progs.filtered('stage_id').mapped('stage_id').ids
-            domain = [('user_ids', 'in', [self.env.uid])]
-            if stage_ids:
-                domain = domain + [('checklist_line_id.stage_id', 'in', stage_ids)]
-            domain = domain + [('state', 'in', ('todo', 'progress', 'waiting_confirm'))]
-            return domain
-        if operator in ('=', False) and not value:
-            progs = self.env['ctkm.program'].search([])
-            stage_ids = progs.filtered('stage_id').mapped('stage_id').ids
-            domain = [('user_ids', 'in', [self.env.uid])]
-            if stage_ids:
-                domain = domain + [('checklist_line_id.stage_id', 'in', stage_ids)]
-            domain = domain + [('state', 'not in', ('todo', 'progress', 'waiting_confirm'))]
-            return domain
-        # Các tổ hợp hiếm: lọc bằng Python qua compute.
+        want_true = (operator in ('=', '==') and value) or (
+            operator in ('!=', '<>') and not value
+        )
         candidates = self.search([('user_ids', 'in', [self.env.uid])])
-        matching = candidates.filtered(lambda t: t.is_current_stage_task == value)
-        return [('id', 'in', matching.ids)]
+        matching = candidates.filtered(lambda t: t.is_current_stage_task)
+        if want_true:
+            return [('id', 'in', matching.ids)]
+        return [('id', 'not in', matching.ids)]
 
     @api.depends('checklist_line_id', 'checklist_line_id.need_manager_confirm')
     def _compute_checklist_need_manager_confirm(self):
@@ -1196,6 +1196,11 @@ class CtkmTask(models.Model):
         """Sau Chuyển tiếp: gửi tin việc cho bước tiến độ kế tiếp."""
         self.ensure_one()
         next_line = program._ctkm_next_checklist_line(current_line)
+        if next_line and not next_line.user_ids:
+            raise UserError(_(
+                'Bước kế tiếp "%s" chưa có người phụ trách. '
+                'Gán người phụ trách trên Tiến độ thực hiện rồi bấm Chuyển tiếp lại.'
+            ) % (next_line.name or ''))
         if next_line:
             handover_note, handover_docs = self._ctkm_collect_handover_from_checklist(
                 program, current_line
@@ -1629,42 +1634,52 @@ class CtkmTask(models.Model):
 
     @api.model
     def _ctkm_pick_checklist_line_for_user(self, program, user):
-        """Bước checklist đúng lượt của user: đã giao việc / chưa xong, theo STT."""
-        lines = program.checklist_line_ids.filtered(
-            lambda line: user in line.user_ids
-        ).sorted(lambda line: (line.sequence, line.id))
-        if not lines:
-            return self.env['ctkm.program.checklist.line']
-        active = lines.filtered(
-            lambda line: line.notified and line.state != 'done'
-        )[:1]
-        if active:
-            return active
-        pending = lines.filtered(lambda line: line.state != 'done')[:1]
-        if pending:
-            return pending
-        return lines[:1]
+        """Bước đúng lượt theo STT: không nhảy qua bước trước còn chưa xong.
+
+        Nếu user đã xong bước của mình nhưng chưa bấm Chuyển tiếp, giữ bước đó
+        để còn giao việc cho người phụ trách bước kế. Không mở bước sau khi
+        chương trình vẫn đang dừng ở một bước của người khác.
+        """
+        empty = self.env['ctkm.program.checklist.line']
+        all_lines = program.checklist_line_ids.sorted(
+            lambda line: (line.sequence, line.id)
+        )
+        mine = all_lines.filtered(lambda line: user in line.user_ids)
+        if not mine:
+            return empty
+
+        Task = self.sudo()
+        pending_forward = Task.search([
+            ('program_id', '=', program.id),
+            ('user_ids', 'in', [user.id]),
+            ('checklist_line_id', '!=', False),
+            ('state', '=', 'done'),
+            ('forwarded', '=', False),
+        ], order='checklist_line_id, id', limit=1)
+        if pending_forward:
+            return pending_forward.checklist_line_id
+
+        current = all_lines.filtered(lambda line: line.state != 'done')[:1]
+        if current and user in current.user_ids:
+            return current
+        return empty
 
     @api.model
     def _ctkm_find_current_checklist_task(self, program, user):
         """Mở task của bước đang tới lượt, không lấy task id mới nhất."""
         Task = self.sudo()
         checklist = self._ctkm_pick_checklist_line_for_user(program, user)
-        if checklist:
-            task = Task.search([
-                ('program_id', '=', program.id),
-                ('user_ids', 'in', [user.id]),
-                ('checklist_line_id', '=', checklist.id),
-                ('forwarded', '=', False),
-            ], limit=1)
-            if task:
-                return task
-            return checklist._ctkm_ensure_task()
-        return Task.search([
+        if not checklist:
+            return Task.browse()
+        task = Task.search([
             ('program_id', '=', program.id),
             ('user_ids', 'in', [user.id]),
+            ('checklist_line_id', '=', checklist.id),
             ('forwarded', '=', False),
-        ], order='id desc', limit=1)
+        ], limit=1)
+        if task:
+            return task
+        return checklist._ctkm_ensure_task()
 
     @api.model
     def action_open_for_program(self, program_id):
@@ -1689,9 +1704,9 @@ class CtkmTask(models.Model):
             raise UserError(_('Bạn không có quyền mở công việc của chương trình này.'))
 
         # Chọn đúng bước đang tới lượt (theo STT), không lấy task id mới nhất
-        # (Hạnh phụ trách nhiều bước → id mới nhất dễ nhảy thẳng bước 16).
+        # (Hạnh phụ trách nhiều bước → id mới nhất dễ nhảy thẳng bước sau).
         task = self._ctkm_find_current_checklist_task(program, user)
-        if not task:
+        if not task and not program.checklist_line_ids:
             line = program.notify_line_ids.filtered(
                 lambda l: user in l.notify_employee_ids.mapped('user_id') and l.notified
             )[:1]
@@ -1703,7 +1718,10 @@ class CtkmTask(models.Model):
                 program, user, notify_line=line or None
             )
         if not task:
-            raise UserError(_('Không tạo được công việc CTKM.'))
+            raise UserError(_(
+                'Hiện chưa tới lượt công việc của bạn trên chương trình này. '
+                'Chờ người phụ trách bước trước hoàn thành và bấm Chuyển tiếp.'
+            ))
 
         task._ensure_program_notify_documents()
         url, app_menu_id = task._ctkm_task_form_url()
