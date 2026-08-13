@@ -13,7 +13,7 @@
                     options="{'no_create': True, 'no_open': False}"/>
                 <field name="name" optional="show"/>
                 <field name="is_current_stage_task" optional="hide"/>
-                <field name="user_id" optional="hide" readonly="1"
+                <field name="user_ids" optional="hide" readonly="1" widget="many2many_tags"
                     options="{'no_create': True, 'no_open': True}"/>
                 <field name="done_date"/>
                 <field name="state" widget="selection_badge" readonly="1"/>
@@ -81,6 +81,11 @@
                             <field name="program_organizer_id" readonly="1"/>
                             <field name="program_user_id" readonly="1"
                                 widget="many2one_avatar_user"/>
+                            <field name="user_ids" string="Người nhận việc" widget="many2many_tags"
+                                readonly="1"/>
+                            <field name="pending_user_ids" string="Chưa hoàn thành"
+                                widget="many2many_tags" readonly="1"
+                                invisible="not pending_user_ids"/>
                             <field name="program_company_id" readonly="1"
                                 groups="base.group_multi_company"/>
                             <field name="program_address_id" readonly="1"
@@ -270,14 +275,14 @@
             <search string="Công việc của tôi">
                 <field name="name"/>
                 <field name="program_id"/>
-                <field name="user_id"/>
+                <field name="user_ids"/>
                 <field name="is_current_stage_task" invisible="1"/>
                 <filter string="Bước hiện tại" name="is_current_stage_task"
                     domain="[('is_current_stage_task', '=', True)]"/>
                 <filter string="Của tôi" name="my_tasks"
-                    domain="[('user_id', '=', uid)]"/>
+                    domain="[('user_ids', 'in', [uid])]"/>
                 <filter string="Chờ tôi xác nhận" name="waiting_my_confirm"
-                    domain="[('state', '=', 'waiting_confirm'), ('user_id.employee_ids.parent_id.user_id', '=', uid)]"/>
+                    domain="[('state', '=', 'waiting_confirm'), ('user_ids.employee_ids.parent_id.user_id', 'in', [uid])]"/>
                 <separator/>
                 <filter string="Chưa bắt đầu" name="state_todo"
                     domain="[('state', '=', 'todo')]"/>
@@ -307,10 +312,10 @@
         <field name="search_view_id" ref="view_ctkm_task_search"/>
         <!-- Chỉ việc của tôi + việc cấp dưới chờ mình xác nhận (không hiện chung cả hệ thống). -->
         <field name="domain">['|',
-            ('user_id', '=', uid),
+            ('user_ids', 'in', [uid]),
             '&amp;',
                 ('state', '=', 'waiting_confirm'),
-                ('user_id.employee_ids.parent_id.user_id', '=', uid)]</field>
+                ('user_ids.employee_ids.parent_id.user_id', 'in', [uid])]</field>
         <field name="context">{'search_default_is_current_stage_task': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">

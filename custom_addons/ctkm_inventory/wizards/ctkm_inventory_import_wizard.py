@@ -109,7 +109,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
         """Công việc bước import Tem/Tag của người dùng hiện tại trên CTKM đã chọn."""
         self.ensure_one()
         tasks = self.env['ctkm.task'].sudo().search([
-            ('user_id', '=', self.env.user.id),
+            ('user_ids', 'in', [self.env.user.id]),
             ('program_id', '=', self.program_id.id),
         ])
         return tasks.filtered('is_tem_tag_import_task')
@@ -165,7 +165,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
         if not task_id:
             return self.env['ctkm.task']
         task = self.env['ctkm.task'].sudo().browse(int(task_id)).exists()
-        if not task or task.user_id.id != self.env.uid:
+        if not task or self.env.uid not in task.user_ids.ids:
             return self.env['ctkm.task']
         return self.env['ctkm.task'].browse(task.id)
 

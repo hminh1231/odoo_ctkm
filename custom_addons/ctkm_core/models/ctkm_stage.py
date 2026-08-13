@@ -12,8 +12,11 @@ class CtkmStage(models.Model):
     name = fields.Char(string='Tên giai đoạn', required=True, translate=True)
     sequence = fields.Integer(string='Thứ tự', default=10)
     description = fields.Text(string='Mô tả')
-    user_id = fields.Many2one(
+    user_ids = fields.Many2many(
         'res.users',
+        'ctkm_stage_user_rel',
+        'stage_id',
+        'user_id',
         string='Phụ trách',
         domain="[('share', '=', False)]",
     )
@@ -43,7 +46,7 @@ class CtkmStage(models.Model):
         res = super().write(vals)
         if any(
             f in vals
-            for f in ('name', 'sequence', 'user_id', 'need_manager_confirm', 'verifier_id')
+            for f in ('name', 'sequence', 'user_ids', 'need_manager_confirm', 'verifier_id')
         ):
             self.env['ctkm.program'].sudo().search([])._ctkm_sync_checklist_from_stages()
         return res

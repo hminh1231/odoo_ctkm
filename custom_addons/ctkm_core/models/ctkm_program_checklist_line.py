@@ -40,8 +40,11 @@ class CtkmProgramChecklistLine(models.Model):
         store=False,
     )
     done_date = fields.Date(string='Ngày hoàn thành')
-    user_id = fields.Many2one(
+    user_ids = fields.Many2many(
         'res.users',
+        'ctkm_checklist_line_user_rel',
+        'line_id',
+        'user_id',
         string='Người phụ trách',
         domain="[('share', '=', False)]",
     )
@@ -104,7 +107,7 @@ class CtkmProgramChecklistLine(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        if any(f in vals for f in ('state', 'done_date', 'user_id', 'name', 'need_manager_confirm')) and not self.env.context.get('ctkm_task_sync'):
+        if any(f in vals for f in ('state', 'done_date', 'user_ids', 'name', 'need_manager_confirm')) and not self.env.context.get('ctkm_task_sync'):
             Task = self.env['ctkm.task']
             for line in self:
                 existing = Task.search([
@@ -113,7 +116,7 @@ class CtkmProgramChecklistLine(models.Model):
                 ], limit=1)
                 if existing:
                     Task._ctkm_sync_task_from_checklist(line)
-                elif line.user_id:
+                elif line.user_ids:
                     line._ctkm_ensure_task()
                     Task._ctkm_sync_task_from_checklist(line)
         return res
@@ -121,7 +124,7 @@ class CtkmProgramChecklistLine(models.Model):
     def _ctkm_ensure_task(self):
         """Một bước checklist = một công việc (theo checklist_line_id)."""
         self.ensure_one()
-        if not self.user_id or not self.program_id:
+        if not self.user_ids or not self.program_id:
             return self.env['ctkm.task']
         Task = self.env['ctkm.task'].sudo()
         task = Task.search([
@@ -132,8 +135,8 @@ class CtkmProgramChecklistLine(models.Model):
             update_vals = {}
             if task.name != self.name:
                 update_vals['name'] = self.name
-            if task.user_id != self.user_id:
-                update_vals['user_id'] = self.user_id.id
+            if task.user_ids != self.user_ids:
+                update_vals['user_ids'] = [(6, 0, self.user_ids.ids)]
             if update_vals and not task.env.context.get('ctkm_task_sync'):
                 task.with_context(
                     ctkm_task_sync=True,
@@ -144,7 +147,7 @@ class CtkmProgramChecklistLine(models.Model):
         initial_state = self.state if self.state in ('todo', 'progress') else 'todo'
         vals = {
             'program_id': self.program_id.id,
-            'user_id': self.user_id.id,
+            'user_ids': [(6, 0, self.user_ids.ids)],
             'process_date': fields.Date.context_today(self),
             'name': self.name,
             'state': initial_state,

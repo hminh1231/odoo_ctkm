@@ -107,7 +107,7 @@
                                 <list editable="bottom" default_order="sequence">
                                     <field name="sequence" string="STT" width="60px"/>
                                     <field name="name" string="Công việc"/>
-                                    <field name="user_id" string="Phụ trách" widget="many2one_avatar_user"
+                                    <field name="user_ids" string="Phụ trách" widget="many2many_avatar_user"
                                         options="{'no_create': True}"/>
                                     <field name="need_manager_confirm" string="Cần quản lý xác nhận" widget="boolean_toggle"/>
                                     <field name="state" string="Trạng thái" widget="badge"

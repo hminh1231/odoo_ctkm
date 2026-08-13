@@ -157,13 +157,36 @@ class CtkmTask(models.Model):
         string='Người hỗ trợ',
         domain="[('active', '=', True)]",
     )
-    user_id = fields.Many2one(
+    user_ids = fields.Many2many(
         'res.users',
+        'ctkm_task_user_rel',
+        'task_id',
+        'user_id',
         string='Người nhận việc',
         default=lambda self: self.env.user,
-        required=True,
         index=True,
         tracking=True,
+    )
+    completion_ids = fields.One2many(
+        'ctkm.task.user.completion',
+        'task_id',
+        string='Hoàn thành từng người',
+    )
+    is_completed_by_me = fields.Boolean(
+        string='Tôi đã hoàn thành',
+        compute='_compute_is_completed_by_me',
+    )
+    all_assigned_completed = fields.Boolean(
+        string='Tất cả đã hoàn thành',
+        compute='_compute_all_assigned_completed',
+    )
+    pending_user_ids = fields.Many2many(
+        'res.users',
+        'ctkm_task_pending_user_rel',
+        'task_id',
+        'user_id',
+        string='Chưa hoàn thành',
+        compute='_compute_pending_user_ids',
     )
     program_id = fields.Many2one(
         'ctkm.program',
@@ -318,8 +341,8 @@ class CtkmTask(models.Model):
     )
 
     _user_program_line_uniq = models.Constraint(
-        'UNIQUE(user_id, program_id, notify_line_id, checklist_line_id)',
-        'Bạn đã có công việc cho bước phạm vi / bước checklist này rồi.',
+        'UNIQUE(program_id, notify_line_id, checklist_line_id)',
+        'Đã có công việc cho bước phạm vi / bước checklist này rồi.',
     )
 
     @api.depends_context('uid')
@@ -332,12 +355,40 @@ class CtkmTask(models.Model):
         for task in self:
             task.program_badge_image = task.program_id.sudo().badge_image or False
 
-    @api.depends('user_id')
+    @api.depends('user_ids')
     @api.depends_context('uid')
     def _compute_is_task_assignee(self):
         uid = self.env.user.id
         for task in self:
-            task.is_task_assignee = task.user_id.id == uid
+            task.is_task_assignee = uid in task.user_ids.ids
+
+    @api.depends('completion_ids', 'completion_ids.done', 'user_ids')
+    @api.depends_context('uid')
+    def _compute_is_completed_by_me(self):
+        uid = self.env.user.id
+        for task in self:
+            task.is_completed_by_me = bool(
+                task.completion_ids.filtered(
+                    lambda c: c.user_id.id == uid and c.done
+                )
+            )
+
+    @api.depends('completion_ids', 'completion_ids.done', 'user_ids')
+    def _compute_all_assigned_completed(self):
+        for task in self:
+            if not task.user_ids:
+                task.all_assigned_completed = False
+                continue
+            done_user_ids = task.completion_ids.filtered('done').mapped('user_id.id')
+            task.all_assigned_completed = set(done_user_ids) >= set(task.user_ids.ids)
+
+    @api.depends('completion_ids', 'completion_ids.done', 'user_ids')
+    def _compute_pending_user_ids(self):
+        for task in self:
+            done_user_ids = task.completion_ids.filtered('done').mapped('user_id.id')
+            task.pending_user_ids = task.user_ids.filtered(
+                lambda u: u.id not in done_user_ids
+            )
 
     @api.depends('verifier_id', 'verifier_id.user_id')
     @api.depends_context('uid')
@@ -349,7 +400,7 @@ class CtkmTask(models.Model):
                 and task.verifier_id.user_id.id == uid
             )
 
-    @api.depends('user_id', 'state', 'manager_confirmed')
+    @api.depends('user_ids', 'state', 'manager_confirmed')
     @api.depends_context('uid')
     def _compute_is_current_stage_task(self):
         for task in self:
@@ -372,7 +423,7 @@ class CtkmTask(models.Model):
         if operator in ('=', True) and value:
             progs = self.env['ctkm.program'].search([])
             stage_ids = progs.filtered('stage_id').mapped('stage_id').ids
-            domain = [('user_id', '=', self.env.uid)]
+            domain = [('user_ids', 'in', [self.env.uid])]
             if stage_ids:
                 domain = domain + [('checklist_line_id.stage_id', 'in', stage_ids)]
             domain = domain + [('state', 'in', ('todo', 'progress', 'waiting_confirm'))]
@@ -380,13 +431,13 @@ class CtkmTask(models.Model):
         if operator in ('=', False) and not value:
             progs = self.env['ctkm.program'].search([])
             stage_ids = progs.filtered('stage_id').mapped('stage_id').ids
-            domain = [('user_id', '=', self.env.uid)]
+            domain = [('user_ids', 'in', [self.env.uid])]
             if stage_ids:
                 domain = domain + [('checklist_line_id.stage_id', 'in', stage_ids)]
             domain = domain + [('state', 'not in', ('todo', 'progress', 'waiting_confirm'))]
             return domain
         # Các tổ hợp hiếm: lọc bằng Python qua compute.
-        candidates = self.search([('user_id', '=', self.env.uid)])
+        candidates = self.search([('user_ids', 'in', [self.env.uid])])
         matching = candidates.filtered(lambda t: t.is_current_stage_task == value)
         return [('id', 'in', matching.ids)]
 
@@ -455,7 +506,7 @@ class CtkmTask(models.Model):
         self.ensure_one()
         tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
         if hasattr(tem_tag, 'store_keys_for_user'):
-            return tem_tag.store_keys_for_user(self.user_id)
+            return tem_tag.store_keys_for_user(self.user_ids[:1])
         return tem_tag.current_user_store_keys()
 
     def _ctkm_tem_tag_line_values(self):
@@ -553,11 +604,14 @@ class CtkmTask(models.Model):
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
         self.ensure_one()
-        employee = self.user_id.sudo().employee_id
+        user = self.user_ids[:1]
+        if not user:
+            return self.env['hr.employee']
+        employee = user.sudo().employee_id
         if employee:
             return employee
         return self.env['hr.employee'].sudo().search(
-            [('user_id', '=', self.user_id.id)], limit=1
+            [('user_id', '=', user.id)], limit=1
         )
 
     def _get_org_chart_manager_user(self):
@@ -630,7 +684,7 @@ class CtkmTask(models.Model):
 
     def _ctkm_manager_confirm_message_body(self):
         self.ensure_one()
-        worker_name = self.user_id.name or ''
+        worker_name = self.user_ids[:1].name or ''
         program_name = self.program_name or self.name or ''
         lines = [
             Markup('<b>Yêu cầu xác nhận hoàn thành công việc CTKM</b>'),
@@ -711,7 +765,7 @@ class CtkmTask(models.Model):
                 '(hoặc quản lý chưa có tài khoản Odoo). '
                 'Không thể gửi yêu cầu xác nhận.'
             ))
-        if manager_user == self.user_id:
+        if manager_user in self.user_ids:
             raise UserError(_(
                 'Quản lý trực tiếp trùng với người làm việc. '
                 'Vui lòng kiểm tra lại organization chart.'
@@ -735,7 +789,7 @@ class CtkmTask(models.Model):
     def _notify_worker_manager_confirmed(self, manager_user=None):
         """Gửi tin OdooBot CTKM cho người nhận việc khi quản lý đã xác nhận."""
         self.ensure_one()
-        worker = self.user_id
+        worker = self.user_ids[:1]
         if not worker or worker.share or not worker.partner_id:
             return self.env['res.users']
         manager_user = manager_user or self.env.user
@@ -852,7 +906,7 @@ class CtkmTask(models.Model):
 
         # Đổi CTKM / người nhận việc / bước → bảng "Chi tiết tem/tag" phải đổi theo
         # (bước 12 lọc theo cửa hàng của người nhận việc).
-        if {'program_id', 'user_id', 'name', 'checklist_line_id'} & set(vals):
+        if {'program_id', 'user_ids', 'name', 'checklist_line_id'} & set(vals):
             self.sudo()._ctkm_sync_tem_tag_lines()
 
         return res
@@ -888,12 +942,14 @@ class CtkmTask(models.Model):
         }
 
     def action_mark_done(self):
-        """Người làm việc báo hoàn thành → gửi tin quản lý xác nhận."""
+        """Mỗi người nhận việc báo hoàn thành phần của mình. Công việc chỉ chuyển
+        sang chờ xác nhận / hoàn tất khi TẤT CẢ người nhận việc đã hoàn thành.
+        """
         notified = self.browse()
         already_done = self.browse()
         directly_done = self.browse()
         for task in self:
-            if task.user_id != self.env.user and not self.env.user.has_group(
+            if self.env.user not in task.user_ids and not self.env.user.has_group(
                 'ctkm_core.group_ctkm_manager'
             ):
                 raise UserError(_(
@@ -902,6 +958,36 @@ class CtkmTask(models.Model):
             if task.state == 'done':
                 already_done |= task
                 continue
+            today = fields.Date.context_today(task)
+            # Ghi nhận hoàn thành của người hiện tại (mỗi người 1 bản ghi).
+            already_completed = bool(
+                task.completion_ids.filtered(
+                    lambda c: c.user_id == self.env.user and c.done
+                )
+            )
+            if not already_completed:
+                completion = task.completion_ids.filtered(
+                    lambda c: c.user_id == self.env.user
+                )[:1]
+                if not completion:
+                    completion = self.env['ctkm.task.user.completion'].sudo().create({
+                        'task_id': task.id,
+                        'user_id': self.env.user.id,
+                    })
+                completion.sudo().write({'done': True, 'done_date': today})
+                task.invalidate_recordset(['completion_ids'])
+            # Đã đủ người nhận việc hoàn thành chưa?
+            if task.user_ids:
+                done_user_ids = task.completion_ids.filtered('done').mapped('user_id.id')
+                all_done = set(done_user_ids) >= set(task.user_ids.ids)
+            else:
+                all_done = True
+            if not all_done:
+                # Chờ các người nhận việc còn lại; chưa đổi trạng thái công việc.
+                if already_completed:
+                    already_done |= task
+                continue
+            # Tất cả đã hoàn thành → tiếp tục luồng xác nhận như cũ.
             checklist = task.checklist_line_id
             need_confirm = task._ctkm_task_needs_manager_confirm()
             if not need_confirm:
@@ -910,7 +996,7 @@ class CtkmTask(models.Model):
                 task.with_context(ctkm_internal_state_write=True).write({
                     'state': 'done',
                     'manager_confirmed': False,
-                    'done_date': task.done_date or fields.Date.context_today(task),
+                    'done_date': task.done_date or today,
                 })
                 directly_done |= task
                 continue
@@ -920,7 +1006,7 @@ class CtkmTask(models.Model):
                     task.with_context(ctkm_internal_state_write=True).write({
                         'state': 'done',
                         'manager_confirmed': False,
-                        'done_date': task.done_date or fields.Date.context_today(task),
+                        'done_date': task.done_date or today,
                     })
                     directly_done |= task
                     continue
@@ -937,14 +1023,14 @@ class CtkmTask(models.Model):
                 'manager_confirmed': False,
             }
             if not task.done_date:
-                vals['done_date'] = fields.Date.context_today(task)
+                vals['done_date'] = today
             task.with_context(ctkm_internal_state_write=True).write(vals)
             task._notify_org_manager_confirm()
             notified |= task
 
         # Bước 10 "Thu hồi tem": xóa Tem/Tag đã chọn khỏi Kho ngay khi bấm Hoàn thành.
         done_tasks = (directly_done | already_done).filtered(
-            lambda t: t.is_tem_handover_task and t.recover_ids
+            lambda t: t.state == 'done' and t.is_tem_handover_task and t.recover_ids
         )
         if done_tasks:
             done_tasks.recover_ids._ctkm_recover_inventory()
@@ -1112,7 +1198,7 @@ class CtkmTask(models.Model):
                         'kèm ghi chú và tài liệu đã đẩy qua.'
                     ) % {
                         'step': next_line.name or '',
-                        'user': sent.name if sent else (next_line.user_id.name or ''),
+                        'user': sent.name if sent else (next_line.user_ids[:1].name or ''),
                     },
                     'type': 'success',
                     'sticky': False,
@@ -1332,7 +1418,7 @@ class CtkmTask(models.Model):
 
         for task in tasks:
             step = task.notify_step_label or _('Bước trước')
-            worker = task.user_id.name or ''
+            worker = task.user_ids[:1].name or ''
             if task.work_note:
                 note_parts.append(
                     Markup('<p><b>%s</b></p>%s')
@@ -1369,7 +1455,7 @@ class CtkmTask(models.Model):
 
         for task in tasks:
             step = task.checklist_step_name or _('Bước trước')
-            worker = task.user_id.name or ''
+            worker = task.user_ids[:1].name or ''
             if task.work_note:
                 note_parts.append(
                     Markup('<p><b>%s</b></p>%s')
@@ -1416,8 +1502,8 @@ class CtkmTask(models.Model):
         if not task:
             return self.browse()
         vals = {}
-        if checklist.user_id and task.user_id != checklist.user_id:
-            vals['user_id'] = checklist.user_id.id
+        if checklist.user_ids and task.user_ids != checklist.user_ids:
+            vals['user_ids'] = [(6, 0, checklist.user_ids.ids)]
         if checklist.state in ('todo', 'progress'):
             if task.state not in ('waiting_confirm', 'done'):
                 vals['state'] = checklist.state
@@ -1452,15 +1538,12 @@ class CtkmTask(models.Model):
         self, program, user, notify_line=None,
         handover_note=False, handover_attachments=None,
     ):
-        """Mỗi người + mỗi bước phạm vi có 1 công việc riêng."""
+        """Một bước (phạm vi / checklist) = một công việc chia sẻ nhiều người nhận."""
         program.ensure_one()
         if not user or not user.exists():
             return self.browse()
         Task = self.sudo()
-        domain = [
-            ('program_id', '=', program.id),
-            ('user_id', '=', user.id),
-        ]
+        domain = [('program_id', '=', program.id)]
         if notify_line:
             domain.append(('notify_line_id', '=', notify_line.id))
         else:
@@ -1471,10 +1554,14 @@ class CtkmTask(models.Model):
             if checklist:
                 task = Task.search([
                     ('program_id', '=', program.id),
-                    ('user_id', '=', user.id),
                     ('checklist_line_id', '=', checklist.id),
                 ], limit=1)
         if task:
+            # Đảm bảo user nằm trong danh sách người nhận việc.
+            if user not in task.user_ids:
+                task.with_context(
+                    ctkm_task_sync=True, ctkm_internal_state_write=True
+                ).write({'user_ids': [(4, user.id)]})
             vals = {}
             if handover_note and not task.handover_note:
                 vals['handover_note'] = handover_note
@@ -1487,7 +1574,7 @@ class CtkmTask(models.Model):
             return task
         vals = {
             'program_id': program.id,
-            'user_id': user.id,
+            'user_ids': [(6, 0, [user.id])],
             'process_date': fields.Date.context_today(self),
             'name': self._task_content_from_program(program),
             'state': 'todo',
@@ -1505,7 +1592,16 @@ class CtkmTask(models.Model):
                 task = Task.create(vals)
         except IntegrityError:
             task = Task.search(domain, limit=1)
+            if not task and checklist:
+                task = Task.search([
+                    ('program_id', '=', program.id),
+                    ('checklist_line_id', '=', checklist.id),
+                ], limit=1)
             if task:
+                if user not in task.user_ids:
+                    task.with_context(
+                        ctkm_task_sync=True, ctkm_internal_state_write=True
+                    ).write({'user_ids': [(4, user.id)]})
                 task._ensure_program_notify_documents()
             return task
         if handover_attachments:
@@ -1518,7 +1614,7 @@ class CtkmTask(models.Model):
     def _ctkm_pick_checklist_line_for_user(self, program, user):
         """Bước checklist đúng lượt của user: đã giao việc / chưa xong, theo STT."""
         lines = program.checklist_line_ids.filtered(
-            lambda line: line.user_id == user
+            lambda line: user in line.user_ids
         ).sorted(lambda line: (line.sequence, line.id))
         if not lines:
             return self.env['ctkm.program.checklist.line']
@@ -1540,7 +1636,7 @@ class CtkmTask(models.Model):
         if checklist:
             task = Task.search([
                 ('program_id', '=', program.id),
-                ('user_id', '=', user.id),
+                ('user_ids', 'in', [user.id]),
                 ('checklist_line_id', '=', checklist.id),
                 ('forwarded', '=', False),
             ], limit=1)
@@ -1549,7 +1645,7 @@ class CtkmTask(models.Model):
             return checklist._ctkm_ensure_task()
         return Task.search([
             ('program_id', '=', program.id),
-            ('user_id', '=', user.id),
+            ('user_ids', 'in', [user.id]),
             ('forwarded', '=', False),
         ], order='id desc', limit=1)
 
@@ -1565,7 +1661,7 @@ class CtkmTask(models.Model):
 
         user = self.env.user
         notified_users = program.notify_line_ids.notify_employee_ids.mapped('user_id')
-        checklist_users = program.checklist_line_ids.mapped('user_id')
+        checklist_users = program.checklist_line_ids.mapped('user_ids')
         allowed = (
             user.has_group('ctkm_core.group_ctkm_user')
             or program.user_id == user
@@ -1614,7 +1710,7 @@ class CtkmTask(models.Model):
         user = self.env.user
         allowed = (
             task._user_can_confirm_as_manager(user)
-            or task.user_id == user
+            or user in task.user_ids
             or user.has_group('ctkm_core.group_ctkm_manager')
         )
         if not allowed:
@@ -1652,3 +1748,26 @@ class CtkmTask(models.Model):
                 'ctkm_import_task_id': self.id,
             },
         }
+
+
+class CtkmTaskUserCompletion(models.Model):
+    _name = 'ctkm.task.user.completion'
+    _description = 'Hoàn thành của từng người nhận việc'
+    _rec_name = 'user_id'
+    _order = 'done_date desc, id'
+
+    task_id = fields.Many2one(
+        'ctkm.task', string='Công việc',
+        required=True, ondelete='cascade', index=True,
+    )
+    user_id = fields.Many2one(
+        'res.users', string='Người nhận việc',
+        required=True, index=True,
+    )
+    done = fields.Boolean(string='Đã hoàn thành', default=False)
+    done_date = fields.Date(string='Ngày hoàn thành')
+
+    _sql_constraints = [
+        ('task_user_uniq', 'unique(task_id, user_id)',
+         'Mỗi người nhận việc chỉ có một bản ghi hoàn thành.'),
+    ]

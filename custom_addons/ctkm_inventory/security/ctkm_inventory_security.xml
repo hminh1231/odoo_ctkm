@@ -8,7 +8,7 @@
             <field name="model_id" ref="model_ctkm_inventory_tem_tag"/>
             <field name="domain_force">['|',
                 ('store_key', 'in', user.env['ctkm.inventory.tem.tag'].current_user_store_keys()),
-                ('program_id.task_ids', 'any', [('user_id', '=', user.id), ('is_tem_tag_import_task', '=', True)])]</field>
+                ('program_id.task_ids', 'any', [('user_ids', 'in', [user.id]), ('is_tem_tag_import_task', '=', True)])]</field>
             <field name="groups" eval="[(4, ref('base.group_user'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>

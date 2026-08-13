@@ -188,7 +188,7 @@ class CtkmProgram(models.Model):
                     'sequence': stage.sequence,
                     'name': stage.name,
                     'state': 'todo',
-                    'user_id': stage.user_id.id,
+                    'user_ids': [(6, 0, stage.user_ids.ids)],
                     'need_manager_confirm': stage.need_manager_confirm,
                     'verifier_id': stage.verifier_id.id,
                 }
@@ -245,7 +245,7 @@ class CtkmProgram(models.Model):
                         'stage_id': stage.id,
                         'sequence': stage.sequence,
                         'name': stage.name,
-                        'user_id': stage.user_id.id,
+                        'user_ids': [(6, 0, stage.user_ids.ids)],
                         'need_manager_confirm': stage.need_manager_confirm,
                         'verifier_id': stage.verifier_id.id,
                     })
@@ -256,7 +256,7 @@ class CtkmProgram(models.Model):
                         'sequence': stage.sequence,
                         'name': stage.name,
                         'state': 'todo',
-                        'user_id': stage.user_id.id,
+                        'user_ids': [(6, 0, stage.user_ids.ids)],
                         'need_manager_confirm': stage.need_manager_confirm,
                         'verifier_id': stage.verifier_id.id,
                     })
@@ -294,7 +294,7 @@ class CtkmProgram(models.Model):
     def ctkm_ensure_checklist_tasks(self):
         """Đảm bảo mỗi bước checklist có người phụ trách thì có công việc tương ứng."""
         for program in self:
-            for line in program.checklist_line_ids.filtered(lambda l: l.user_id):
+            for line in program.checklist_line_ids.filtered(lambda l: l.user_ids):
                 line._ctkm_ensure_task()
         return True
 

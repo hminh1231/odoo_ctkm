@@ -51,7 +51,7 @@ class CtkmProgramDiscussNotify(models.Model):
         """Bước tiến độ tiếp theo cần giao việc (có người phụ trách, chưa gửi tin, chưa xong)."""
         self.ensure_one()
         return self._ctkm_ordered_checklist_lines().filtered(
-            lambda line: line.user_id and not line.notified and line.state != 'done'
+            lambda line: line.user_ids and not line.notified and line.state != 'done'
         )[:1]
 
     def _ctkm_next_checklist_line(self, current_line):
@@ -62,7 +62,7 @@ class CtkmProgramDiscussNotify(models.Model):
         found = False
         for line in self._ctkm_ordered_checklist_lines():
             if found:
-                if line.user_id and not line.notified:
+                if line.user_ids and not line.notified:
                     return line
                 continue
             if line.id == current_line.id:
@@ -175,13 +175,17 @@ class CtkmProgramDiscussNotify(models.Model):
         return sent_users
 
     def _ctkm_send_checklist_step_notify(self, checklist_line, handover_note=False, handover_attachments=None):
-        """Gửi OdooBot giao việc + tạo/cập nhật task cho một bước tiến độ."""
+        """Gửi OdooBot giao việc + tạo/cập nhật task cho một bước tiến độ.
+        Gửi tin cho TẤT CẢ người phụ trách của bước (nhiều người chia sẻ 1 công việc).
+        """
         self.ensure_one()
         checklist_line = checklist_line.sudo()
         if not checklist_line or not checklist_line.exists():
             return self.env["res.users"]
-        user = checklist_line.user_id
-        if not user or user.share or not user.partner_id:
+        users = checklist_line.user_ids.filtered(
+            lambda u: u and not u.share and u.partner_id
+        )
+        if not users:
             raise UserError(_(
                 'Bước "%s" chưa có người phụ trách hợp lệ (cần tài khoản nội bộ).'
             ) % (checklist_line.name or ""))
@@ -195,13 +199,15 @@ class CtkmProgramDiscussNotify(models.Model):
             handover_attachments = self.notify_document_ids
 
         body = self._ctkm_checklist_work_message_body(checklist_line)
-        sent = self.env["res.users"]
-        if not self._post_ctkm_bot_discuss_message(user, body):
+        sent_users = self.env["res.users"]
+        for user in users:
+            if self._post_ctkm_bot_discuss_message(user, body):
+                sent_users |= user
+        if not sent_users:
             raise UserError(_(
-                'Không gửi được OdooBot CTKM tới %s. Thử lại sau.'
-            ) % (user.name or ""))
+                'Không gửi được OdooBot CTKM tới bước "%s". Thử lại sau.'
+            ) % (checklist_line.name or ""))
 
-        sent = user
         task = checklist_line._ctkm_ensure_task()
         if task:
             update_vals = {}
@@ -231,12 +237,12 @@ class CtkmProgramDiscussNotify(models.Model):
                 "Đã giao việc bước <b>%(step)s</b> cho <b>%(user)s</b> qua OdooBot CTKM."
             ) % {
                 "step": escape(checklist_line.name or ""),
-                "user": escape(user.name or ""),
+                "user": escape(", ".join(sent_users.mapped("name")) or ""),
             },
             subtype_xmlid="mail.mt_note",
             body_is_html=True,
         )
-        return sent
+        return sent_users
 
     def action_send_discuss_notification(self):
         """Gửi tin CTKM tới toàn bộ Phạm vi thông báo; khởi động bước tiến độ đầu tiên."""

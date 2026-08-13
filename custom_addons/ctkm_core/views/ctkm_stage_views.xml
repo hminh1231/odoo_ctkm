@@ -8,7 +8,7 @@
             <list string="Giai đoạn" editable="bottom">
                 <field name="sequence" string="STT" widget="handle"/>
                 <field name="name" string="Tên giai đoạn"/>
-                <field name="user_id" string="Phụ trách" widget="many2one_avatar_user"/>
+                <field name="user_ids" string="Phụ trách" widget="many2many_avatar_user"/>
                 <field name="need_manager_confirm" string="Cần quản lý xác nhận" widget="boolean_toggle"/>
                 <field name="verifier_id" string="Người kiểm soát"
                     invisible="not need_manager_confirm"/>
@@ -25,7 +25,7 @@
                     <group>
                         <field name="sequence" string="STT"/>
                         <field name="name" string="Tên giai đoạn"/>
-                        <field name="user_id" string="Phụ trách"/>
+                        <field name="user_ids" string="Phụ trách"/>
                         <field name="need_manager_confirm" string="Cần quản lý xác nhận"/>
                         <field name="verifier_id" string="Người kiểm soát"
                             invisible="not need_manager_confirm"

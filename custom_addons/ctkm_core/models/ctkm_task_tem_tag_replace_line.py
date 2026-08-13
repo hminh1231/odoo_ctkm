@@ -87,7 +87,7 @@ class CtkmTaskTemTagReplaceLine(models.Model):
                 raise UserError(_(
                     'Chỉ bước "Thay tem Tag" mới được cập nhật Tổng SL đã thay.'
                 ))
-            if not is_ctkm_manager and task.user_id != self.env.user:
+            if not is_ctkm_manager and self.env.user not in task.user_ids:
                 raise UserError(_(
                     'Chỉ người nhận việc mới được cập nhật Tổng SL đã thay.'
                 ))
