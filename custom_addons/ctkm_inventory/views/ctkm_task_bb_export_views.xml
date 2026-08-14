@@ -11,7 +11,7 @@
             <xpath expr="//page[@name='task_detail']//group[@string='Chi tiết tem/tag']"
                 position="before">
                 <group string="Xuất biên bản thay tem"
-                    invisible="not is_tem_replace_task">
+                    invisible="not is_tem_bb_replace_task and not is_tem_replace_task">
                     <field name="store_ids" widget="many2many_tags"
                         options="{'no_create': True}"
                         help="Chọn một hoặc nhiều cửa hàng (giống Cửa hàng ở Cấu hình nhân viên)."/>
@@ -19,7 +19,7 @@
                         <button name="action_export_bb_file" type="object"
                             string="Xuất file" class="btn-primary"
                             icon="fa-file-excel-o"
-                            invisible="not is_tem_replace_task"/>
+                            invisible="not is_tem_bb_replace_task and not is_tem_replace_task"/>
                     </div>
                 </group>
             </xpath>

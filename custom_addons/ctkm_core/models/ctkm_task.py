@@ -18,8 +18,11 @@ _logger = logging.getLogger(__name__)
 TEM_TAG_IMPORT_TASK_MARKERS = ('dobbthaytemtag',)
 TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
 # Bước 12 "Thay tem Tag" phải khớp tuyệt đối: nhiều bước khác (bước 4, 6, 15)
-# cũng chứa chuỗi "thaytemtag" trong tên nên không dùng so khớp chứa được.
+# cũng chứa chuỗi "thay tem tag" trong tên nên không dùng so khớp chứa được.
 TEM_REPLACE_TASK_KEYS = ('thaytemtag',)
+# Bước 6 "Lập BB thay tem, bàn giao cho KT kho Kiểm tra BB thay tem tag":
+# nhận diện riêng (không trùng với bước 4 / 12 / 15) để hiện mục "Xuất biên bản thay tem".
+TEM_BB_REPLACE_TASK_MARKERS = ('lapbbthaytem', 'lapbienbanthaytem')
 # Bước 9 "In tem, Tag".
 TEM_PRINT_TASK_MARKERS = ('intemtag',)
 # Bước 10 "Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ".
@@ -128,6 +131,12 @@ class CtkmTask(models.Model):
         string='Bước thay tem/tag',
         compute='_compute_task_step_flags',
         store=True,
+    )
+    is_tem_bb_replace_task = fields.Boolean(
+        string='Bước lập BB thay tem',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc bước "Lập BB thay tem" (xuất biên bản thay tem cho KT kho).',
     )
     is_tem_print_task = fields.Boolean(
         string='Bước in tem/tag',
@@ -577,9 +586,16 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['receive'])
                 or any(marker in key for key in keys for marker in TEM_RECEIVE_TASK_MARKERS)
             )
+            # Bước 6 "Lập BB thay tem": nhận diện riêng (không trùng bước 4 / 12 / 15).
+            is_bb_replace = any(
+                marker in key
+                for key in keys
+                for marker in TEM_BB_REPLACE_TASK_MARKERS
+            )
             task.is_tem_tag_import_task = bool(is_import)
             task.is_tem_photo_task = bool(is_photo)
             task.is_tem_replace_task = bool(is_replace and not is_import)
+            task.is_tem_bb_replace_task = bool(is_bb_replace)
             task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
             task.is_tem_handover_task = bool(is_handover)
             task.is_tem_receive_task = bool(is_receive and not is_handover)

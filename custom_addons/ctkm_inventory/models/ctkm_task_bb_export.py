@@ -41,10 +41,10 @@ class CtkmTask(models.Model):
 
     def action_export_bb_file(self):
         self.ensure_one()
-        if not self.is_tem_replace_task:
+        if not (self.is_tem_bb_replace_task or self.is_tem_replace_task):
             raise UserError(_(
-                'Chỉ công việc bước "Thay tem Tag" (lập BB thay tem) mới được '
-                'xuất biên bản thay tem.'
+                'Chỉ công việc bước "Lập BB thay tem" (hoặc "Thay tem Tag") mới '
+                'được xuất biên bản thay tem.'
             ))
         if not self.store_ids:
             raise UserError(_('Vui lòng chọn ít nhất một Cửa hàng trước khi xuất file.'))
