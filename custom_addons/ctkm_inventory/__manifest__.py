@@ -14,6 +14,7 @@
         'views/ctkm_inventory_import_wizard_views.xml',
         'views/ctkm_inventory_tem_tag_views.xml',
         'views/ctkm_inventory_menu_views.xml',
+        'views/ctkm_task_bb_export_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

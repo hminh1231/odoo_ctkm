@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<odoo noupdate="0">
+
+    <!-- Bước 6 "Lập BB thay tem": chọn nhiều Cửa hàng và xuất biên bản thay tem. -->
+    <record id="view_ctkm_task_form_bb_export" model="ir.ui.view">
+        <field name="name">ctkm.task.form.bb.export</field>
+        <field name="model">ctkm.task</field>
+        <field name="inherit_id" ref="ctkm_core.view_ctkm_task_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='task_detail']" position="inside">
+                <group string="Xuất biên bản thay tem"
+                    invisible="not is_tem_replace_task">
+                    <field name="store_ids" widget="many2many_tags"
+                        options="{'no_create': True}"/>
+                    <div colspan="2" class="mt-2">
+                        <button name="action_export_bb_file" type="object"
+                            string="Xuất file" class="btn-primary"
+                            icon="fa-file-excel-o"
+                            invisible="not is_tem_replace_task"/>
+                    </div>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
