@@ -8,7 +8,7 @@
         <field name="model">ctkm.task</field>
         <field name="inherit_id" ref="ctkm_core.view_ctkm_task_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//page[@name='task_detail']//group[@string='Chi tiết tem/tag']"
+            <xpath expr="//page[@name='task_detail']//group[@name='tem_tag_detail_group']"
                 position="before">
                 <group string="Xuất biên bản thay tem"
                     invisible="not is_tem_bb_replace_task and not is_tem_replace_task">
