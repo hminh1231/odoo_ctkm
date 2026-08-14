@@ -20,13 +20,19 @@ TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
 # Bước 12 "Thay tem Tag" phải khớp tuyệt đối: nhiều bước khác (bước 4, 6, 15)
 # cũng chứa chuỗi "thaytemtag" trong tên nên không dùng so khớp chứa được.
 TEM_REPLACE_TASK_KEYS = ('thaytemtag',)
+# Bước 9 "In tem, Tag".
+TEM_PRINT_TASK_MARKERS = ('intemtag',)
 # Bước 10 "Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ".
 TEM_HANDOVER_TASK_MARKERS = ('bangiaotemtag', 'thuhoitentagcu')
+# Bước 11 "Nhận tem tag mới".
+TEM_RECEIVE_TASK_MARKERS = ('nhantemtagmoi', 'nhantemtag')
 # Ưu tiên nhận diện theo giai đoạn mặc định (bền hơn khi bước bị đổi tên).
 TEM_TAG_IMPORT_STAGE_XMLID = 'ctkm_core.ctkm_stage_4'
+TEM_PRINT_STAGE_XMLID = 'ctkm_core.ctkm_stage_9'
+TEM_HANDOVER_STAGE_XMLID = 'ctkm_core.ctkm_stage_10'
+TEM_RECEIVE_STAGE_XMLID = 'ctkm_core.ctkm_stage_11'
 TEM_REPLACE_STAGE_XMLID = 'ctkm_core.ctkm_stage_12'
 TEM_PHOTO_STAGE_XMLID = 'ctkm_core.ctkm_stage_13'
-TEM_HANDOVER_STAGE_XMLID = 'ctkm_core.ctkm_stage_10'
 # Các trường kho Tem/Tag được gom vào bảng "Chi tiết tem/tag".
 TEM_TAG_LINE_KEY_FIELDS = ('material_code', 'store')
 
@@ -123,11 +129,28 @@ class CtkmTask(models.Model):
         compute='_compute_task_step_flags',
         store=True,
     )
+    is_tem_print_task = fields.Boolean(
+        string='Bước in tem/tag',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc thuộc bước "In tem, Tag".',
+    )
     is_tem_handover_task = fields.Boolean(
         string='Bước bàn giao / thu hồi tem/tag',
         compute='_compute_task_step_flags',
         store=True,
         help='Công việc thuộc bước "Bàn giao Tem Tag cho CH Thu hồi tem tag cũ".',
+    )
+    is_tem_receive_task = fields.Boolean(
+        string='Bước nhận tem tag mới',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc thuộc bước "Nhận tem tag mới".',
+    )
+    show_work_processing_tab = fields.Boolean(
+        string='Hiện tab Xử lý công việc',
+        compute='_compute_show_work_processing_tab',
+        help='Tab "Xử lý công việc" cho bước 9–11 (In tem, Bàn giao/Thu hồi, Nhận tem).',
     )
     handover_quantity = fields.Float(string='Số lượng bàn giao')
     recovery_quantity = fields.Float(string='Số lượng thu hồi')
@@ -136,6 +159,34 @@ class CtkmTask(models.Model):
         'task_id',
         string='Thu hồi tem',
         help='Các Tem/Tag thu hồi ở bước 10; bị xóa khỏi Kho khi bấm Hoàn thành.',
+    )
+    print_store_search = fields.Char(
+        string='Tìm cửa hàng',
+        help='Lọc danh sách cửa hàng cần in tem/tag.',
+    )
+    print_store_ids = fields.One2many(
+        'ctkm.task.tem.print.line',
+        'task_id',
+        string='Cửa hàng in tem/tag',
+        help='Danh sách cửa hàng cần in tem/tag ở bước 9, gom từ file tổng.',
+    )
+    handover_store_search = fields.Char(string='Tìm cửa hàng bàn giao')
+    collect_store_search = fields.Char(string='Tìm cửa hàng thu')
+    handover_store_ids = fields.One2many(
+        'ctkm.task.tem.step10.line',
+        'task_id',
+        string='Bàn giao tem/tag',
+        domain=[('line_type', '=', 'handover')],
+        context={'default_line_type': 'handover'},
+        help='Tên cửa hàng và SL tem/tag lấy từ bước 9 In tem, Tag.',
+    )
+    collect_store_ids = fields.One2many(
+        'ctkm.task.tem.step10.line',
+        'task_id',
+        string='Thu tem/tag',
+        domain=[('line_type', '=', 'collect')],
+        context={'default_line_type': 'collect'},
+        help='Mã cửa hàng lấy từ bước 9; SL tem/tag điền tay.',
     )
     verifier_id = fields.Many2one(
         'hr.employee',
@@ -152,8 +203,8 @@ class CtkmTask(models.Model):
         'ctkm.task.tem.tag.replace.line',
         'task_id',
         string='Chi tiết tem/tag',
-        help='Tem/Tag của CTKM này: bước 4 xem toàn bộ cửa hàng, '
-             'bước 12 chỉ cửa hàng của người nhận việc.',
+        help='Tem/Tag của CTKM này: bước 4 / 10 xem toàn bộ cửa hàng, '
+             'bước 11 / 12 chỉ cửa hàng của người nhận việc.',
     )
     support_employee_ids = fields.Many2many(
         'hr.employee',
@@ -466,15 +517,28 @@ class CtkmTask(models.Model):
                 else True
             )
 
+    @api.depends(
+        'is_tem_print_task', 'is_tem_handover_task', 'is_tem_receive_task',
+    )
+    def _compute_show_work_processing_tab(self):
+        for task in self:
+            task.show_work_processing_tab = bool(
+                task.is_tem_print_task
+                or task.is_tem_handover_task
+                or task.is_tem_receive_task
+            )
+
     @api.depends('name', 'checklist_line_id.name', 'checklist_line_id.stage_id')
     def _compute_task_step_flags(self):
         stage_ids = {
             flag: self._ctkm_step_stage_id(xmlid)
             for flag, xmlid in (
                 ('import', TEM_TAG_IMPORT_STAGE_XMLID),
+                ('print', TEM_PRINT_STAGE_XMLID),
+                ('handover', TEM_HANDOVER_STAGE_XMLID),
+                ('receive', TEM_RECEIVE_STAGE_XMLID),
                 ('replace', TEM_REPLACE_STAGE_XMLID),
                 ('photo', TEM_PHOTO_STAGE_XMLID),
-                ('handover', TEM_HANDOVER_STAGE_XMLID),
             )
         }
         for task in self:
@@ -501,21 +565,31 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['replace'])
                 or any(key in TEM_REPLACE_TASK_KEYS for key in keys)
             )
+            is_print = (
+                (stage_id and stage_id == stage_ids['print'])
+                or any(marker in key for key in keys for marker in TEM_PRINT_TASK_MARKERS)
+            )
             is_handover = (
                 (stage_id and stage_id == stage_ids['handover'])
                 or any(marker in key for key in keys for marker in TEM_HANDOVER_TASK_MARKERS)
             )
+            is_receive = (
+                (stage_id and stage_id == stage_ids['receive'])
+                or any(marker in key for key in keys for marker in TEM_RECEIVE_TASK_MARKERS)
+            )
             task.is_tem_tag_import_task = bool(is_import)
             task.is_tem_photo_task = bool(is_photo)
             task.is_tem_replace_task = bool(is_replace and not is_import)
+            task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
             task.is_tem_handover_task = bool(is_handover)
+            task.is_tem_receive_task = bool(is_receive and not is_handover)
 
     @api.model
     def _ctkm_step_stage_id(self, xmlid):
         stage = self.env.ref(xmlid, raise_if_not_found=False)
         return stage.id if stage else False
 
-    # --- Bảng "Chi tiết tem/tag" (bước 4 và bước 12) ---
+    # --- Bảng "Chi tiết tem/tag" (bước 4, 9–12) ---
 
     def _ctkm_tem_tag_store_keys(self):
         """Mã cửa hàng (HRM 'Cửa hàng' / 'Mã bộ phận') của người nhận việc."""
@@ -532,12 +606,17 @@ class CtkmTask(models.Model):
             return []
         if not self.program_id:
             return []
-        if not (self.is_tem_tag_import_task or self.is_tem_replace_task):
+        if not (
+            self.is_tem_tag_import_task
+            or self.is_tem_handover_task
+            or self.is_tem_receive_task
+            or self.is_tem_replace_task
+        ):
             return []
         tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
         domain = [('program_id', '=', self.program_id.id)]
-        if self.is_tem_replace_task:
-            # Bước 12: chỉ Mã vật tư thuộc cửa hàng của nhân viên nhận việc.
+        if self.is_tem_replace_task or self.is_tem_receive_task:
+            # Bước 11 / 12: chỉ Mã vật tư thuộc cửa hàng của nhân viên nhận việc.
             store_keys = self._ctkm_tem_tag_store_keys()
             if not store_keys:
                 return []
@@ -565,6 +644,15 @@ class CtkmTask(models.Model):
             ctkm_tem_tag_line_sync=True,
         )
         for task in self:
+            if task.is_tem_print_task:
+                task._ctkm_sync_print_store_lines()
+                siblings = self.sudo().search([
+                    ('program_id', '=', task.program_id.id),
+                    ('is_tem_handover_task', '=', True),
+                ])
+                siblings._ctkm_sync_step10_lines()
+            if task.is_tem_handover_task:
+                task._ctkm_sync_step10_lines()
             values = task._ctkm_tem_tag_line_values()
             existing = {}
             obsolete = Line.browse()
@@ -594,16 +682,298 @@ class CtkmTask(models.Model):
             if obsolete:
                 obsolete.unlink()
 
+    def _ctkm_print_store_line_values(self):
+        """Gom kho Tem/Tag theo cửa hàng: SL tem và SL tag cho bước 9."""
+        self.ensure_one()
+        if 'ctkm.inventory.tem.tag' not in self.env:
+            return []
+        if not self.program_id or not self.is_tem_print_task:
+            return []
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            classify_print_kind,
+            normalize_store_key,
+        )
+        tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
+        groups = tem_tag._read_group(
+            [('program_id', '=', self.program_id.id)],
+            ['store', 'tem_tag'],
+            ['quantity:sum'],
+        )
+        by_store = {}
+        for store, kind_value, quantity in groups:
+            store_name = store or ''
+            store_key = normalize_store_key(store_name) or (store_name or False)
+            if not store_key:
+                continue
+            row = by_store.setdefault(store_key, {
+                'store': store_name or store_key,
+                'store_key': store_key,
+                'tem_quantity': 0.0,
+                'tag_quantity': 0.0,
+            })
+            if not row['store'] and store_name:
+                row['store'] = store_name
+            amount = quantity or 0.0
+            if classify_print_kind(kind_value) == 'tag':
+                row['tag_quantity'] += amount
+            else:
+                row['tem_quantity'] += amount
+        values = list(by_store.values())
+        values.sort(key=lambda vals: (vals['store'] or '', vals['store_key'] or ''))
+        store_map = self._ctkm_hr_store_map([
+            vals['store_key'] for vals in values
+        ] + [vals['store'] for vals in values])
+        for index, vals in enumerate(values, start=1):
+            vals['sequence'] = index
+            store_rec = store_map.get(vals['store_key']) or store_map.get(
+                normalize_store_key(vals['store'])
+            )
+            if store_rec:
+                vals['store_id'] = store_rec.id
+                if store_rec.name:
+                    vals['store'] = store_rec.name
+                if store_rec.code:
+                    vals['store_key'] = normalize_store_key(store_rec.code) or vals['store_key']
+        return values
+
+    def _ctkm_hr_store_map(self, keys):
+        """Khớp mã/tên kho với cửa hàng trên Cấu hình nhân viên (hr.store)."""
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            normalize_store_key,
+        )
+        mapping = {}
+        if 'hr.store' not in self.env:
+            return mapping
+        wanted = {normalize_store_key(key) for key in keys if key}
+        if not wanted:
+            return mapping
+        stores = self.env['hr.store'].sudo().search([])
+        for store in stores:
+            for raw in (store.code, store.name):
+                key = normalize_store_key(raw)
+                if key and key in wanted and key not in mapping:
+                    mapping[key] = store
+        return mapping
+
+    def _ctkm_sync_print_store_lines(self):
+        """Dựng lại bảng cửa hàng in tem/tag, giữ nguyên ô tích và dòng thêm tay."""
+        Line = self.env['ctkm.task.tem.print.line'].sudo().with_context(
+            ctkm_tem_tag_line_sync=True,
+        )
+        for task in self:
+            values = task._ctkm_print_store_line_values()
+            existing = {}
+            obsolete = Line.browse()
+            for line in task.sudo().print_store_ids:
+                key = line.store_key or ''
+                if not key:
+                    if line.is_manual:
+                        continue
+                    obsolete |= line
+                    continue
+                if key in existing:
+                    if line.is_manual:
+                        continue
+                    obsolete |= line
+                else:
+                    existing[key] = line
+            to_create = []
+            for vals in values:
+                key = vals['store_key'] or ''
+                line = existing.pop(key, None)
+                if not line:
+                    to_create.append(dict(vals, task_id=task.id, is_manual=False))
+                    continue
+                changes = {}
+                for field, value in vals.items():
+                    if field in ('is_manual', 'done'):
+                        continue
+                    if field == 'store_id' and line.store_id:
+                        continue
+                    if line[field] != value:
+                        changes[field] = value
+                if changes:
+                    line.write(changes)
+            if to_create:
+                Line.create(to_create)
+            leftover = Line.browse([line.id for line in existing.values()])
+            obsolete |= leftover.filtered(lambda line: not line.is_manual)
+            if obsolete:
+                obsolete.unlink()
+            task._ctkm_renumber_print_store_lines()
+
+    def _ctkm_renumber_print_store_lines(self):
+        self.ensure_one()
+        lines = self.sudo().print_store_ids.sorted(
+            lambda line: (line.sequence or 0, line.store or '', line.id)
+        )
+        Line = self.env['ctkm.task.tem.print.line'].sudo().with_context(
+            ctkm_tem_tag_line_sync=True,
+        )
+        for index, line in enumerate(lines, start=1):
+            if line.sequence != index:
+                Line.browse(line.id).write({'sequence': index})
+
+    def _ctkm_source_print_task(self):
+        """Công việc bước 9 (In tem, Tag) cùng chương trình."""
+        self.ensure_one()
+        if not self.program_id:
+            return self.browse()
+        return self.sudo().search([
+            ('program_id', '=', self.program_id.id),
+            ('is_tem_print_task', '=', True),
+        ], order='id desc', limit=1)
+
+    def _ctkm_print_line_store_key(self, line):
+        """Mã cửa hàng dùng để copy bước 9 → 10 (ưu tiên store_key, rồi hr.store)."""
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            normalize_store_key,
+        )
+        if line.store_key:
+            return line.store_key
+        if line.store_id:
+            return normalize_store_key(line.store_id.code or line.store_id.name)
+        return normalize_store_key(line.store)
+
+    def _ctkm_sync_step10_lines(self):
+        """Bàn giao: copy tên + SL từ bước 9. Thu: copy mã cửa hàng, giữ SL đã điền."""
+        Line = self.env['ctkm.task.tem.step10.line'].sudo().with_context(
+            ctkm_tem_tag_line_sync=True,
+        )
+        for task in self:
+            if not task.is_tem_handover_task:
+                continue
+            print_task = task._ctkm_source_print_task()
+            sources = print_task.sudo().print_store_ids
+            task._ctkm_sync_step10_type(Line, 'handover', sources, copy_qty=True)
+            task._ctkm_sync_step10_type(Line, 'collect', sources, copy_qty=False)
+
+    def _ctkm_sync_step10_type(self, Line, line_type, sources, copy_qty):
+        self.ensure_one()
+        existing = {}
+        obsolete = Line.browse()
+        current = Line.search([
+            ('task_id', '=', self.id),
+            ('line_type', '=', line_type),
+        ])
+        for line in current:
+            key = line.store_key or ''
+            if not key:
+                if line.is_manual:
+                    continue
+                obsolete |= line
+                continue
+            if key in existing:
+                if line.is_manual:
+                    continue
+                obsolete |= line
+            else:
+                existing[key] = line
+        to_create = []
+        for source in sources.sorted(lambda line: (line.sequence, line.id)):
+            key = self._ctkm_print_line_store_key(source)
+            if not key:
+                continue
+            vals = {
+                'sequence': source.sequence or 1,
+                'store_id': source.store_id.id,
+                'store': source.store or source.store_id.name or source.store_code,
+                'store_key': key,
+                'print_line_id': source.id,
+            }
+            if copy_qty:
+                vals['tem_quantity'] = float(source.tem_quantity or 0.0)
+                vals['tag_quantity'] = float(source.tag_quantity or 0.0)
+            line = existing.pop(key, None)
+            if not line:
+                create_vals = dict(
+                    vals, task_id=self.id, line_type=line_type, is_manual=False,
+                )
+                if not copy_qty:
+                    create_vals['tem_quantity'] = 0.0
+                    create_vals['tag_quantity'] = 0.0
+                to_create.append(create_vals)
+                continue
+            changes = {}
+            for field, value in vals.items():
+                if line[field] != value:
+                    changes[field] = value
+            if changes:
+                line.write(changes)
+        leftover = Line.browse([line.id for line in existing.values()])
+        obsolete |= leftover.filtered(lambda line: not line.is_manual)
+        if to_create:
+            Line.create(to_create)
+        if obsolete:
+            obsolete.unlink()
+        self._ctkm_renumber_step10_lines(Line, line_type)
+
+    def _ctkm_renumber_step10_lines(self, Line, line_type):
+        self.ensure_one()
+        lines = Line.search([
+            ('task_id', '=', self.id),
+            ('line_type', '=', line_type),
+        ]).sorted(lambda line: (line.sequence or 0, line.store or '', line.id))
+        for index, line in enumerate(lines, start=1):
+            if line.sequence != index:
+                line.write({'sequence': index})
+
+    def action_add_collect_store_line(self):
+        """Nút Tạo dòng trên bảng Thu tem/tag."""
+        self.ensure_one()
+        if not self.is_tem_handover_task:
+            raise UserError(_(
+                'Chỉ bước bàn giao / thu hồi tem tag mới được thêm dòng thu.'
+            ))
+        is_ctkm_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')
+        if not is_ctkm_manager and self.env.user not in self.user_ids:
+            raise UserError(_('Chỉ người nhận việc mới được thêm dòng thu tem/tag.'))
+        sequence = max(self.collect_store_ids.mapped('sequence') or [0]) + 1
+        self.env['ctkm.task.tem.step10.line'].create({
+            'task_id': self.id,
+            'line_type': 'collect',
+            'sequence': sequence,
+            'is_manual': True,
+        })
+        return self._ctkm_notify_reload(
+            _('Đã tạo dòng'),
+            _('Chọn cửa hàng trên dòng mới; điền SL tem / SL tag thu về.'),
+        )
+
+    def action_add_print_store_line(self):
+        """Nút Tạo dòng: thêm một dòng trống để chọn cửa hàng."""
+        self.ensure_one()
+        if not self.is_tem_print_task:
+            raise UserError(_('Chỉ bước "In tem, Tag" mới được thêm cửa hàng in.'))
+        is_ctkm_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')
+        if not is_ctkm_manager and self.env.user not in self.user_ids:
+            raise UserError(_(
+                'Chỉ người nhận việc mới được thêm cửa hàng in tem/tag.'
+            ))
+        sequence = max(self.print_store_ids.mapped('sequence') or [0]) + 1
+        self.env['ctkm.task.tem.print.line'].create({
+            'task_id': self.id,
+            'sequence': sequence,
+            'is_manual': True,
+        })
+        return self._ctkm_notify_reload(
+            _('Đã tạo dòng'),
+            _('Chọn cửa hàng trên dòng mới (Cấu hình nhân viên → Cửa hàng).'),
+        )
+
     @api.model
     def _ctkm_sync_tem_tag_lines_for_programs(self, program_ids):
-        """Cập nhật bảng chi tiết của mọi công việc bước 4 / bước 12 của CTKM."""
+        """Cập nhật bảng chi tiết của mọi công việc bước 4 / 9–12 của CTKM."""
         program_ids = [program_id for program_id in (program_ids or []) if program_id]
         if not program_ids:
             return self.browse()
         tasks = self.sudo().search([
             ('program_id', 'in', program_ids),
-            '|',
+            '|', '|', '|', '|',
             ('is_tem_tag_import_task', '=', True),
+            ('is_tem_print_task', '=', True),
+            ('is_tem_handover_task', '=', True),
+            ('is_tem_receive_task', '=', True),
             ('is_tem_replace_task', '=', True),
         ])
         tasks._ctkm_sync_tem_tag_lines()
@@ -612,10 +982,25 @@ class CtkmTask(models.Model):
     def action_refresh_tem_tag_lines(self):
         """Nút 'Làm mới' bảng Chi tiết tem/tag trên form công việc."""
         self.sudo()._ctkm_sync_tem_tag_lines()
+        if self[:1].is_tem_handover_task:
+            return self._ctkm_notify_reload(
+                _('Đã làm mới'),
+                _('Đã lấy danh sách cửa hàng từ bước In tem, Tag.'),
+            )
         return self._ctkm_notify_reload(
             _('Đã làm mới'),
             _('Bảng Chi tiết tem/tag đã cập nhật theo dữ liệu kho Tem/Tag.'),
         )
+
+    def web_read(self, specification):
+        # Mở form bước 10: copy ngay từ bước 9 (không cần bấm Làm mới).
+        if self.ids and not self.env.context.get('ctkm_skip_step10_autosync'):
+            handover = self.filtered('is_tem_handover_task')
+            if handover:
+                handover.sudo().with_context(
+                    ctkm_skip_step10_autosync=True,
+                )._ctkm_sync_step10_lines()
+        return super().web_read(specification)
 
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
@@ -833,6 +1218,28 @@ class CtkmTask(models.Model):
             body_is_html=True,
         )
         return worker
+
+    @api.onchange('print_store_search')
+    def _onchange_print_store_search(self):
+        search = (self.print_store_search or '').strip()
+        domain = [('store', 'ilike', search)] if search else []
+        return {'domain': {'print_store_ids': domain}}
+
+    @api.onchange('handover_store_search')
+    def _onchange_handover_store_search(self):
+        search = (self.handover_store_search or '').strip()
+        domain = [('line_type', '=', 'handover')]
+        if search:
+            domain.append(('store', 'ilike', search))
+        return {'domain': {'handover_store_ids': domain}}
+
+    @api.onchange('collect_store_search')
+    def _onchange_collect_store_search(self):
+        search = (self.collect_store_search or '').strip()
+        domain = [('line_type', '=', 'collect')]
+        if search:
+            domain.append(('store', 'ilike', search))
+        return {'domain': {'collect_store_ids': domain}}
 
     @api.onchange('state')
     def _onchange_state(self):
@@ -1723,6 +2130,35 @@ class CtkmTask(models.Model):
                 'Chờ người phụ trách bước trước hoàn thành và bấm Chuyển tiếp.'
             ))
 
+        task._ensure_program_notify_documents()
+        url, app_menu_id = task._ctkm_task_form_url()
+        return {
+            'type': 'ir.actions.act_url',
+            'url': url,
+            'target': 'self',
+            'task_id': task.id,
+            'menu_id': app_menu_id,
+        }
+
+    @api.model
+    def action_open_task(self, task_id):
+        """Mở đúng công việc đã gắn trên nút Discuss (bước 9, 10, …)."""
+        task_id = int(task_id or 0)
+        if not task_id:
+            raise UserError(_('Thiếu mã công việc CTKM.'))
+        task = self.sudo().browse(task_id)
+        if not task.exists():
+            raise UserError(_('Không tìm thấy công việc CTKM.'))
+        user = self.env.user
+        allowed = (
+            user in task.user_ids
+            or task._user_can_confirm_as_manager(user)
+            or user.has_group('ctkm_core.group_ctkm_manager')
+            or user.has_group('ctkm_core.group_ctkm_user')
+            or (task.program_id and task.program_id.user_id == user)
+        )
+        if not allowed:
+            raise UserError(_('Bạn không có quyền mở công việc này.'))
         task._ensure_program_notify_documents()
         url, app_menu_id = task._ctkm_task_form_url()
         return {

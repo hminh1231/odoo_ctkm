@@ -86,7 +86,7 @@ class CtkmProgramDiscussNotify(models.Model):
         lines.append(self._ctkm_notify_detail_button_markup())
         return Markup("<br/>").join(lines)
 
-    def _ctkm_checklist_work_message_body(self, checklist_line):
+    def _ctkm_checklist_work_message_body(self, checklist_line, task=None):
         """Tin OdooBot giao việc cho người phụ trách một bước tiến độ."""
         self.ensure_one()
         lines = [
@@ -108,7 +108,10 @@ class CtkmProgramDiscussNotify(models.Model):
             "Vui lòng xử lý, bấm <b>Hoàn thành</b>, chờ xác nhận quản lý, "
             "rồi <b>Chuyển tiếp</b> để giao bước sau."
         ))
-        lines.append(self._ctkm_notify_detail_button_markup())
+        if task:
+            lines.append(self._ctkm_notify_task_detail_button_markup(task))
+        else:
+            lines.append(self._ctkm_notify_detail_button_markup())
         return Markup("<br/>").join(lines)
 
     def _ctkm_send_notify_line(self, notify_line, handover_note=False, handover_attachments=None):
@@ -198,16 +201,6 @@ class CtkmProgramDiscussNotify(models.Model):
         if handover_attachments is None:
             handover_attachments = self.notify_document_ids
 
-        body = self._ctkm_checklist_work_message_body(checklist_line)
-        sent_users = self.env["res.users"]
-        for user in users:
-            if self._post_ctkm_bot_discuss_message(user, body):
-                sent_users |= user
-        if not sent_users:
-            raise UserError(_(
-                'Không gửi được OdooBot CTKM tới bước "%s". Thử lại sau.'
-            ) % (checklist_line.name or ""))
-
         task = checklist_line._ctkm_ensure_task()
         if task:
             update_vals = {}
@@ -223,6 +216,16 @@ class CtkmProgramDiscussNotify(models.Model):
                     "handover_document_ids": [(6, 0, copies.ids)],
                 })
             task._ensure_program_notify_documents()
+
+        body = self._ctkm_checklist_work_message_body(checklist_line, task=task)
+        sent_users = self.env["res.users"]
+        for user in users:
+            if self._post_ctkm_bot_discuss_message(user, body):
+                sent_users |= user
+        if not sent_users:
+            raise UserError(_(
+                'Không gửi được OdooBot CTKM tới bước "%s". Thử lại sau.'
+            ) % (checklist_line.name or ""))
 
         checklist_vals = {
             "notified": True,
@@ -335,6 +338,20 @@ class CtkmProgramDiscussNotify(models.Model):
             "</div>"
         ) % (escape(href), self.id)
 
+    def _ctkm_notify_task_detail_button_markup(self, task):
+        """Nút mở đúng công việc (bước) đã ghi trong tin OdooBot."""
+        if not task:
+            return self._ctkm_notify_detail_button_markup()
+        href, _app_menu_id = task._ctkm_task_form_url()
+        return Markup(
+            '<div class="o_ctkm_notify_detail mt-2">'
+            '<a class="btn btn-primary btn-sm o_ctkm_task_open_btn" '
+            'href="%s" data-task-id="%s" data-program-id="%s" contenteditable="false">'
+            "Bấm để xem chi tiết"
+            "</a>"
+            "</div>"
+        ) % (escape(href), task.id, self.id)
+
     def action_open_my_task(self):
         """Delegate: lần đầu bấm nút tạo công việc, ngày xử lý = ngày bấm."""
         self.ensure_one()
@@ -342,26 +359,59 @@ class CtkmProgramDiscussNotify(models.Model):
 
     @api.model
     def _ctkm_fix_notify_detail_buttons(self):
-        """Cập nhật nút trong tin Discuss cũ để có data-program-id."""
+        """Cập nhật nút trong tin Discuss cũ: đúng chương trình + đúng bước/task."""
         import re
 
         Message = self.env["mail.message"].sudo()
-        messages = Message.search([("body", "ilike", "o_ctkm_notify_detail_btn")])
+        messages = Message.search([("body", "ilike", "o_ctkm_notify_detail")])
         if not messages:
             return True
         pattern = re.compile(
             r'<div class="o_ctkm_notify_detail[^"]*">.*?</div>',
             re.IGNORECASE | re.DOTALL,
         )
-        for program in self.sudo().search([]):
+        first_bold = re.compile(r"<b>(.*?)</b>", re.IGNORECASE | re.DOTALL)
+        stt_re = re.compile(
+            r"Bước\s*STT:\s*<b>\s*(\d+)\s*</b>",
+            re.IGNORECASE,
+        )
+        Task = self.env["ctkm.task"].sudo()
+        # Tên dài trước để "test 2" không bị chương trình "test" ghi đè.
+        programs = self.sudo().search([]).sorted(
+            key=lambda p: len((p.name or "").strip()),
+            reverse=True,
+        )
+        for program in programs:
             name = (program.name or "").strip()
             if not name:
                 continue
-            btn_html = str(program._ctkm_notify_detail_button_markup())
             for message in messages:
                 body = message.body or ""
-                if "o_ctkm_notify_detail_btn" not in body or name not in body:
+                if "o_ctkm_notify_detail" not in body:
                     continue
+                bold = first_bold.search(body)
+                if not bold:
+                    continue
+                title = html2plaintext(bold.group(1) or "").strip()
+                if title != name:
+                    continue
+                btn_html = str(program._ctkm_notify_detail_button_markup())
+                stt_match = stt_re.search(body)
+                if stt_match:
+                    sequence = int(stt_match.group(1))
+                    line = program.checklist_line_ids.filtered(
+                        lambda l, seq=sequence: l.sequence == seq
+                    )[:1]
+                    task = Task.search([
+                        ("program_id", "=", program.id),
+                        ("checklist_line_id", "=", line.id),
+                    ], limit=1) if line else Task.browse()
+                    if not task and line:
+                        task = line._ctkm_ensure_task()
+                    if task:
+                        btn_html = str(
+                            program._ctkm_notify_task_detail_button_markup(task)
+                        )
                 new_body = pattern.sub(btn_html, body, count=1)
                 if new_body != body:
                     message.write({"body": new_body})

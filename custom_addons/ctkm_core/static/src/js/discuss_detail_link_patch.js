@@ -150,7 +150,7 @@ patch(Store.prototype, {
             }
             const method = isManagerConfirm
                 ? "action_open_for_manager_confirm"
-                : "action_open_for_manager_confirm";
+                : "action_open_task";
             this.env.services.orm
                 .call("ctkm.task", method, [taskId])
                 .then((action) => {

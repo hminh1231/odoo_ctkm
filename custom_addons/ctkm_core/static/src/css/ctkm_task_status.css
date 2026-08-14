@@ -38,3 +38,37 @@
 .o_ctkm_task_list td.o_list_button > div > button {
     justify-content: flex-start;
 }
+
+/* Bảng in tem/tag bước 9: cột SL tem / SL tag sát nhau */
+.o_ctkm_print_store_list table,
+.o_field_one2many.o_ctkm_print_store_list table,
+.o_list_view.o_ctkm_print_store_list table {
+    table-layout: auto !important;
+    width: auto !important;
+    max-width: 100%;
+}
+.o_ctkm_print_store_list th[data-name="sequence"],
+.o_ctkm_print_store_list td[data-name="sequence"] {
+    width: 56px !important;
+    min-width: 56px !important;
+    max-width: 64px !important;
+}
+.o_ctkm_print_store_list th[data-name="store_id"],
+.o_ctkm_print_store_list td[data-name="store_id"] {
+    width: 240px !important;
+    min-width: 180px !important;
+    max-width: 280px !important;
+}
+.o_ctkm_print_store_list th[data-name="store_code"],
+.o_ctkm_print_store_list td[data-name="store_code"],
+.o_ctkm_print_store_list th[data-name="tem_quantity"],
+.o_ctkm_print_store_list td[data-name="tem_quantity"],
+.o_ctkm_print_store_list th[data-name="tag_quantity"],
+.o_ctkm_print_store_list td[data-name="tag_quantity"],
+.o_ctkm_print_store_list th[data-name="done"],
+.o_ctkm_print_store_list td[data-name="done"] {
+    width: 96px !important;
+    min-width: 80px !important;
+    max-width: 110px !important;
+    white-space: nowrap;
+}

@@ -1,36 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo noupdate="0">
-        <record model="ir.module.category" id="module_category_ctkm">
-            <field name="name">CTKM</field>
-            <field name="sequence">19</field>
-        </record>
-
-        <!-- CTKM access right: 3 levels (Employee / Manager / Administrator).
-             Administrator implies Manager, Manager implies Employee. -->
         <record model="res.groups.privilege" id="res_groups_privilege_ctkm">
-            <field name="name">Employees</field>
-            <field name="sequence">10</field>
-            <field name="category_id" ref="module_category_ctkm"/>
-            <field name="group_ids" eval="[(4, ref('group_ctkm_employee')), (4, ref('group_ctkm_user')), (4, ref('group_ctkm_manager'))]"/>
+            <field name="name">Chương trình khuyến mãi</field>
+            <field name="sequence">19</field>
+            <field name="category_id" ref="base.module_category_marketing"/>
         </record>
 
-        <record id="group_ctkm_employee" model="res.groups">
-            <field name="name">Employee</field>
+        <record id="group_ctkm_user" model="res.groups">
+            <field name="name">User</field>
             <field name="sequence">10</field>
             <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
             <field name="privilege_id" ref="res_groups_privilege_ctkm"/>
         </record>
 
-        <record id="group_ctkm_user" model="res.groups">
-            <field name="name">Manager</field>
-            <field name="sequence">20</field>
-            <field name="implied_ids" eval="[(4, ref('group_ctkm_employee'))]"/>
-            <field name="privilege_id" ref="res_groups_privilege_ctkm"/>
-        </record>
-
         <record id="group_ctkm_manager" model="res.groups">
             <field name="name">Administrator</field>
-            <field name="sequence">30</field>
+            <field name="sequence">20</field>
             <field name="privilege_id" ref="res_groups_privilege_ctkm"/>
             <field name="implied_ids" eval="[(4, ref('group_ctkm_user'))]"/>
             <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
@@ -150,6 +135,42 @@
         <record id="ctkm_task_tem_tag_recover_rule_manager" model="ir.rule">
             <field name="name">CTKM Thu hồi tem: manager xem toàn bộ</field>
             <field name="model_id" ref="model_ctkm_task_tem_tag_recover_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_ctkm_manager'))]"/>
+        </record>
+        <record id="ctkm_task_tem_print_rule_employee" model="ir.rule">
+            <field name="name">CTKM In tem/tag: dòng của công việc mình phụ trách</field>
+            <field name="model_id" ref="model_ctkm_task_tem_print_line"/>
+            <field name="domain_force">['|',
+                ('task_id.user_ids', '=', user.id),
+                ('task_id.user_ids', 'in', user.employee_ids.child_ids.user_id.ids)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+        <record id="ctkm_task_tem_print_rule_manager" model="ir.rule">
+            <field name="name">CTKM In tem/tag: manager xem toàn bộ</field>
+            <field name="model_id" ref="model_ctkm_task_tem_print_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_ctkm_manager'))]"/>
+        </record>
+        <record id="ctkm_task_tem_step10_rule_employee" model="ir.rule">
+            <field name="name">CTKM Bước 10 tem/tag: dòng của công việc mình phụ trách</field>
+            <field name="model_id" ref="model_ctkm_task_tem_step10_line"/>
+            <field name="domain_force">['|',
+                ('task_id.user_ids', '=', user.id),
+                ('task_id.user_ids', 'in', user.employee_ids.child_ids.user_id.ids)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+        <record id="ctkm_task_tem_step10_rule_manager" model="ir.rule">
+            <field name="name">CTKM Bước 10 tem/tag: manager xem toàn bộ</field>
+            <field name="model_id" ref="model_ctkm_task_tem_step10_line"/>
             <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[(4, ref('group_ctkm_manager'))]"/>
         </record>

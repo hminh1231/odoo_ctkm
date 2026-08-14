@@ -56,7 +56,10 @@
                     <field name="is_tem_tag_import_task" invisible="1"/>
                     <field name="is_tem_photo_task" invisible="1"/>
                     <field name="is_tem_replace_task" invisible="1"/>
+                    <field name="is_tem_print_task" invisible="1"/>
                     <field name="is_tem_handover_task" invisible="1"/>
+                    <field name="is_tem_receive_task" invisible="1"/>
+                    <field name="show_work_processing_tab" invisible="1"/>
                     <field name="program_kanban_state" widget="statusbar"
                         class="ms-auto float-end"/>
                     <div class="oe_title">
@@ -129,31 +132,14 @@
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
-                                <group string="Thu hồi tem" invisible="not is_tem_handover_task">
-                                    <div colspan="2" class="text-muted mb-2">
-                                        Chọn <b>Chương trình khuyến mãi</b>, sau đó chọn các <b>Tem/Tag</b>
-                                        cần thu hồi. Khi bấm <b>Hoàn thành</b>, các Tem/Tag đã chọn sẽ bị
-                                        xóa khỏi <b>Kho</b> của ứng dụng.
-                                    </div>
-                                    <field name="recover_ids" nolabel="1" colspan="2">
-                                        <list editable="bottom" create="1" delete="1">
-                                            <field name="program_id" required="1"/>
-                                            <field name="tem_tag_ids"/>
-                                        </list>
-                                    </field>
-                                </group>
-                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task or is_tem_handover_task">
+                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task or show_work_processing_tab">
                                     <div colspan="2" class="text-muted">
                                         Đang để trống, sẽ bổ sung sau.
                                     </div>
                                 </group>
                             </group>
                             <group string="Chi tiết tem/tag"
-                                invisible="not is_tem_handover_task and not is_tem_replace_task and not is_tem_tag_import_task">
-                                <div colspan="2" class="text-muted mb-2"
-                                    invisible="not is_tem_handover_task">
-                                    Tem/tag hiện có trong Kho của chương trình này (tất cả cửa hàng).
-                                </div>
+                                invisible="not is_tem_replace_task and not is_tem_tag_import_task">
                                 <div colspan="2" class="text-muted mb-2"
                                     invisible="not is_tem_replace_task">
                                     Nhập <b>Tổng SL đã thay</b> cho từng Mã vật tư thuộc cửa hàng của bạn trong chương trình này.
@@ -163,7 +149,7 @@
                                     Tem/tag đã đổ từ file tổng (tất cả cửa hàng). Số lượng đã thay do cửa hàng cập nhật ở bước <b>Thay tem Tag</b>.
                                 </div>
                                 <div colspan="2" class="mb-2"
-                                    invisible="not is_tem_handover_task and not is_tem_tag_import_task">
+                                    invisible="not is_tem_tag_import_task">
                                     <button name="action_refresh_tem_tag_lines" type="object"
                                         string="Làm mới danh sách" class="btn-secondary btn-sm"
                                         icon="fa-refresh"/>
@@ -226,6 +212,145 @@
                                         nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg'}"/>
                                 </group>
+                            </group>
+                        </page>
+                        <page string="Xử lý công việc" name="task_work_process"
+                            invisible="not show_work_processing_tab">
+                            <group string="Bàn giao tem/tag" invisible="not is_tem_handover_task">
+                                <div colspan="2" class="text-muted mb-2">
+                                    Tên cửa hàng và số lượng tem/tag lấy từ bước <b>In tem, Tag</b>.
+                                </div>
+                                <field name="handover_store_search" placeholder="Tìm cửa hàng..."
+                                    nolabel="1" colspan="2"/>
+                                <div colspan="2" class="mb-2">
+                                    <button name="action_refresh_tem_tag_lines" type="object"
+                                        string="Làm mới danh sách" class="btn-secondary btn-sm"
+                                        icon="fa-refresh"/>
+                                </div>
+                                <field name="handover_store_ids" nolabel="1" colspan="2"
+                                    widget="one2many"
+                                    class="o_ctkm_print_store_list"
+                                    context="{'default_line_type': 'handover'}"
+                                    domain="[('line_type', '=', 'handover')]">
+                                    <list editable="bottom" create="0" delete="0"
+                                        class="o_ctkm_print_store_list"
+                                        default_order="sequence, store">
+                                        <field name="line_type" column_invisible="1"/>
+                                        <field name="sequence" readonly="1" width="50px"/>
+                                        <field name="store_id" readonly="1"
+                                            options="{'no_create': True, 'no_open': True}"/>
+                                        <field name="store_code" readonly="1" width="110px"/>
+                                        <field name="store" column_invisible="1"/>
+                                        <field name="store_key" column_invisible="1"/>
+                                        <field name="is_manual" column_invisible="1"/>
+                                        <field name="tem_quantity" readonly="1" width="90px"
+                                            sum="Tổng SL tem"/>
+                                        <field name="tag_quantity" readonly="1" width="90px"
+                                            sum="Tổng SL tag"/>
+                                        <field name="done" width="80px"/>
+                                    </list>
+                                </field>
+                            </group>
+                            <group string="Thu tem/tag" invisible="not is_tem_handover_task">
+                                <div colspan="2" class="text-muted mb-2">
+                                    Mã cửa hàng lấy từ bước <b>In tem, Tag</b>.
+                                    Điền <b>SL tem</b> / <b>SL tag</b> thu về.
+                                </div>
+                                <field name="collect_store_search" placeholder="Tìm cửa hàng..."
+                                    nolabel="1" colspan="2"/>
+                                <div colspan="2" class="mb-2">
+                                    <button name="action_add_collect_store_line" type="object"
+                                        string="Tạo dòng" class="btn-primary btn-sm"
+                                        icon="fa-plus"/>
+                                    <button name="action_refresh_tem_tag_lines" type="object"
+                                        string="Làm mới danh sách" class="btn-secondary btn-sm ms-2"
+                                        icon="fa-refresh"/>
+                                </div>
+                                <field name="collect_store_ids" nolabel="1" colspan="2"
+                                    widget="one2many"
+                                    class="o_ctkm_print_store_list"
+                                    context="{'default_line_type': 'collect'}"
+                                    domain="[('line_type', '=', 'collect')]">
+                                    <list editable="bottom" create="1" delete="1"
+                                        class="o_ctkm_print_store_list"
+                                        default_order="sequence, store">
+                                        <field name="line_type" column_invisible="1"/>
+                                        <field name="sequence" readonly="1" width="50px"/>
+                                        <field name="store_id"
+                                            options="{'no_create': True, 'no_open': True}"
+                                            placeholder="Tìm cửa hàng..."/>
+                                        <field name="store_code" readonly="1" width="110px"/>
+                                        <field name="store" column_invisible="1"/>
+                                        <field name="store_key" column_invisible="1"/>
+                                        <field name="is_manual" column_invisible="1"/>
+                                        <field name="tem_quantity" width="90px" sum="Tổng SL tem"/>
+                                        <field name="tag_quantity" width="90px" sum="Tổng SL tag"/>
+                                        <field name="done" width="80px"/>
+                                    </list>
+                                </field>
+                            </group>
+                            <group string="Danh sách cửa hàng in tem/tag"
+                                invisible="not is_tem_print_task">
+                                <div colspan="2" class="text-muted mb-2">
+                                    Danh sách cửa hàng cần in tem/tag theo file tổng.
+                                    Tick <b>Kết quả</b> khi cửa hàng đã in xong.
+                                </div>
+                                <field name="print_store_search" placeholder="Tìm cửa hàng..."
+                                    nolabel="1" colspan="2"/>
+                                <div colspan="2" class="mb-2">
+                                    <button name="action_add_print_store_line" type="object"
+                                        string="Tạo dòng" class="btn-primary btn-sm"
+                                        icon="fa-plus"/>
+                                    <button name="action_refresh_tem_tag_lines" type="object"
+                                        string="Làm mới danh sách" class="btn-secondary btn-sm ms-2"
+                                        icon="fa-refresh"/>
+                                </div>
+                                <field name="print_store_ids" nolabel="1" colspan="2"
+                                    widget="one2many"
+                                    class="o_ctkm_print_store_list"
+                                    domain="[('store', 'ilike', print_store_search or '%')]">
+                                    <list editable="bottom" create="1" delete="1"
+                                        class="o_ctkm_print_store_list"
+                                        default_order="sequence, store">
+                                        <field name="sequence" readonly="1" width="50px"/>
+                                        <field name="store_id"
+                                            options="{'no_create': True, 'no_open': True}"
+                                            placeholder="Tìm cửa hàng..."/>
+                                        <field name="store_code" readonly="1" width="110px"/>
+                                        <field name="store" column_invisible="1"/>
+                                        <field name="store_key" column_invisible="1"/>
+                                        <field name="is_manual" column_invisible="1"/>
+                                        <field name="tem_quantity" width="90px" sum="Tổng SL tem"/>
+                                        <field name="tag_quantity" width="90px" sum="Tổng SL tag"/>
+                                        <field name="done" width="80px"/>
+                                    </list>
+                                </field>
+                            </group>
+                            <group string="Chi tiết tem/tag"
+                                invisible="not is_tem_receive_task">
+                                <div colspan="2" class="text-muted mb-2"
+                                    invisible="not is_tem_receive_task">
+                                    Tem/tag mới cần nhận cho cửa hàng của bạn.
+                                </div>
+                                <div colspan="2" class="mb-2">
+                                    <button name="action_refresh_tem_tag_lines" type="object"
+                                        string="Làm mới danh sách" class="btn-secondary btn-sm"
+                                        icon="fa-refresh"/>
+                                </div>
+                                <field name="tem_tag_replace_ids" nolabel="1" colspan="2"
+                                    readonly="1">
+                                    <list create="0" delete="0">
+                                        <field name="material_code" readonly="1"/>
+                                        <field name="store" readonly="1"
+                                            column_invisible="parent.is_tem_receive_task"/>
+                                        <field name="date" readonly="1" optional="hide"/>
+                                        <field name="total_quantity" readonly="1" sum="Tổng SL"/>
+                                        <field name="replaced_quantity" readonly="1"
+                                            sum="Tổng SL đã thay"/>
+                                        <field name="remaining_quantity" readonly="1"
+                                            sum="Tổng SL chưa thay"/>
+                                    </list>
+                                </field>
                             </group>
                         </page>
                         <page string="Yêu cầu hỗ trợ" name="task_support">
