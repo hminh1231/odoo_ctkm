@@ -98,18 +98,35 @@ class CtkmTask(models.Model):
         inventory_date = fields.Date.context_today(self)
         date_str = inventory_date.strftime('%d/%m/%Y')
 
-        # --- Các cửa hàng được chọn (giữ đúng thứ tự người dùng chọn) ---
+        # --- Các cửa hàng: lấy từ selection, hoặc toàn bộ cửa hàng có trong
+        #     kho Tem/Tag (import bước 4) khi không chọn cửa hàng nào. ---
         selected = self.store_ids.sudo()
-        if not selected:
-            raise UserError(_('Vui lòng chọn ít nhất một Cửa hàng trước khi xuất file.'))
-        selected_map = {}
-        for store in selected:
-            key = _normalize_store_code(store.code or store.name)
-            if key and key not in selected_map:
-                selected_map[key] = store
+        if selected:
+            selected_map = {}
+            for store in selected:
+                key = _normalize_store_code(store.code or store.name)
+                if key and key not in selected_map:
+                    selected_map[key] = store
+        else:
+            # Không chọn -> lấy mọi store_key đã import ở bước 4 của chương trình.
+            Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
+            groups = Inventory.read_group(
+                [('program_id', '=', program.id)],
+                ['store_key'], ['store_key'],
+            )
+            selected_map = {}
+            for row in groups:
+                key = row['store_key']
+                if key and key not in selected_map:
+                    selected_map[key] = None
+        if not selected_map:
+            raise UserError(_(
+                'Không có dữ liệu kho Tem/Tag (import bước 4) cho chương trình này.'
+            ))
         store_keys = list(selected_map.keys())
         store_cols = [
-            selected_map[k].code or selected_map[k].name or k for k in store_keys
+            (selected_map[k].code or selected_map[k].name or k) if selected_map[k] else k
+            for k in store_keys
         ]
         last_col = 4 + len(store_cols) + 1  # cột Tổng cộng
         total_col_letter = get_column_letter(last_col)
@@ -181,8 +198,11 @@ class CtkmTask(models.Model):
             cell.alignment = center
         ws.row_dimensions[HEADER_ROW].height = 55.5
 
-        # Dòng 8+: chi tiết
+        # Dòng 8+: chi tiết (ghi số thực, không dùng công thức để file có thể
+        # import ngược lại bước 4 và hiển thị đúng số khi mở).
         r = DATA_START_ROW
+        store_totals = {k: 0.0 for k in store_keys}
+        grand_total = 0.0
         for code in material_codes:
             mat = materials[code]
             row_vals = [code, mat['promo'], mat['ctkm'], mat['tem_tag']]
@@ -191,7 +211,9 @@ class CtkmTask(models.Model):
                 qty = mat['stores'].get(k, 0.0)
                 row_vals.append(qty)
                 row_sum += qty
+                store_totals[k] += qty
             row_vals.append(row_sum)
+            grand_total += row_sum
             for col_idx, val in enumerate(row_vals, start=1):
                 cell = ws.cell(row=r, column=col_idx, value=val)
                 cell.font = Font(size=11)
@@ -200,32 +222,24 @@ class CtkmTask(models.Model):
                     cell.number_format = ACCOUNTING_NUMBER_FORMAT
                 elif col_idx >= 5:
                     cell.number_format = QUANTITY_NUMBER_FORMAT
-            # Công thức Tổng cộng cho dòng
-            total_cell = ws.cell(row=r, column=last_col)
-            first_store_letter = get_column_letter(5)
-            last_store_letter = get_column_letter(4 + len(store_cols))
-            total_cell.value = '=SUM(%s%d:%s%d)' % (
-                first_store_letter, r, last_store_letter, r,
-            )
-            total_cell.number_format = QUANTITY_NUMBER_FORMAT
-            total_cell.font = Font(bold=True, size=11)
+                if col_idx == last_col:
+                    cell.font = Font(bold=True, size=11)
             r += 1
 
-        # Dòng cuối: tổng cộng
+        # Dòng cuối: tổng cộng (số thực)
         total_row = r
         ws.cell(row=total_row, column=1, value='Tổng cộng:').font = bold
-        for col_idx in range(5, last_col + 1):
-            col_letter = get_column_letter(col_idx)
-            cell = ws.cell(
-                row=total_row, column=col_idx,
-                value='=SUM(%s%d:%s%d)' % (col_letter, DATA_START_ROW, col_letter, total_row - 1),
-            )
+        for col_idx in (1, 2, 3, 4):
+            ws.cell(row=total_row, column=col_idx).border = border
+        for i, k in enumerate(store_keys):
+            cell = ws.cell(row=total_row, column=5 + i, value=store_totals[k])
             cell.font = Font(bold=True, size=11)
             cell.number_format = QUANTITY_NUMBER_FORMAT
             cell.border = border
-        # Border các ô trống của dòng tổng cộng
-        for col_idx in (1, 2, 3, 4, last_col):
-            ws.cell(row=total_row, column=col_idx).border = border
+        total_cell = ws.cell(row=total_row, column=last_col, value=grand_total)
+        total_cell.font = Font(bold=True, size=11)
+        total_cell.number_format = QUANTITY_NUMBER_FORMAT
+        total_cell.border = border
 
         # Độ rộng cột (khớp mẫu)
         widths = {
