@@ -1,12 +1,13 @@
 <?xml version="1.0"?>
 <odoo noupdate="0">
 
-    <!-- App CTKM: mọi user nội bộ thấy.
-         Chương trình KM / Cấu hình vẫn chỉ CTKM User / Manager. -->
+    <!-- App CTKM: hiển thị với quyền CTKM (Employee trở lên).
+         Phân quyền tab: Employee -> Công việc của tôi + Kho;
+         Manager -> + Chương trình khuyến mãi; Administrator -> + Báo cáo + Cấu hình. -->
     <record id="ctkm_main_menu" model="ir.ui.menu">
         <field name="name">CTKM</field>
         <field name="sequence">126</field>
-        <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_employee'))]"/>
         <field name="web_icon">ctkm_core,static/description/icon.png</field>
     </record>
 
@@ -21,14 +22,14 @@
         <field name="name">Công việc của tôi</field>
         <field name="sequence">2</field>
         <field name="parent_id" ref="ctkm_core.ctkm_main_menu"/>
-        <field name="group_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_employee'))]"/>
     </record>
 
     <record id="menu_ctkm_report" model="ir.ui.menu">
         <field name="name">Báo cáo</field>
         <field name="sequence">3</field>
         <field name="parent_id" ref="ctkm_core.ctkm_main_menu"/>
-        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_manager'))]"/>
     </record>
 
     <record id="menu_ctkm_configuration" model="ir.ui.menu">

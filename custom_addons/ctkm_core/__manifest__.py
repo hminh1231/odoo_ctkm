@@ -57,6 +57,7 @@ Module cung cấp quản lý các chương trình khuyến mãi.
         ],
     },
     'installable': True,
+    'application': True,
     'author': 'CTKM',
     'license': 'LGPL-3',
 }
