@@ -1,17 +1,20 @@
 <?xml version="1.0"?>
 <odoo noupdate="0">
 
-    <!-- Bước 6 "Lập BB thay tem": chọn nhiều Cửa hàng và xuất biên bản thay tem. -->
+    <!-- Bước 6 "Lập BB thay tem": chọn nhiều Cửa hàng và xuất biên bản thay tem,
+         đặt ngay trong tab "Chi tiết công việc" phía trên bảng "Chi tiết tem/tag". -->
     <record id="view_ctkm_task_form_bb_export" model="ir.ui.view">
         <field name="name">ctkm.task.form.bb.export</field>
         <field name="model">ctkm.task</field>
         <field name="inherit_id" ref="ctkm_core.view_ctkm_task_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//page[@name='task_detail']" position="inside">
+            <xpath expr="//page[@name='task_detail']//group[@string='Chi tiết tem/tag']"
+                position="before">
                 <group string="Xuất biên bản thay tem"
                     invisible="not is_tem_replace_task">
                     <field name="store_ids" widget="many2many_tags"
-                        options="{'no_create': True}"/>
+                        options="{'no_create': True}"
+                        help="Chọn một hoặc nhiều cửa hàng (giống Cửa hàng ở Cấu hình nhân viên)."/>
                     <div colspan="2" class="mt-2">
                         <button name="action_export_bb_file" type="object"
                             string="Xuất file" class="btn-primary"
