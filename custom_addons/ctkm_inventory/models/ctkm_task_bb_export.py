@@ -6,7 +6,6 @@ import logging
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
-from odoo.tools import html2plaintext
 
 from .ctkm_inventory_tem_tag import _normalize_store_code
 
@@ -20,14 +19,22 @@ except ImportError:
     Workbook = None
 
 
-# Định dạng số "Giá KM" giống file mẫu (accounting, không dấu phẩy nghìn chuẩn).
+# Định dạng số "Giá KM" (accounting, không dấu phẩy nghìn chuẩn).
 ACCOUNTING_NUMBER_FORMAT = '_-* #,##0_-;\\-* #,##0_-;_-* "-"??_-;_-@_-'
-# Định dạng số lượng (Tổng SL, các cột cửa hàng, cột Tổng cộng).
+# Định dạng số lượng (SL bàn giao).
 QUANTITY_NUMBER_FORMAT = '#,##0'
 
-# Dòng tiêu đề (giống file mẫu step 4: tem.xlsx).
-HEADER_ROW = 7
-DATA_START_ROW = 8
+# Bố cục biên bản (theo mẫu Bien_Ban_In_Va_Ban_Giao_Tag.xlsx): 5 cột A-E.
+COL_STT = 1
+COL_MA_VAT_TU = 2
+COL_GIA_KM = 3
+COL_SL_BAN_GIAO = 4
+COL_GHI_CHU = 5
+HEADER_ROW = 8
+DATA_START_ROW = 9
+
+# Ký tự không hợp lệ trong tên sheet Excel.
+_INVALID_SHEET_CHARS = (':', '\\', '/', '?', '*', '[', ']')
 
 
 class CtkmTask(models.Model):
@@ -70,190 +77,201 @@ class CtkmTask(models.Model):
             'target': 'self',
         }
 
-    def _build_bb_xlsx(self):
-        """Xuất biên bản thay tem theo đúng mẫu step 4 (file tem.xlsx).
+    @api.model
+    def _bb_sheet_title(self, store_code):
+        """Tên sheet hợp lệ (tối đa 31 ký tự, không chứa ký tự cấm)."""
+        title = (store_code or 'CH').strip()
+        for ch in _INVALID_SHEET_CHARS:
+            title = title.replace(ch, '_')
+        title = title[:31] or 'CH'
+        # Đảm bảo tên không được đặt trong dấu ngoặc đơn/đơn.
+        return title
 
-        Bố cục:
-            Dòng 1: Tên công ty (bold)
-            Dòng 2: Địa chỉ (bold)
-            Dòng 3: Tiêu đề "BIÊN BẢN THAY TEM BỔ SUNG TB <mã> NGÀY <ngày>" (bold, size 18)
-            Dòng 4: "Ngày <ngày>" (bold)
-            Dòng 5: Ghi chú chương trình
-            Dòng 7: Tiêu đề cột (Mã vật tư, Giá KM, CTKM, Tem/tag, <các cửa hàng>, Tổng cộng)
-            Dòng 8+: Chi tiết từng Mã vật tư, SL theo từng cửa hàng đã chọn
-            Dòng cuối: Tổng cộng
+    def _build_bb_xlsx(self):
+        """Xuất biên bản thay tem theo mẫu Bien_Ban_In_Va_Ban_Giao_Tag.xlsx.
+
+        Mỗi cửa hàng được chọn xuất thành một sheet riêng. Bố cục mỗi sheet:
+            Dòng 1: "Cộng Hòa Xã Hội Chủ Nghĩa Việt Nam" (merge A1:E1)
+            Dòng 2: "Độc lập – Tự do – Hạnh phúc" (merge A2:E2)
+            Dòng 3: "BIÊN BẢN IN VÀ BÀN GIAO TAG" (tiêu đề, merge A3:E3)
+            Dòng 4: "SỐ : .............." (merge A4:E4)
+            Dòng 5: "Hôm nay, Ngày ... Tháng ... Năm ..."
+            Dòng 6: "TẠI CH:<mã cửa hàng>"
+            Dòng 7: "Nội dung công việc:BIÊN BẢN THAY TAG THEO TB <mã> NGÀY <ngày>" (merge A7:E7)
+            Dòng 8: Tiêu đề cột: STT | MÃ VẬT TƯ | GIÁ KM | SL BÀN GIAO | GHI CHÚ
+            Dòng 9+: Chi tiết từng Mã vật tư của cửa hàng đó
+            Cột GHI CHÚ để trống (người dùng tự điền sau).
         """
         self.ensure_one()
         program = self.program_id
-        company = self.env.company
-        partner = company.partner_id
-        address = ', '.join(
-            p for p in [
-                partner.street,
-                partner.city,
-                partner.state_id.name if partner.state_id else '',
-                partner.country_id.name if partner.country_id else '',
-            ] if p
-        )
         inventory_date = fields.Date.context_today(self)
         date_str = inventory_date.strftime('%d/%m/%Y')
+        date_vn = 'Ngày %s Tháng %s Năm %s' % (
+            inventory_date.day, inventory_date.month, inventory_date.year,
+        )
+        notify_code = (program.notify_code or '').strip()
 
         # --- Các cửa hàng: lấy từ selection, hoặc toàn bộ cửa hàng có trong
         #     kho Tem/Tag (import bước 4) khi không chọn cửa hàng nào. ---
         selected = self.store_ids.sudo()
+        store_list = []  # (store_key, mã hiển thị)
+        seen = set()
         if selected:
-            selected_map = {}
             for store in selected:
                 key = _normalize_store_code(store.code or store.name)
-                if key and key not in selected_map:
-                    selected_map[key] = store
+                if key and key not in seen:
+                    seen.add(key)
+                    store_list.append((key, store.code or store.name or key))
         else:
-            # Không chọn -> lấy mọi store_key đã import ở bước 4 của chương trình.
             Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
             groups = Inventory.read_group(
                 [('program_id', '=', program.id)],
                 ['store_key'], ['store_key'],
             )
-            selected_map = {}
             for row in groups:
                 key = row['store_key']
-                if key and key not in selected_map:
-                    selected_map[key] = None
-        if not selected_map:
+                if key and key not in seen:
+                    seen.add(key)
+                    store_list.append((key, key))
+        if not store_list:
             raise UserError(_(
                 'Không có dữ liệu kho Tem/Tag (import bước 4) cho chương trình này.'
             ))
-        store_keys = list(selected_map.keys())
-        store_cols = [
-            (selected_map[k].code or selected_map[k].name or k) if selected_map[k] else k
-            for k in store_keys
-        ]
-        last_col = 4 + len(store_cols) + 1  # cột Tổng cộng
-        total_col_letter = get_column_letter(last_col)
 
-        # --- Gom SL kho Tem/Tag theo (Mã vật tư, cửa hàng) ---
+        # --- Đọc 1 lần kho Tem/Tag của chương trình ---
         Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
-        records = Inventory.search([
-            ('program_id', '=', program.id),
-            ('store_key', 'in', store_keys),
-        ])
-        materials = {}
-        for rec in records:
-            code = rec.material_code
-            if not code:
-                continue
-            key = rec.store_key
-            if key not in selected_map:
-                continue
-            mat = materials.setdefault(code, {
-                'promo': rec.promo_price or 0.0,
-                'tem_tag': rec.tem_tag or '',
-                'ctkm': program.name or '',
-                'stores': {},
-            })
-            mat['stores'][key] = mat['stores'].get(key, 0.0) + (rec.quantity or 0.0)
-        material_codes = sorted(materials.keys())
+        inv_records = Inventory.search([('program_id', '=', program.id)])
 
-        # --- Vẽ workbook ---
+        # --- Vẽ workbook: mỗi cửa hàng 1 sheet ---
         wb = Workbook()
-        ws = wb.active
-        sheet_title = '%s_BỔ SUNG' % (program.notify_code or 'BB')
-        ws.title = sheet_title[:31]
+        used_titles = set()
+        first = True
+        for key, store_code in store_list:
+            materials = {}
+            for rec in inv_records:
+                if rec.store_key != key:
+                    continue
+                code = rec.material_code
+                if not code:
+                    continue
+                mat = materials.setdefault(code, {
+                    'promo': rec.promo_price or 0.0,
+                    'qty': 0.0,
+                })
+                mat['qty'] += rec.quantity or 0.0
+            material_codes = sorted(materials.keys())
 
+            ws = wb.active if first else wb.create_sheet()
+            first = False
+
+            # Tên sheet: mã cửa hàng, đảm bảo không trùng.
+            base_title = self._bb_sheet_title(store_code)
+            sheet_title = base_title
+            suffix = 1
+            while sheet_title in used_titles:
+                suffix += 1
+                sheet_title = '%s_%s' % (base_title[:31 - len('_%s' % suffix)], suffix)
+            used_titles.add(sheet_title)
+            ws.title = sheet_title
+
+            self._build_bb_sheet(
+                ws, store_code, material_codes, materials,
+                date_vn, date_str, notify_code,
+            )
+
+        stream = io.BytesIO()
+        wb.save(stream)
+        return stream.getvalue()
+
+    def _build_bb_sheet(self, ws, store_code, material_codes, materials,
+                       date_vn, date_str, notify_code):
+        """Vẽ nội dung một sheet biên bản cho một cửa hàng."""
         thin = Side(style='thin', color='FF000000')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        bold = Font(bold=True)
+        bold = Font(bold=True, size=11)
+        title_font = Font(bold=True, size=16)
         header_font = Font(bold=True, size=11)
-        center = Alignment(horizontal='center', vertical='center')
-        center_h = Alignment(horizontal='center')
+        cell_font = Font(size=11)
+        center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        left_top = Alignment(horizontal='left', vertical='top', wrap_text=True)
 
-        # Dòng 1-2: công ty / địa chỉ
-        ws.cell(row=1, column=1, value=company.name or '').font = bold
-        ws.cell(row=2, column=1, value=address or '').font = bold
+        # Dòng 1-2: tiêu ngữ
+        ws.merge_cells('A1:E1')
+        c = ws['A1']
+        c.value = 'Cộng Hòa Xã Hội Chủ Nghĩa Việt Nam'
+        c.font = bold
+        c.alignment = center
+        ws.merge_cells('A2:E2')
+        c = ws['A2']
+        c.value = 'Độc lập – Tự do – Hạnh phúc'
+        c.font = bold
+        c.alignment = center
+
         # Dòng 3: tiêu đề
-        title_cell = ws.cell(
-            row=3, column=1,
-            value='BIÊN BẢN THAY TEM BỔ SUNG TB %s NGÀY %s'
-            % (program.notify_code or program.name or '', date_str),
-        )
-        title_cell.font = Font(bold=True, size=18)
-        ws.row_dimensions[3].height = 23.25
-        # Dòng 4: ngày
-        ws.cell(row=4, column=1, value='Ngày %s' % date_str).font = bold
-        # Dòng 5: ghi chú
-        note = html2plaintext(program.note) if program.note else ''
-        ws.cell(row=5, column=1, value=note or '')
-        ws.row_dimensions[5].height = 39.0
+        ws.merge_cells('A3:E3')
+        c = ws['A3']
+        c.value = 'BIÊN BẢN IN VÀ BÀN GIAO TAG'
+        c.font = title_font
+        c.alignment = center
+        ws.row_dimensions[3].height = 24
 
-        # Dòng 7: tiêu đề cột
-        headers = (
-            ['Mã vật tư', 'Giá KM', 'CTKM', 'Tem/tag']
-            + store_cols
-            + ['Tổng cộng']
+        # Dòng 4: số
+        ws.merge_cells('A4:E4')
+        c = ws['A4']
+        c.value = 'SỐ : ..............'
+        c.font = bold
+        c.alignment = center
+
+        # Dòng 5: ngày
+        ws['A5'] = date_vn
+        ws['A5'].font = cell_font
+
+        # Dòng 6: tại cửa hàng
+        ws['A6'] = 'TẠI CH:%s' % store_code
+        ws['A6'].font = cell_font
+
+        # Dòng 7: nội dung công việc
+        ws.merge_cells('A7:E7')
+        c = ws['A7']
+        c.value = 'Nội dung công việc:BIÊN BẢN THAY TAG THEO TB %s NGÀY %s' % (
+            notify_code, date_str,
         )
+        c.font = cell_font
+        c.alignment = left_top
+        ws.row_dimensions[7].height = 28
+
+        # Dòng 8: tiêu đề cột
+        headers = ['STT', 'MÃ VẬT TƯ', 'GIÁ KM', 'SL BÀN GIAO', 'GHI CHÚ']
         for col_idx, h in enumerate(headers, start=1):
             cell = ws.cell(row=HEADER_ROW, column=col_idx, value=h)
             cell.font = header_font
             cell.border = border
             cell.alignment = center
-        ws.row_dimensions[HEADER_ROW].height = 55.5
+        ws.row_dimensions[HEADER_ROW].height = 28
 
-        # Dòng 8+: chi tiết (ghi số thực, không dùng công thức để file có thể
-        # import ngược lại bước 4 và hiển thị đúng số khi mở).
+        # Dòng 9+: chi tiết
         r = DATA_START_ROW
-        store_totals = {k: 0.0 for k in store_keys}
-        grand_total = 0.0
-        for code in material_codes:
+        for idx, code in enumerate(material_codes, start=1):
             mat = materials[code]
-            row_vals = [code, mat['promo'], mat['ctkm'], mat['tem_tag']]
-            row_sum = 0.0
-            for k in store_keys:
-                qty = mat['stores'].get(k, 0.0)
-                row_vals.append(qty)
-                row_sum += qty
-                store_totals[k] += qty
-            row_vals.append(row_sum)
-            grand_total += row_sum
-            for col_idx, val in enumerate(row_vals, start=1):
-                cell = ws.cell(row=r, column=col_idx, value=val)
-                cell.font = Font(size=11)
+            ws.cell(row=r, column=COL_STT, value=idx)
+            ws.cell(row=r, column=COL_MA_VAT_TU, value=code)
+            gc = ws.cell(row=r, column=COL_GIA_KM, value=mat['promo'])
+            gc.number_format = ACCOUNTING_NUMBER_FORMAT
+            qc = ws.cell(row=r, column=COL_SL_BAN_GIAO, value=mat['qty'])
+            qc.number_format = QUANTITY_NUMBER_FORMAT
+            # Cột GHI CHÚ (COL_GHI_CHU) để trống theo yêu cầu.
+            for col_idx in range(1, COL_GHI_CHU + 1):
+                cell = ws.cell(row=r, column=col_idx)
+                cell.font = cell_font
                 cell.border = border
-                if col_idx == 2:
-                    cell.number_format = ACCOUNTING_NUMBER_FORMAT
-                elif col_idx >= 5:
-                    cell.number_format = QUANTITY_NUMBER_FORMAT
-                if col_idx == last_col:
-                    cell.font = Font(bold=True, size=11)
+                if col_idx in (COL_STT, COL_GIA_KM, COL_SL_BAN_GIAO):
+                    cell.alignment = center
+                else:
+                    cell.alignment = left_top
+            ws.row_dimensions[r].height = 24
             r += 1
 
-        # Dòng cuối: tổng cộng (số thực)
-        total_row = r
-        ws.cell(row=total_row, column=1, value='Tổng cộng:').font = bold
-        for col_idx in (1, 2, 3, 4):
-            ws.cell(row=total_row, column=col_idx).border = border
-        for i, k in enumerate(store_keys):
-            cell = ws.cell(row=total_row, column=5 + i, value=store_totals[k])
-            cell.font = Font(bold=True, size=11)
-            cell.number_format = QUANTITY_NUMBER_FORMAT
-            cell.border = border
-        total_cell = ws.cell(row=total_row, column=last_col, value=grand_total)
-        total_cell.font = Font(bold=True, size=11)
-        total_cell.number_format = QUANTITY_NUMBER_FORMAT
-        total_cell.border = border
-
-        # Độ rộng cột (khớp mẫu)
-        widths = {
-            1: 46.29,   # Mã vật tư / CTKM
-            2: 12.71,   # Giá KM
-            3: 25.43,   # CTKM
-            4: 12.71,   # Tem/tag
-        }
-        for i in range(len(store_cols)):
-            widths[5 + i] = 12.0
-        widths[last_col] = 12.0
+        # Độ rộng cột (khớp mẫu: A=8, B=28, C=15, D=14, E=85)
+        widths = {1: 8, 2: 28, 3: 15, 4: 14, 5: 85}
         for col_idx, w in widths.items():
             ws.column_dimensions[get_column_letter(col_idx)].width = w
-
-        stream = io.BytesIO()
-        wb.save(stream)
-        return stream.getvalue()
