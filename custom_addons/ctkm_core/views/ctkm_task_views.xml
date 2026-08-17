@@ -106,17 +106,21 @@
                     </group>
                     <notebook>
                         <page string="Chi tiết công việc" name="task_detail">
-                            <group>
-                                <group string="Thời gian">
-                                    <field name="process_date" string="Ngày bắt đầu"/>
-                                    <field name="done_date" string="Ngày hoàn thành" readonly="1"/>
-                                    <field name="checklist_step_name" string="Nội dung" readonly="1"/>
-                                    <label for="total_days"/>
-                                    <div>
-                                        <field name="total_days" readonly="1" class="oe_inline"/>
-                                        <span class="ms-1">ngày</span>
-                                    </div>
-                                </group>
+                            <group string="Thời gian">
+                                <field name="time_line_ids" nolabel="1" colspan="2"
+                                    widget="one2many"
+                                    class="o_ctkm_time_table">
+                                    <list editable="bottom" create="1" delete="1"
+                                        class="o_ctkm_time_table">
+                                        <field name="sequence" column_invisible="1"/>
+                                        <field name="is_main" column_invisible="1"/>
+                                        <field name="name" string="Nội dung"/>
+                                        <field name="date_start"/>
+                                        <field name="date_end"/>
+                                        <field name="total_days_display" readonly="1"
+                                            width="120px"/>
+                                    </list>
+                                </field>
                             </group>
                             <group>
                                 <group string="Import Tem/Tag" invisible="not is_tem_tag_import_task">
@@ -138,7 +142,7 @@
                                     </div>
                                 </group>
                             </group>
-                            <group name="tem_tag_detail_group" string="Chi tiết tem/tag"
+                            <group string="Chi tiết tem/tag"
                                 invisible="not is_tem_replace_task and not is_tem_tag_import_task">
                                 <div colspan="2" class="text-muted mb-2"
                                     invisible="not is_tem_replace_task">

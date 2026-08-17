@@ -72,3 +72,14 @@
     max-width: 110px !important;
     white-space: nowrap;
 }
+
+.o_ctkm_time_table th[data-name="date_start"],
+.o_ctkm_time_table td[data-name="date_start"],
+.o_ctkm_time_table th[data-name="date_end"],
+.o_ctkm_time_table td[data-name="date_end"],
+.o_ctkm_time_table th[data-name="total_days_display"],
+.o_ctkm_time_table td[data-name="total_days_display"] {
+    width: 150px !important;
+    min-width: 130px !important;
+    white-space: nowrap;
+}

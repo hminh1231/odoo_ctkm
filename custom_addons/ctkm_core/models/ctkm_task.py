@@ -18,11 +18,8 @@ _logger = logging.getLogger(__name__)
 TEM_TAG_IMPORT_TASK_MARKERS = ('dobbthaytemtag',)
 TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
 # Bước 12 "Thay tem Tag" phải khớp tuyệt đối: nhiều bước khác (bước 4, 6, 15)
-# cũng chứa chuỗi "thay tem tag" trong tên nên không dùng so khớp chứa được.
+# cũng chứa chuỗi "thaytemtag" trong tên nên không dùng so khớp chứa được.
 TEM_REPLACE_TASK_KEYS = ('thaytemtag',)
-# Bước 6 "Lập BB thay tem, bàn giao cho KT kho Kiểm tra BB thay tem tag":
-# nhận diện riêng (không trùng với bước 4 / 12 / 15) để hiện mục "Xuất biên bản thay tem".
-TEM_BB_REPLACE_TASK_MARKERS = ('lapbbthaytem', 'lapbienbanthaytem')
 # Bước 9 "In tem, Tag".
 TEM_PRINT_TASK_MARKERS = ('intemtag',)
 # Bước 10 "Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ".
@@ -132,12 +129,6 @@ class CtkmTask(models.Model):
         compute='_compute_task_step_flags',
         store=True,
     )
-    is_tem_bb_replace_task = fields.Boolean(
-        string='Bước lập BB thay tem',
-        compute='_compute_task_step_flags',
-        store=True,
-        help='Công việc bước "Lập BB thay tem" (xuất biên bản thay tem cho KT kho).',
-    )
     is_tem_print_task = fields.Boolean(
         string='Bước in tem/tag',
         compute='_compute_task_step_flags',
@@ -196,6 +187,12 @@ class CtkmTask(models.Model):
         domain=[('line_type', '=', 'collect')],
         context={'default_line_type': 'collect'},
         help='Mã cửa hàng lấy từ bước 9; SL tem/tag điền tay.',
+    )
+    time_line_ids = fields.One2many(
+        'ctkm.task.time.line',
+        'task_id',
+        string='Thời gian',
+        help='Nội dung, ngày bắt đầu, ngày hoàn thành và tổng số ngày của công việc.',
     )
     verifier_id = fields.Many2one(
         'hr.employee',
@@ -586,16 +583,9 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['receive'])
                 or any(marker in key for key in keys for marker in TEM_RECEIVE_TASK_MARKERS)
             )
-            # Bước 6 "Lập BB thay tem": nhận diện riêng (không trùng bước 4 / 12 / 15).
-            is_bb_replace = any(
-                marker in key
-                for key in keys
-                for marker in TEM_BB_REPLACE_TASK_MARKERS
-            )
             task.is_tem_tag_import_task = bool(is_import)
             task.is_tem_photo_task = bool(is_photo)
             task.is_tem_replace_task = bool(is_replace and not is_import)
-            task.is_tem_bb_replace_task = bool(is_bb_replace)
             task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
             task.is_tem_handover_task = bool(is_handover)
             task.is_tem_receive_task = bool(is_receive and not is_handover)
@@ -1016,7 +1006,41 @@ class CtkmTask(models.Model):
                 handover.sudo().with_context(
                     ctkm_skip_step10_autosync=True,
                 )._ctkm_sync_step10_lines()
+        if self.ids and not self.env.context.get('ctkm_skip_time_line_ensure'):
+            self.sudo().with_context(
+                ctkm_skip_time_line_ensure=True,
+            )._ctkm_ensure_time_lines()
         return super().web_read(specification)
+
+    def _ctkm_ensure_time_lines(self):
+        """Tạo dòng thời gian đầu tiên từ nội dung / ngày của công việc."""
+        Line = self.env['ctkm.task.time.line'].sudo()
+        for task in self:
+            if task.time_line_ids:
+                continue
+            Line.create({
+                'task_id': task.id,
+                'name': task.checklist_step_name or task.name or '',
+                'date_start': task.process_date or fields.Date.context_today(task),
+                'date_end': task.done_date or False,
+                'is_main': True,
+                'sequence': 1,
+            })
+
+    def _ctkm_touch_main_time_line(self, vals):
+        """Khi hoàn thành / đổi ngày xử lý: cập nhật dòng thời gian chính nếu còn trống."""
+        for task in self:
+            main = task.time_line_ids.filtered('is_main')[:1] or task.time_line_ids[:1]
+            if not main:
+                task._ctkm_ensure_time_lines()
+                continue
+            updates = {}
+            if vals.get('done_date') and not main.date_end:
+                updates['date_end'] = vals['done_date']
+            if vals.get('process_date') and not main.date_start:
+                updates['date_start'] = vals['process_date']
+            if updates:
+                main.with_context(ctkm_time_line_sync=True).write(updates)
 
     def _get_worker_employee(self):
         """Nhân viên gắn với người tạo công việc."""
@@ -1268,6 +1292,7 @@ class CtkmTask(models.Model):
         # Công việc bước 4 / bước 12 được tạo sau khi đã import kho Tem/Tag
         # (hoặc bước trước chuyển tiếp) → dựng bảng "Chi tiết tem/tag" ngay.
         tasks.sudo()._ctkm_sync_tem_tag_lines()
+        tasks.sudo()._ctkm_ensure_time_lines()
         return tasks
 
     def write(self, vals):
@@ -1348,6 +1373,9 @@ class CtkmTask(models.Model):
         # (bước 12 lọc theo cửa hàng của người nhận việc).
         if {'program_id', 'user_ids', 'name', 'checklist_line_id'} & set(vals):
             self.sudo()._ctkm_sync_tem_tag_lines()
+
+        if {'process_date', 'done_date'} & set(vals):
+            self.sudo()._ctkm_touch_main_time_line(vals)
 
         return res
 
