@@ -308,8 +308,6 @@
         </field>
     </record>
 
-    <record id="menu_ctkm_report" model="ir.ui.menu">
-        <field name="action" ref="action_ctkm_program_report"/>
-    </record>
+    <!-- Báo cáo: action gắn ở menu con (tiến độ công việc). -->
 
 </odoo>

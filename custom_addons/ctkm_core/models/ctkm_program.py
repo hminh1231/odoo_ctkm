@@ -125,6 +125,16 @@ class CtkmProgram(models.Model):
         string='Đang ở bước',
         compute='_compute_checklist_progress',
     )
+    report_print_pending_ids = fields.Many2many(
+        'ctkm.task.tem.print.line',
+        compute='_compute_report_print_store_ids',
+        string='Cửa hàng cần in tem/tag',
+    )
+    report_print_done_ids = fields.Many2many(
+        'ctkm.task.tem.print.line',
+        compute='_compute_report_print_store_ids',
+        string='Cửa hàng đã hoàn thành in tem/tag',
+    )
 
     @api.depends(
         'create_date', 'date_begin', 'notify_document_ids.name',
@@ -155,6 +165,14 @@ class CtkmProgram(models.Model):
                     if line.store_code_id
                 ]
             program.notify_scope_display = ', '.join(scopes) if scopes else ''
+
+    @api.depends('task_ids.print_store_ids.done', 'task_ids.is_tem_print_task')
+    def _compute_report_print_store_ids(self):
+        Line = self.env['ctkm.task.tem.print.line']
+        for program in self:
+            lines = Line.search([('program_id', '=', program.id)])
+            program.report_print_pending_ids = lines.filtered(lambda line: not line.done)
+            program.report_print_done_ids = lines.filtered(lambda line: line.done)
 
     @api.depends(
         'checklist_line_ids.state',

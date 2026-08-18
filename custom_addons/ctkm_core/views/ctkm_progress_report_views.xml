@@ -1,0 +1,198 @@
+<?xml version="1.0"?>
+<odoo noupdate="0">
+
+    <!-- List cửa hàng (dùng khi mở chi tiết + tránh session cũ gọi nhầm model). -->
+    <record model="ir.ui.view" id="view_ctkm_printed_store_report_list">
+        <field name="name">ctkm.task.tem.print.line.progress.list</field>
+        <field name="model">ctkm.task.tem.print.line</field>
+        <field name="priority">32</field>
+        <field name="arch" type="xml">
+            <list string="Cửa hàng in tem/tag"
+                create="0" delete="0" edit="0"
+                default_order="sequence, store, id">
+                <field name="sequence" string="STT"/>
+                <field name="store_id" string="Tên cửa hàng"
+                    options="{'no_create': True, 'no_open': True}"/>
+                <field name="store_code" string="Mã cửa hàng"/>
+                <field name="store" column_invisible="1"/>
+                <field name="tem_quantity" string="SL tem" sum="Tổng SL tem"/>
+                <field name="tag_quantity" string="SL tag" sum="Tổng SL tag"/>
+                <field name="done" string="Đã in" optional="hide"/>
+                <field name="done_date" string="Ngày hoàn thành" optional="show"/>
+                <field name="notify_code" string="Số TB" optional="hide"/>
+                <field name="name" string="Tên CTKM" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_printed_store_report_form">
+        <field name="name">ctkm.task.tem.print.line.progress.form</field>
+        <field name="model">ctkm.task.tem.print.line</field>
+        <field name="priority">32</field>
+        <field name="arch" type="xml">
+            <form string="Cửa hàng in tem/tag" create="0" delete="0" edit="0">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="store_id" string="Tên cửa hàng"
+                                options="{'no_create': True, 'no_open': True}"/>
+                            <field name="store_code" string="Mã cửa hàng"/>
+                            <field name="tem_quantity"/>
+                            <field name="tag_quantity"/>
+                        </group>
+                        <group>
+                            <field name="notify_code" string="Số TB"/>
+                            <field name="name" string="Tên CTKM"/>
+                            <field name="done_date" string="Ngày hoàn thành"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_printed_store_report_search">
+        <field name="name">ctkm.task.tem.print.line.progress.search</field>
+        <field name="model">ctkm.task.tem.print.line</field>
+        <field name="priority">32</field>
+        <field name="arch" type="xml">
+            <search string="Cửa hàng in tem/tag">
+                <field name="store" string="Cửa hàng"/>
+                <field name="notify_code" string="Số TB"/>
+                <field name="name" string="Tên CTKM"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Báo cáo tiến độ: 2 cột Số TB + Tên CTKM -->
+    <record model="ir.ui.view" id="view_ctkm_print_progress_report_list">
+        <field name="name">ctkm.program.print.progress.report.list</field>
+        <field name="model">ctkm.program</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <list string="Danh sách cửa hàng đã in tem/tag"
+                create="0" delete="0" edit="0"
+                default_order="notify_code, name, id">
+                <field name="notify_code" string="Số TB"/>
+                <field name="name" string="Tên CTKM"/>
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_print_progress_report_form">
+        <field name="name">ctkm.program.print.progress.report.form</field>
+        <field name="model">ctkm.program</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Danh sách cửa hàng đã in tem/tag" create="0" delete="0" duplicate="0" edit="0">
+                <sheet>
+                    <div class="oe_title mb-3">
+                        <label for="notify_code" string="Số TB"/>
+                        <h1><field name="notify_code" readonly="1" placeholder=" "/></h1>
+                        <label for="name" string="Tên CTKM"/>
+                        <h2><field name="name" readonly="1"/></h2>
+                    </div>
+
+                    <separator string="Thông tin cửa hàng và số lượng tem/tag cần in"/>
+                    <field name="report_print_pending_ids" nolabel="1" readonly="1"
+                        mode="list"
+                        context="{'list_view_ref': 'ctkm_core.view_ctkm_printed_store_report_list'}"
+                        options="{'no_open': True}">
+                        <list create="0" delete="0" edit="0"
+                            default_order="sequence, store, id">
+                            <field name="sequence" string="STT" width="50px"/>
+                            <field name="store_id" string="Tên cửa hàng"
+                                options="{'no_create': True, 'no_open': True}"/>
+                            <field name="store_code" string="Mã cửa hàng" width="110px"/>
+                            <field name="store" column_invisible="1"/>
+                            <field name="tem_quantity" string="SL tem" width="90px" sum="Tổng SL tem"/>
+                            <field name="tag_quantity" string="SL tag" width="90px" sum="Tổng SL tag"/>
+                        </list>
+                    </field>
+
+                    <separator string="Cửa hàng đã hoàn thành in tem/tag"/>
+                    <field name="report_print_done_ids" nolabel="1" readonly="1"
+                        mode="list"
+                        context="{'list_view_ref': 'ctkm_core.view_ctkm_printed_store_report_list'}"
+                        options="{'no_open': True}">
+                        <list create="0" delete="0" edit="0"
+                            default_order="sequence, store, id">
+                            <field name="sequence" string="STT" width="50px"/>
+                            <field name="store_id" string="Tên cửa hàng"
+                                options="{'no_create': True, 'no_open': True}"/>
+                            <field name="store_code" string="Mã cửa hàng" width="110px"/>
+                            <field name="store" column_invisible="1"/>
+                            <field name="tem_quantity" string="SL tem" width="90px" sum="Tổng SL tem"/>
+                            <field name="tag_quantity" string="SL tag" width="90px" sum="Tổng SL tag"/>
+                            <field name="done_date" string="Ngày hoàn thành" width="120px"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_print_progress_report_search">
+        <field name="name">ctkm.program.print.progress.report.search</field>
+        <field name="model">ctkm.program</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <search string="Danh sách cửa hàng đã in tem/tag">
+                <field name="notify_code" string="Số TB"/>
+                <field name="name" string="Tên CTKM"/>
+                <group>
+                    <filter string="Số TB" name="groupby_notify_code" context="{'group_by': 'notify_code'}"/>
+                    <filter string="Tên CTKM" name="groupby_name" context="{'group_by': 'name'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_ctkm_print_progress_report">
+        <field name="name">Danh sách cửa hàng đã in tem/tag</field>
+        <field name="path">ctkm-print-progress</field>
+        <field name="res_model">ctkm.program</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('task_ids.is_tem_print_task', '=', True)]</field>
+        <field name="context">{'create': False, 'edit': False, 'delete': False, 'duplicate': False}</field>
+        <field name="search_view_id" ref="view_ctkm_print_progress_report_search"/>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_ctkm_print_progress_report_list')}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_ctkm_print_progress_report_form')})]"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Chưa có chương trình nào có bước In tem, Tag.
+            </p>
+            <p>
+                Bấm Số TB hoặc Tên CTKM để xem cửa hàng cần in và cửa hàng đã in xong.
+            </p>
+        </field>
+    </record>
+
+    <!-- Action cũ: giữ xml id, trỏ sang báo cáo mới để menu/bookmark không lệch. -->
+    <record model="ir.actions.act_window" id="action_ctkm_printed_store_report">
+        <field name="name">Danh sách cửa hàng đã in tem/tag</field>
+        <field name="path">ctkm-printed-stores</field>
+        <field name="res_model">ctkm.program</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('task_ids.is_tem_print_task', '=', True)]</field>
+        <field name="context">{'create': False, 'edit': False, 'delete': False, 'duplicate': False}</field>
+        <field name="search_view_id" ref="view_ctkm_print_progress_report_search"/>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_ctkm_print_progress_report_list')}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_ctkm_print_progress_report_form')})]"/>
+    </record>
+
+    <record id="menu_ctkm_report" model="ir.ui.menu">
+        <field name="action" eval="False"/>
+    </record>
+
+    <record id="menu_ctkm_report_printed_stores" model="ir.ui.menu">
+        <field name="name">Danh sách cửa hàng đã in tem/tag</field>
+        <field name="sequence">1</field>
+        <field name="parent_id" ref="ctkm_core.menu_ctkm_progress_report"/>
+        <field name="action" ref="action_ctkm_print_progress_report"/>
+        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+    </record>
+
+</odoo>

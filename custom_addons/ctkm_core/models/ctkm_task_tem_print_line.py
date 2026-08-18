@@ -163,6 +163,26 @@ class CtkmTaskTemPrintLine(models.Model):
         default=False,
         help='Dòng do người dùng bấm Tạo dòng, không xóa khi làm mới từ kho.',
     )
+    program_id = fields.Many2one(
+        related='task_id.program_id',
+        string='Chương trình KM',
+        store=True,
+        index=True,
+    )
+    notify_code = fields.Char(
+        related='program_id.notify_code',
+        string='Số TB',
+        store=True,
+        index=True,
+    )
+    program_name = fields.Char(
+        related='program_id.name',
+        string='Tên CTKM',
+    )
+    name = fields.Char(
+        related='program_id.name',
+        string='Tên CTKM',
+    )
 
     _task_store_uniq = models.Constraint(
         'UNIQUE(task_id, store_key)',

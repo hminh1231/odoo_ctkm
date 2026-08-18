@@ -150,6 +150,12 @@
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="True"/>
         </record>
+        <record id="ctkm_task_tem_print_rule_user" model="ir.rule">
+            <field name="name">CTKM In tem/tag: user xem toàn bộ (báo cáo)</field>
+            <field name="model_id" ref="model_ctkm_task_tem_print_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_ctkm_user'))]"/>
+        </record>
         <record id="ctkm_task_tem_print_rule_manager" model="ir.rule">
             <field name="name">CTKM In tem/tag: manager xem toàn bộ</field>
             <field name="model_id" ref="model_ctkm_task_tem_print_line"/>
