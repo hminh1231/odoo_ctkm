@@ -497,6 +497,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
             'ma vach': 'barcode',
             'barcode': 'barcode',
         }
+        required_fields = set(required.values())
         for row_index in range(len(frame.index)):
             found = {}
             for col_index, value in enumerate(frame.iloc[row_index]):
@@ -507,7 +508,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
                     found[optional[label]] = col_index
                 elif label in ('tong cong', 'tong so luong'):
                     found['quantity_total'] = col_index
-            if all(column in found for column in required):
+            if all(field in found for field in required_fields):
                 found['store_columns'] = self._find_store_columns(frame.iloc[row_index], found)
                 # Sheet TEM/TAG thuần túy (chỉ tem hoặc chỉ tag) có thể không có
                 # cột "TEM/TAG"; chấp nhận nếu có cột cửa hàng hoặc cột tổng SL.
