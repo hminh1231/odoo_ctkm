@@ -44,6 +44,16 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         store=True,
         readonly=True,
     )
+    is_tem = fields.Boolean(
+        string='Tem',
+        readonly=True,
+        help='Mã vật tư lấy từ sheet TEM của file tổng.',
+    )
+    is_tag = fields.Boolean(
+        string='Tag',
+        readonly=True,
+        help='Mã vật tư lấy từ sheet TAG của file tổng.',
+    )
 
     @api.depends('total_quantity', 'replaced_quantity')
     def _compute_remaining_quantity(self):

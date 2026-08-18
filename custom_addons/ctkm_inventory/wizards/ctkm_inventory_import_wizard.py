@@ -41,8 +41,10 @@ class CtkmInventoryImportWizard(models.TransientModel):
         help='Để trống để lấy ngày từ file Excel.',
     )
     replace_existing = fields.Boolean(
-        string='Xóa dữ liệu cùng CTKM/ngày trước khi import',
-        default=False,
+        string='Xóa dữ liệu Tem/Tag cũ của CTKM trước khi import',
+        default=True,
+        help='Xóa toàn bộ dòng kho Tem/Tag đã import của chương trình này, '
+             'rồi nhập lại từ file (sheet TEM và TAG).',
     )
 
     def action_import(self):
@@ -55,13 +57,10 @@ class CtkmInventoryImportWizard(models.TransientModel):
         if not rows:
             raise UserError(_('Không tìm thấy dòng Tem/Tag hợp lệ trong file Excel.'))
 
-        records_by_program_date = {}
         values = []
         for row in rows:
             inventory_date = self.import_date or row.get('date') or fields.Date.context_today(self)
             program = self._find_program(row)
-            key = (program.id, fields.Date.to_date(inventory_date))
-            records_by_program_date[key] = True
             values.append({
                 'date': inventory_date,
                 'material_code': row['material_code'],
@@ -76,13 +75,8 @@ class CtkmInventoryImportWizard(models.TransientModel):
         # Người nhận việc bước "Đổ BB thay tem/tag" là nhân viên thường: họ chỉ được
         # ghi kho Tem/Tag thông qua wizard này (đã kiểm tra quyền ở trên).
         Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
-        if self.replace_existing and records_by_program_date:
-            domain = ['|'] * (len(records_by_program_date) - 1)
-            for program_id, inventory_date in records_by_program_date:
-                domain.append('&')
-                domain.append(('program_id', '=', program_id))
-                domain.append(('date', '=', inventory_date))
-            Inventory.search(domain).unlink()
+        if self.replace_existing and self.program_id:
+            Inventory.search([('program_id', '=', self.program_id.id)]).unlink()
 
         created = Inventory.create(values)
         # Thông báo Discuss không được làm hỏng (và rollback) toàn bộ import.
@@ -386,8 +380,18 @@ class CtkmInventoryImportWizard(models.TransientModel):
         return [name for name in visible_names if name]
 
     def _extract_rows(self, frames, visible_sheet_names):
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            kind_from_sheet_name,
+        )
         rows = []
-        sheet_names = visible_sheet_names or list(frames)
+        candidates = visible_sheet_names or list(frames)
+        sheet_names = [
+            name for name in candidates
+            if name in frames and kind_from_sheet_name(name)
+        ]
+        # File chuẩn có 2 sheet TEM / TAG. Nếu không có, fallback sheet đang hiện.
+        if not sheet_names:
+            sheet_names = [name for name in candidates if name in frames]
         for sheet_name in sheet_names:
             frame = frames.get(sheet_name)
             if frame is None:
@@ -416,11 +420,23 @@ class CtkmInventoryImportWizard(models.TransientModel):
         return result
 
     def _extract_inventory_rows(self, row, columns, sheet_date, material_code, sheet_name):
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            classify_tem_tag_kinds,
+            tem_tag_label_from_kinds,
+        )
+        column_kind = ''
+        if 'tem_tag' in columns:
+            column_kind = self._clean_text(row.iloc[columns['tem_tag']])
+        kinds = classify_tem_tag_kinds(column_kind, sheet_name)
+        # Chỉ lấy loại theo sheet TEM/TAG, không biến TEM+TAG thành cả hai.
+        promo_price = 0.0
+        if 'promo_price' in columns:
+            promo_price = self._to_float(row.iloc[columns['promo_price']])
         base_values = {
             'date': sheet_date,
             'material_code': material_code,
-            'promo_price': self._to_float(row.iloc[columns['promo_price']]),
-            'tem_tag': self._clean_text(row.iloc[columns['tem_tag']]),
+            'promo_price': promo_price,
+            'tem_tag': tem_tag_label_from_kinds(kinds) or column_kind or False,
             'sheet_name': sheet_name,
         }
 
@@ -444,8 +460,11 @@ class CtkmInventoryImportWizard(models.TransientModel):
         return [{**base_values, 'quantity': quantity}]
 
     def _find_header(self, frame):
+        # Sheet TEM thường không có cột CTKM; sheet TAG có đủ.
         required = {
             'ma vat tu': 'material_code',
+        }
+        optional = {
             'gia km': 'promo_price',
             'ctkm': 'ctkm_name',
             'tem tag': 'tem_tag',
@@ -456,20 +475,25 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 label = self._normalize_label(value)
                 if label in required:
                     found[required[label]] = col_index
+                elif label in optional:
+                    found[optional[label]] = col_index
                 elif label == 'tong cong':
                     found['quantity_total'] = col_index
             if all(column in found for column in required.values()):
                 found['store_columns'] = self._find_store_columns(frame.iloc[row_index], found)
-                return row_index, found
+                if found.get('store_columns') or 'tem_tag' in found:
+                    return row_index, found
         return None, {}
 
     def _find_store_columns(self, header_row, columns):
-        fixed_columns = {
-            columns['material_code'],
-            columns['promo_price'],
-            columns['ctkm_name'],
-            columns['tem_tag'],
+        skip_labels = {
+            'thuong hieu', 'hang ap dung', 'ma goc', 'ghi chu', 'note',
+            'tong cong', 'ma goc',
         }
+        fixed_columns = {columns['material_code']}
+        for key in ('promo_price', 'ctkm_name', 'tem_tag'):
+            if key in columns:
+                fixed_columns.add(columns[key])
         total_col = columns.get('quantity_total')
         store_columns = []
         for col_index, value in enumerate(header_row):
@@ -478,8 +502,13 @@ class CtkmInventoryImportWizard(models.TransientModel):
             if total_col is not None and col_index > total_col:
                 continue
             store_name = self._clean_text(value)
-            if store_name:
-                store_columns.append((col_index, store_name))
+            if not store_name:
+                continue
+            if self._normalize_label(store_name) in skip_labels:
+                continue
+            if self._normalize_label(store_name).startswith('tong cong'):
+                continue
+            store_columns.append((col_index, store_name))
         return store_columns
 
     def _extract_quantity(self, row, columns):
@@ -488,12 +517,10 @@ class CtkmInventoryImportWizard(models.TransientModel):
             return self._to_float(row.iloc[total_col])
 
         numeric_values = []
-        fixed_columns = {
-            columns['material_code'],
-            columns['promo_price'],
-            columns['ctkm_name'],
-            columns['tem_tag'],
-        }
+        fixed_columns = {columns['material_code']}
+        for key in ('promo_price', 'ctkm_name', 'tem_tag'):
+            if key in columns:
+                fixed_columns.add(columns[key])
         for index, value in enumerate(row):
             if index in fixed_columns:
                 continue

@@ -56,6 +56,7 @@
                     <field name="is_tem_tag_import_task" invisible="1"/>
                     <field name="is_tem_photo_task" invisible="1"/>
                     <field name="is_tem_replace_task" invisible="1"/>
+                    <field name="is_tem_bb_replace_task" invisible="1"/>
                     <field name="is_tem_print_task" invisible="1"/>
                     <field name="is_tem_handover_task" invisible="1"/>
                     <field name="is_tem_receive_task" invisible="1"/>
@@ -142,7 +143,7 @@
                                     </div>
                                 </group>
                             </group>
-                            <group string="Chi tiết tem/tag"
+                            <group string="Chi tiết tem/tag" name="tem_tag_detail_group"
                                 invisible="not is_tem_replace_task and not is_tem_tag_import_task">
                                 <div colspan="2" class="text-muted mb-2"
                                     invisible="not is_tem_replace_task">
@@ -150,7 +151,8 @@
                                 </div>
                                 <div colspan="2" class="text-muted mb-2"
                                     invisible="not is_tem_tag_import_task">
-                                    Tem/tag đã đổ từ file tổng (tất cả cửa hàng). Số lượng đã thay do cửa hàng cập nhật ở bước <b>Thay tem Tag</b>.
+                                    Tem/tag lấy từ sheet <b>TEM</b> và <b>TAG</b> của file tổng (tất cả cửa hàng).
+                                    Mỗi dòng chỉ tích <b>Tem</b> hoặc <b>Tag</b> theo sheet chứa mã + cửa hàng đó.
                                 </div>
                                 <div colspan="2" class="mb-2"
                                     invisible="not is_tem_tag_import_task">
@@ -166,9 +168,15 @@
                                             column_invisible="parent.is_tem_replace_task"/>
                                         <field name="date" readonly="1" optional="hide"/>
                                         <field name="total_quantity" readonly="1" sum="Tổng SL"/>
-                                        <field name="replaced_quantity" sum="Tổng SL đã thay"/>
+                                        <field name="is_tem"
+                                            column_invisible="not parent.is_tem_tag_import_task"/>
+                                        <field name="is_tag"
+                                            column_invisible="not parent.is_tem_tag_import_task"/>
+                                        <field name="replaced_quantity" sum="Tổng SL đã thay"
+                                            column_invisible="parent.is_tem_tag_import_task"/>
                                         <field name="remaining_quantity" readonly="1"
-                                            sum="Tổng SL chưa thay"/>
+                                            sum="Tổng SL chưa thay"
+                                            column_invisible="parent.is_tem_tag_import_task"/>
                                     </list>
                                 </field>
                             </group>
@@ -296,7 +304,7 @@
                             <group string="Danh sách cửa hàng in tem/tag"
                                 invisible="not is_tem_print_task">
                                 <div colspan="2" class="text-muted mb-2">
-                                    Danh sách cửa hàng cần in tem/tag theo file tổng.
+                                    Danh sách cửa hàng cần in tem/tag theo file tổng, đã cộng dồn số lượng theo cửa hàng (không tách từng mã tem).
                                     Tick <b>Kết quả</b> khi cửa hàng đã in xong.
                                 </div>
                                 <field name="print_store_search" placeholder="Tìm cửa hàng..."

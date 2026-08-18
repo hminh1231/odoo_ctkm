@@ -22,12 +22,15 @@ TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
 TEM_REPLACE_TASK_KEYS = ('thaytemtag',)
 # Bước 9 "In tem, Tag".
 TEM_PRINT_TASK_MARKERS = ('intemtag',)
+# Bước 6 "Lập BB thay tem, bàn giao cho KT kho".
+TEM_BB_REPLACE_TASK_MARKERS = ('lapbbthaytem',)
 # Bước 10 "Bàn giao Tem Tag cho CH  Thu hồi tem tag cũ".
 TEM_HANDOVER_TASK_MARKERS = ('bangiaotemtag', 'thuhoitentagcu')
 # Bước 11 "Nhận tem tag mới".
 TEM_RECEIVE_TASK_MARKERS = ('nhantemtagmoi', 'nhantemtag')
 # Ưu tiên nhận diện theo giai đoạn mặc định (bền hơn khi bước bị đổi tên).
 TEM_TAG_IMPORT_STAGE_XMLID = 'ctkm_core.ctkm_stage_4'
+TEM_BB_REPLACE_STAGE_XMLID = 'ctkm_core.ctkm_stage_6'
 TEM_PRINT_STAGE_XMLID = 'ctkm_core.ctkm_stage_9'
 TEM_HANDOVER_STAGE_XMLID = 'ctkm_core.ctkm_stage_10'
 TEM_RECEIVE_STAGE_XMLID = 'ctkm_core.ctkm_stage_11'
@@ -128,6 +131,12 @@ class CtkmTask(models.Model):
         string='Bước thay tem/tag',
         compute='_compute_task_step_flags',
         store=True,
+    )
+    is_tem_bb_replace_task = fields.Boolean(
+        string='Bước lập BB thay tem',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc thuộc bước "Lập BB thay tem, bàn giao cho KT kho".',
     )
     is_tem_print_task = fields.Boolean(
         string='Bước in tem/tag',
@@ -540,6 +549,7 @@ class CtkmTask(models.Model):
             flag: self._ctkm_step_stage_id(xmlid)
             for flag, xmlid in (
                 ('import', TEM_TAG_IMPORT_STAGE_XMLID),
+                ('bb_replace', TEM_BB_REPLACE_STAGE_XMLID),
                 ('print', TEM_PRINT_STAGE_XMLID),
                 ('handover', TEM_HANDOVER_STAGE_XMLID),
                 ('receive', TEM_RECEIVE_STAGE_XMLID),
@@ -571,6 +581,10 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['replace'])
                 or any(key in TEM_REPLACE_TASK_KEYS for key in keys)
             )
+            is_bb_replace = (
+                (stage_id and stage_id == stage_ids['bb_replace'])
+                or any(marker in key for key in keys for marker in TEM_BB_REPLACE_TASK_MARKERS)
+            )
             is_print = (
                 (stage_id and stage_id == stage_ids['print'])
                 or any(marker in key for key in keys for marker in TEM_PRINT_TASK_MARKERS)
@@ -586,6 +600,7 @@ class CtkmTask(models.Model):
             task.is_tem_tag_import_task = bool(is_import)
             task.is_tem_photo_task = bool(is_photo)
             task.is_tem_replace_task = bool(is_replace and not is_import)
+            task.is_tem_bb_replace_task = bool(is_bb_replace and not is_import and not is_replace)
             task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
             task.is_tem_handover_task = bool(is_handover)
             task.is_tem_receive_task = bool(is_receive and not is_handover)
@@ -619,6 +634,9 @@ class CtkmTask(models.Model):
             or self.is_tem_replace_task
         ):
             return []
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            classify_tem_tag_kinds,
+        )
         tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
         domain = [('program_id', '=', self.program_id.id)]
         if self.is_tem_replace_task or self.is_tem_receive_task:
@@ -629,19 +647,34 @@ class CtkmTask(models.Model):
             domain = domain + [('store_key', 'in', store_keys)]
         groups = tem_tag._read_group(
             domain,
-            list(TEM_TAG_LINE_KEY_FIELDS),
+            ['material_code', 'store', 'tem_tag'],
             ['quantity:sum', 'replaced_quantity:sum', 'date:max'],
         )
-        values = []
-        for material_code, store, quantity, replaced_quantity, last_date in groups:
-            values.append({
+        by_key = {}
+        for material_code, store, kind_value, quantity, replaced_quantity, last_date in groups:
+            kinds = classify_tem_tag_kinds(kind_value)
+            is_tag = bool(kinds == {'tag'})
+            kind = 'tag' if is_tag else 'tem'
+            key = (material_code or '', store or '', kind)
+            rec = by_key.setdefault(key, {
                 'material_code': material_code or False,
                 'store': store or False,
                 'date': last_date or False,
-                'total_quantity': quantity or 0.0,
-                'replaced_quantity': replaced_quantity or 0.0,
+                'total_quantity': 0.0,
+                'replaced_quantity': 0.0,
+                'is_tem': not is_tag,
+                'is_tag': is_tag,
             })
-        values.sort(key=lambda vals: (vals['material_code'] or '', vals['store'] or ''))
+            rec['total_quantity'] += quantity or 0.0
+            rec['replaced_quantity'] += replaced_quantity or 0.0
+            if last_date and (not rec['date'] or last_date > rec['date']):
+                rec['date'] = last_date
+        values = list(by_key.values())
+        values.sort(key=lambda vals: (
+            vals['material_code'] or '',
+            vals['store'] or '',
+            0 if vals['is_tem'] else 1,
+        ))
         return values
 
     def _ctkm_sync_tem_tag_lines(self):
@@ -649,28 +682,40 @@ class CtkmTask(models.Model):
         Line = self.env['ctkm.task.tem.tag.replace.line'].sudo().with_context(
             ctkm_tem_tag_line_sync=True,
         )
+        programs = self.mapped('program_id')
+        if programs:
+            print_tasks = self.sudo().search([
+                ('program_id', 'in', programs.ids),
+                ('is_tem_print_task', '=', True),
+            ])
+            # Cũng sync các task bước in đang mở (cờ stored có thể lệch tên bước).
+            print_tasks |= self.sudo().filtered('is_tem_print_task')
+            print_tasks._ctkm_sync_print_store_lines()
+            self.sudo().search([
+                ('program_id', 'in', programs.ids),
+                ('is_tem_handover_task', '=', True),
+            ])._ctkm_sync_step10_lines()
         for task in self:
-            if task.is_tem_print_task:
-                task._ctkm_sync_print_store_lines()
-                siblings = self.sudo().search([
-                    ('program_id', '=', task.program_id.id),
-                    ('is_tem_handover_task', '=', True),
-                ])
-                siblings._ctkm_sync_step10_lines()
-            if task.is_tem_handover_task:
-                task._ctkm_sync_step10_lines()
             values = task._ctkm_tem_tag_line_values()
             existing = {}
             obsolete = Line.browse()
             for line in task.sudo().tem_tag_replace_ids:
-                key = (line.material_code or '', line.store or '')
+                key = (
+                    line.material_code or '',
+                    line.store or '',
+                    'tag' if line.is_tag and not line.is_tem else 'tem',
+                )
                 if key in existing:
                     obsolete |= line
                 else:
                     existing[key] = line
             to_create = []
             for vals in values:
-                key = (vals['material_code'] or '', vals['store'] or '')
+                key = (
+                    vals['material_code'] or '',
+                    vals['store'] or '',
+                    'tag' if vals.get('is_tag') and not vals.get('is_tem') else 'tem',
+                )
                 line = existing.pop(key, None)
                 if not line:
                     to_create.append(dict(vals, task_id=task.id))
@@ -689,62 +734,84 @@ class CtkmTask(models.Model):
                 obsolete.unlink()
 
     def _ctkm_print_store_line_values(self):
-        """Gom kho Tem/Tag theo cửa hàng: SL tem và SL tag cho bước 9."""
+        """Gom file tổng Tem/Tag theo cửa hàng: cộng SL tem/tag cho bước In tem, Tag.
+
+        Ví dụ file tổng có AETL / N21080_0_NAVY = 1 và AETL / N21080_0_YELLOW = 1
+        → một dòng cửa hàng AETL với SL tem = 2.
+        """
         self.ensure_one()
         if 'ctkm.inventory.tem.tag' not in self.env:
             return []
         if not self.program_id or not self.is_tem_print_task:
             return []
         from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
-            classify_print_kind,
+            classify_tem_tag_kinds,
+            match_hr_store,
             normalize_store_key,
         )
-        tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
-        groups = tem_tag._read_group(
-            [('program_id', '=', self.program_id.id)],
-            ['store', 'tem_tag'],
-            ['quantity:sum'],
-        )
+        rows = self.env['ctkm.inventory.tem.tag'].sudo().search([
+            ('program_id', '=', self.program_id.id),
+        ])
         by_store = {}
-        for store, kind_value, quantity in groups:
-            store_name = store or ''
-            store_key = normalize_store_key(store_name) or (store_name or False)
+        for row in rows:
+            store_name = row.store or ''
+            store_key = row.store_key or normalize_store_key(store_name)
             if not store_key:
                 continue
-            row = by_store.setdefault(store_key, {
+            rec = by_store.setdefault(store_key, {
                 'store': store_name or store_key,
                 'store_key': store_key,
                 'tem_quantity': 0.0,
                 'tag_quantity': 0.0,
             })
-            if not row['store'] and store_name:
-                row['store'] = store_name
-            amount = quantity or 0.0
-            if classify_print_kind(kind_value) == 'tag':
-                row['tag_quantity'] += amount
-            else:
-                row['tem_quantity'] += amount
-        values = list(by_store.values())
+            if store_name and rec['store'] in (store_key, '', False):
+                rec['store'] = store_name
+            amount = row.quantity or 0.0
+            kinds = classify_tem_tag_kinds(row.tem_tag)
+            if 'tag' in kinds:
+                rec['tag_quantity'] += amount
+            if 'tem' in kinds or not kinds:
+                rec['tem_quantity'] += amount
+        values = [
+            vals for vals in by_store.values()
+            if vals['tem_quantity'] or vals['tag_quantity']
+        ]
         values.sort(key=lambda vals: (vals['store'] or '', vals['store_key'] or ''))
-        store_map = self._ctkm_hr_store_map([
-            vals['store_key'] for vals in values
-        ] + [vals['store'] for vals in values])
-        for index, vals in enumerate(values, start=1):
-            vals['sequence'] = index
-            store_rec = store_map.get(vals['store_key']) or store_map.get(
-                normalize_store_key(vals['store'])
-            )
+        stores = self.env['hr.store'].sudo().search([]) if 'hr.store' in self.env else self.env['hr.store']
+        merged = {}
+        for vals in values:
+            store_rec = match_hr_store(stores, vals['store_key'], vals['store'])
             if store_rec:
                 vals['store_id'] = store_rec.id
-                if store_rec.name:
-                    vals['store'] = store_rec.name
+                name = store_rec.name
+                if isinstance(name, dict):
+                    name = next(iter(name.values()), '') if name else ''
+                if name:
+                    vals['store'] = name
                 if store_rec.code:
-                    vals['store_key'] = normalize_store_key(store_rec.code) or vals['store_key']
+                    vals['store_key'] = (
+                        normalize_store_key(store_rec.code) or vals['store_key']
+                    )
+            merge_key = vals['store_key']
+            existing = merged.get(merge_key)
+            if existing:
+                existing['tem_quantity'] += vals['tem_quantity']
+                existing['tag_quantity'] += vals['tag_quantity']
+                if not existing.get('store_id') and vals.get('store_id'):
+                    existing['store_id'] = vals['store_id']
+                    existing['store'] = vals['store']
+            else:
+                merged[merge_key] = vals
+        values = list(merged.values())
+        values.sort(key=lambda vals: (vals['store'] or '', vals['store_key'] or ''))
+        for index, vals in enumerate(values, start=1):
+            vals['sequence'] = index
         return values
 
     def _ctkm_hr_store_map(self, keys):
         """Khớp mã/tên kho với cửa hàng trên Cấu hình nhân viên (hr.store)."""
         from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            match_hr_store,
             normalize_store_key,
         )
         mapping = {}
@@ -754,12 +821,41 @@ class CtkmTask(models.Model):
         if not wanted:
             return mapping
         stores = self.env['hr.store'].sudo().search([])
-        for store in stores:
-            for raw in (store.code, store.name):
-                key = normalize_store_key(raw)
-                if key and key in wanted and key not in mapping:
-                    mapping[key] = store
+        for key in wanted:
+            store = match_hr_store(stores, key)
+            if store:
+                mapping[key] = store
         return mapping
+
+    def _ctkm_print_line_alias_keys(self, line=None, vals=None):
+        """Các mã cửa hàng dùng để nhận diện cùng một dòng (AETL = LUG_AETL)."""
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            normalize_store_key,
+        )
+        keys = []
+
+        def add(raw):
+            key = normalize_store_key(raw)
+            if not key or key in keys:
+                return
+            keys.append(key)
+            if key.startswith('LUG') and len(key) > 3:
+                short = key[3:]
+                if short and short not in keys:
+                    keys.append(short)
+
+        if line is not None:
+            add(line.store_key)
+            add(line.store)
+            add(line.store_code)
+            if line.store_id:
+                add(line.store_id.code)
+                add(line.store_id.name)
+        if vals:
+            add(vals.get('store_key'))
+            add(vals.get('store'))
+            add(vals.get('store_code'))
+        return keys
 
     def _ctkm_sync_print_store_lines(self):
         """Dựng lại bảng cửa hàng in tem/tag, giữ nguyên ô tích và dòng thêm tay."""
@@ -767,42 +863,61 @@ class CtkmTask(models.Model):
             ctkm_tem_tag_line_sync=True,
         )
         for task in self:
+            if not task.is_tem_print_task:
+                continue
             values = task._ctkm_print_store_line_values()
             existing = {}
             obsolete = Line.browse()
             for line in task.sudo().print_store_ids:
-                key = line.store_key or ''
-                if not key:
+                line_keys = task._ctkm_print_line_alias_keys(line=line)
+                if not line_keys:
                     if line.is_manual:
                         continue
                     obsolete |= line
                     continue
-                if key in existing:
+                already = any(
+                    existing.get(key) and existing.get(key).id == line.id
+                    for key in line_keys
+                )
+                if already:
+                    continue
+                duplicate = next((existing[key] for key in line_keys if key in existing), None)
+                if duplicate:
                     if line.is_manual:
                         continue
                     obsolete |= line
-                else:
-                    existing[key] = line
+                    continue
+                for key in line_keys:
+                    existing.setdefault(key, line)
             to_create = []
             for vals in values:
-                key = vals['store_key'] or ''
-                line = existing.pop(key, None)
-                if not line:
-                    to_create.append(dict(vals, task_id=task.id, is_manual=False))
+                line = None
+                for key in task._ctkm_print_line_alias_keys(vals=vals):
+                    line = existing.get(key)
+                    if line:
+                        break
+                if line:
+                    for alias, other in list(existing.items()):
+                        if other.id == line.id:
+                            existing.pop(alias, None)
+                    changes = {}
+                    for field, value in vals.items():
+                        if field in ('is_manual', 'done'):
+                            continue
+                        if field == 'store_id' and line.store_id:
+                            continue
+                        if line[field] != value:
+                            changes[field] = value
+                    if changes:
+                        line.write(changes)
                     continue
-                changes = {}
-                for field, value in vals.items():
-                    if field in ('is_manual', 'done'):
-                        continue
-                    if field == 'store_id' and line.store_id:
-                        continue
-                    if line[field] != value:
-                        changes[field] = value
-                if changes:
-                    line.write(changes)
+                to_create.append(dict(vals, task_id=task.id, is_manual=False))
             if to_create:
                 Line.create(to_create)
-            leftover = Line.browse([line.id for line in existing.values()])
+            leftover_ids = list({
+                line.id: line for line in existing.values()
+            }.values())
+            leftover = Line.browse([line.id for line in leftover_ids])
             obsolete |= leftover.filtered(lambda line: not line.is_manual)
             if obsolete:
                 obsolete.unlink()
@@ -985,10 +1100,35 @@ class CtkmTask(models.Model):
         tasks._ctkm_sync_tem_tag_lines()
         return tasks
 
+    def _ctkm_clear_program_tem_tag_inventory(self):
+        """Xóa kho Tem/Tag của CTKM này (dữ liệu import file tổng)."""
+        programs = self.mapped('program_id')
+        if not programs or 'ctkm.inventory.tem.tag' not in self.env:
+            return self.env['ctkm.inventory.tem.tag']
+        return self.env['ctkm.inventory.tem.tag'].sudo().search([
+            ('program_id', 'in', programs.ids),
+        ]).unlink()
+
     def action_refresh_tem_tag_lines(self):
         """Nút 'Làm mới' bảng Chi tiết tem/tag trên form công việc."""
+        task = self[:1]
+        if task.is_tem_tag_import_task:
+            # Bảng này chỉ phản ánh kho đã import. Dữ liệu cũ (sheet ẩn, lần import
+            # trước) phải xóa khỏi kho thì danh sách mới trống / đúng file mới.
+            task._ctkm_clear_program_tem_tag_inventory()
         self.sudo()._ctkm_sync_tem_tag_lines()
-        if self[:1].is_tem_handover_task:
+        if task.is_tem_tag_import_task:
+            return self._ctkm_notify_reload(
+                _('Đã xóa dữ liệu cũ'),
+                _('Đã xóa tem/tag đã import của chương trình này. '
+                  'Nhấn Import Tem/Tag để tải lại file Excel (sheet TEM và TAG).'),
+            )
+        if task.is_tem_print_task:
+            return self._ctkm_notify_reload(
+                _('Đã làm mới'),
+                _('Đã gom số lượng tem/tag theo cửa hàng từ file tổng.'),
+            )
+        if task.is_tem_handover_task:
             return self._ctkm_notify_reload(
                 _('Đã làm mới'),
                 _('Đã lấy danh sách cửa hàng từ bước In tem, Tag.'),
@@ -999,6 +1139,13 @@ class CtkmTask(models.Model):
         )
 
     def web_read(self, specification):
+        # Mở form bước 9: gom SL tem/tag theo cửa hàng từ file tổng.
+        if self.ids and not self.env.context.get('ctkm_skip_print_autosync'):
+            print_tasks = self.filtered('is_tem_print_task')
+            if print_tasks:
+                print_tasks.sudo().with_context(
+                    ctkm_skip_print_autosync=True,
+                )._ctkm_sync_print_store_lines()
         # Mở form bước 10: copy ngay từ bước 9 (không cần bấm Làm mới).
         if self.ids and not self.env.context.get('ctkm_skip_step10_autosync'):
             handover = self.filtered('is_tem_handover_task')
@@ -2260,6 +2407,7 @@ class CtkmTask(models.Model):
             'target': 'new',
             'context': {
                 'default_program_id': self.program_id.id,
+                'default_replace_existing': True,
                 'ctkm_import_task_id': self.id,
             },
         }

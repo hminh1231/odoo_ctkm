@@ -14,11 +14,54 @@ def _normalize_key(value):
 
 
 def classify_print_kind(tem_tag_value):
-    """Phân loại dòng kho thành tem hoặc tag theo cột Tem/tag."""
-    key = _normalize_key(tem_tag_value)
-    if 'tag' in key or key == 'tab':
+    """Phân loại dòng kho thành tem hoặc tag. Một dòng chỉ thuộc một loại."""
+    kinds = classify_tem_tag_kinds(tem_tag_value)
+    if 'tag' in kinds and 'tem' not in kinds:
         return 'tag'
     return 'tem'
+
+
+def kind_from_sheet_name(sheet_name):
+    """Sheet TEM → tem, sheet TAG → tag. Tên khác trả về False."""
+    key = _normalize_key(sheet_name)
+    if not key:
+        return False
+    if key == 'tem' or (key.startswith('tem') and 'tag' not in key):
+        return 'tem'
+    if key == 'tag' or key.startswith('tag'):
+        return 'tag'
+    return False
+
+
+def classify_tem_tag_kinds(tem_tag_value, sheet_name=None):
+    """Một dòng chỉ là tem hoặc tag.
+
+    Ưu tiên tên sheet TEM/TAG. Không dùng giá trị cột 'TEM+TAG' để tích cả hai.
+    """
+    sheet_kind = kind_from_sheet_name(sheet_name)
+    if sheet_kind:
+        return {sheet_kind}
+    key = _normalize_key(tem_tag_value)
+    if not key:
+        return set()
+    if key in ('tag', 'tab') or (key.startswith('tag') and 'tem' not in key):
+        return {'tag'}
+    if key == 'tem' or (key.startswith('tem') and 'tag' not in key):
+        return {'tem'}
+    if 'tag' in key and 'tem' not in key:
+        return {'tag'}
+    if 'tem' in key and 'tag' not in key:
+        return {'tem'}
+    return set()
+
+
+def tem_tag_label_from_kinds(kinds):
+    kinds = set(kinds or ())
+    if kinds == {'tag'}:
+        return 'TAG'
+    if kinds == {'tem'}:
+        return 'TEM'
+    return False
 
 
 def normalize_store_key(value):
@@ -28,6 +71,47 @@ def normalize_store_key(value):
         value = str(value) if value else ''
     value = ' '.join(value.strip().split())
     return value.upper() if value else False
+
+
+def hr_store_lookup_keys(store):
+    """Các mã đã chuẩn hóa của một hr.store (code + tên)."""
+    keys = []
+    for raw in (store.code, store.name):
+        key = normalize_store_key(raw)
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+def match_hr_store(stores, *candidates):
+    """Khớp mã kho (AETL) với hr.store (AETL hoặc LUG_AETL)."""
+    wanted = []
+    for candidate in candidates:
+        key = normalize_store_key(candidate)
+        if key and key not in wanted:
+            wanted.append(key)
+    if not wanted or not stores:
+        return stores.browse() if hasattr(stores, 'browse') else False
+
+    exact = {}
+    for store in stores:
+        for key in hr_store_lookup_keys(store):
+            exact.setdefault(key, store)
+
+    for key in wanted:
+        if key in exact:
+            return exact[key]
+        lug_key = 'LUG' + key
+        if lug_key in exact:
+            return exact[lug_key]
+
+    for key in wanted:
+        if len(key) < 3:
+            continue
+        for code_key, store in exact.items():
+            if code_key.endswith(key) and code_key != key:
+                return store
+    return stores.browse() if hasattr(stores, 'browse') else False
 
 
 class CtkmTaskTemPrintLine(models.Model):
