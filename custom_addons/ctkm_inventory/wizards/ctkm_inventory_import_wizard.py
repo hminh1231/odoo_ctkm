@@ -430,13 +430,20 @@ class CtkmInventoryImportWizard(models.TransientModel):
     ):
         from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
             classify_tem_tag_kinds,
+            kind_from_sheet_name,
             tem_tag_label_from_kinds,
         )
-        column_kind = ''
-        if 'tem_tag' in columns:
-            column_kind = self._clean_text(row.iloc[columns['tem_tag']])
-        kinds = classify_tem_tag_kinds(column_kind, sheet_name)
-        # Chỉ lấy loại theo sheet TEM/TAG, không biến TEM+TAG thành cả hai.
+        # File chuẩn có 2 sheet: TEM (chỉ tem) và TAG (chỉ tag).
+        # Loại (tem/tag) được xác định BỞI TÊN SHEET, không theo cột "TEM/TAG"
+        # của từng dòng (tránh gộp TEM+TAG thành cả hai loại).
+        sheet_kind = kind_from_sheet_name(sheet_name)
+        if sheet_kind:
+            kinds = {sheet_kind}
+        else:
+            column_kind = ''
+            if 'tem_tag' in columns:
+                column_kind = self._clean_text(row.iloc[columns['tem_tag']])
+            kinds = classify_tem_tag_kinds(column_kind)
         promo_price = 0.0
         if 'promo_price' in columns:
             promo_price = self._to_float(row.iloc[columns['promo_price']])
@@ -455,7 +462,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
             # hiển thị ở cột "GHI CHÚ" của bước "Lập BB thay tem".
             'ctkm_name': ctkm_name,
             'bb_work_content': bb_work_content,
-            'tem_tag': tem_tag_label_from_kinds(kinds) or column_kind or False,
+            'tem_tag': tem_tag_label_from_kinds(kinds) or False,
             'sheet_name': sheet_name,
         }
 
@@ -502,7 +509,9 @@ class CtkmInventoryImportWizard(models.TransientModel):
                     found['quantity_total'] = col_index
             if all(column in found for column in required):
                 found['store_columns'] = self._find_store_columns(frame.iloc[row_index], found)
-                if found.get('store_columns') or 'tem_tag' in found:
+                # Sheet TEM/TAG thuần túy (chỉ tem hoặc chỉ tag) có thể không có
+                # cột "TEM/TAG"; chấp nhận nếu có cột cửa hàng hoặc cột tổng SL.
+                if found.get('store_columns') or 'tem_tag' in found or 'quantity_total' in found:
                     return row_index, found
         return None, {}
 
