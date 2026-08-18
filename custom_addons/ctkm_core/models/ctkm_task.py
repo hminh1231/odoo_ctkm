@@ -918,7 +918,7 @@ class CtkmTask(models.Model):
                             existing.pop(alias, None)
                     changes = {}
                     for field, value in vals.items():
-                        if field in ('is_manual', 'done'):
+                        if field in ('is_manual', 'done', 'done_date'):
                             continue
                         if field == 'store_id' and line.store_id:
                             continue

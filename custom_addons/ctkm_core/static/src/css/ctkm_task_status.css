@@ -66,10 +66,12 @@
 .o_ctkm_print_store_list th[data-name="tag_quantity"],
 .o_ctkm_print_store_list td[data-name="tag_quantity"],
 .o_ctkm_print_store_list th[data-name="done"],
-.o_ctkm_print_store_list td[data-name="done"] {
+.o_ctkm_print_store_list td[data-name="done"],
+.o_ctkm_print_store_list th[data-name="done_date"],
+.o_ctkm_print_store_list td[data-name="done_date"] {
     width: 96px !important;
     min-width: 80px !important;
-    max-width: 110px !important;
+    max-width: 130px !important;
     white-space: nowrap;
 }
 

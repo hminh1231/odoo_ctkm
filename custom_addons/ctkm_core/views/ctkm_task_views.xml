@@ -384,6 +384,8 @@
                                             invisible="not done"
                                             title="Bỏ tick để đưa lại bảng cần in"
                                             string="Kết quả"/>
+                                        <field name="done_date" readonly="1" width="120px"
+                                            optional="show"/>
                                     </list>
                                 </field>
                             </group>

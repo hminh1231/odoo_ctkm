@@ -154,6 +154,10 @@ class CtkmTaskTemPrintLine(models.Model):
         string='Kết quả',
         help='Tick khi cửa hàng này đã in tem/tag xong.',
     )
+    done_date = fields.Date(
+        string='Ngày hoàn thành',
+        help='Tự điền ngày khi tick Kết quả. Bỏ tick thì xóa; tick lại lấy ngày mới.',
+    )
     is_manual = fields.Boolean(
         string='Thêm tay',
         default=False,
@@ -249,6 +253,11 @@ class CtkmTaskTemPrintLine(models.Model):
         internal = self.env.context.get('ctkm_tem_tag_line_sync')
         if not internal:
             self._check_can_edit_print_lines()
+        if 'done' in vals and 'done_date' not in vals:
+            vals = dict(vals)
+            vals['done_date'] = (
+                fields.Date.context_today(self) if vals.get('done') else False
+            )
         res = super().write(vals)
         if 'store_id' in vals and not internal:
             for line in self:
@@ -267,10 +276,15 @@ class CtkmTaskTemPrintLine(models.Model):
         return res
 
     def action_toggle_print_done(self):
-        """Tick Kết quả trên list: ghi done rồi form tự load lại hai bảng tại chỗ."""
+        """Tick Kết quả: chuyển bảng và ghi/xóa ngày hoàn thành theo lần tick."""
         self._check_can_edit_print_lines()
+        today = fields.Date.context_today(self)
         for line in self:
-            line.with_context(ctkm_tem_tag_line_sync=True).write({'done': not line.done})
+            done = not line.done
+            line.with_context(ctkm_tem_tag_line_sync=True).write({
+                'done': done,
+                'done_date': today if done else False,
+            })
         self._push_to_step10()
         return False
 
