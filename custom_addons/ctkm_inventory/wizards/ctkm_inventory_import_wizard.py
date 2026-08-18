@@ -66,6 +66,8 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 'material_code': row['material_code'],
                 'promo_price': row.get('promo_price') or 0.0,
                 'program_id': program.id,
+                'ctkm_name': row.get('ctkm_name'),
+                'bb_work_content': row.get('bb_work_content'),
                 'tem_tag': row.get('tem_tag'),
                 'barcode': row.get('barcode') or False,
                 'store': row.get('store'),
@@ -406,6 +408,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
             return []
 
         sheet_date = self.import_date or self._find_date(frame, header_row)
+        bb_work_content = self._find_bb_work_content(frame, header_row)
         result = []
         for index in range(header_row + 1, len(frame.index)):
             row = frame.iloc[index]
@@ -416,11 +419,15 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 break
 
             result.extend(
-                self._extract_inventory_rows(row, columns, sheet_date, material_code, sheet_name)
+                self._extract_inventory_rows(
+                    row, columns, sheet_date, material_code, sheet_name, bb_work_content,
+                )
             )
         return result
 
-    def _extract_inventory_rows(self, row, columns, sheet_date, material_code, sheet_name):
+    def _extract_inventory_rows(
+        self, row, columns, sheet_date, material_code, sheet_name, bb_work_content,
+    ):
         from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
             classify_tem_tag_kinds,
             tem_tag_label_from_kinds,
@@ -436,11 +443,18 @@ class CtkmInventoryImportWizard(models.TransientModel):
         barcode = False
         if 'barcode' in columns:
             barcode = self._clean_text(row.iloc[columns['barcode']]) or False
+        ctkm_name = False
+        if 'ctkm_name' in columns:
+            ctkm_name = self._clean_text(row.iloc[columns['ctkm_name']])
         base_values = {
             'date': sheet_date,
             'material_code': material_code,
             'promo_price': promo_price,
             'barcode': barcode,
+            # Cột "CTKM" của file (VD: "Balo National giảm đến 70%") lưu vào kho,
+            # hiển thị ở cột "GHI CHÚ" của bước "Lập BB thay tem".
+            'ctkm_name': ctkm_name,
+            'bb_work_content': bb_work_content,
             'tem_tag': tem_tag_label_from_kinds(kinds) or column_kind or False,
             'sheet_name': sheet_name,
         }
@@ -484,13 +498,19 @@ class CtkmInventoryImportWizard(models.TransientModel):
                     found[required[label]] = col_index
                 elif label in optional:
                     found[optional[label]] = col_index
-                elif label == 'tong cong':
+                elif label in ('tong cong', 'tong so luong'):
                     found['quantity_total'] = col_index
-            if all(column in found for column in required.values()):
+            if all(column in found for column in required):
                 found['store_columns'] = self._find_store_columns(frame.iloc[row_index], found)
                 if found.get('store_columns') or 'tem_tag' in found:
                     return row_index, found
         return None, {}
+
+    def _header_field_name(self, label, aliases_by_field):
+        for field_name, aliases in aliases_by_field.items():
+            if label in aliases:
+                return field_name
+        return False
 
     def _find_store_columns(self, header_row, columns):
         skip_labels = {
@@ -517,6 +537,15 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 continue
             store_columns.append((col_index, store_name))
         return store_columns
+
+    def _find_bb_work_content(self, frame, header_row):
+        for row_index in range(max(header_row, 0)):
+            for value in frame.iloc[row_index]:
+                text = self._clean_text(value)
+                label = self._normalize_label(text)
+                if label.startswith('bien ban thay tem') or label.startswith('bien ban thay tag'):
+                    return text
+        return ''
 
     def _extract_quantity(self, row, columns):
         total_col = columns.get('quantity_total')

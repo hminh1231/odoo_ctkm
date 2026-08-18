@@ -20,6 +20,10 @@ TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
 # Bước 12 "Thay tem Tag" phải khớp tuyệt đối: nhiều bước khác (bước 4, 6, 15)
 # cũng chứa chuỗi "thaytemtag" trong tên nên không dùng so khớp chứa được.
 TEM_REPLACE_TASK_KEYS = ('thaytemtag',)
+# Bước 6 "Lập BB thay tem, bàn giao cho KT kho Kiểm tra BB thay tem tag":
+# nhận diện riêng (không trùng với bước 4 / 12 / 15) để hiện bảng
+# "Chi tiết tem/tag" theo Cửa hàng quản lí và mục "Xuất biên bản thay tem".
+TEM_BB_REPLACE_TASK_MARKERS = ('lapbbthaytem', 'lapbienbanthaytem')
 # Bước 9 "In tem, Tag".
 TEM_PRINT_TASK_MARKERS = ('intemtag',)
 # Bước 6 "Lập BB thay tem, bàn giao cho KT kho".
@@ -136,7 +140,8 @@ class CtkmTask(models.Model):
         string='Bước lập BB thay tem',
         compute='_compute_task_step_flags',
         store=True,
-        help='Công việc thuộc bước "Lập BB thay tem, bàn giao cho KT kho".',
+        help='Công việc bước "Lập BB thay tem" (xuất biên bản thay tem cho KT kho; '
+             'bảng "Chi tiết tem/tag" chỉ hiện cửa hàng trong "Cửa hàng quản lí").',
     )
     is_tem_print_task = fields.Boolean(
         string='Bước in tem/tag',
@@ -613,9 +618,14 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['receive'])
                 or any(marker in key for key in keys for marker in TEM_RECEIVE_TASK_MARKERS)
             )
+            # Bước 6 "Lập BB thay tem": nhận diện riêng (không trùng bước 4 / 12 / 15).
+            is_bb_replace = (
+                (stage_id and stage_id == stage_ids['bb_replace'])
+                or any(marker in key for key in keys for marker in TEM_BB_REPLACE_TASK_MARKERS)
+            )
             task.is_tem_tag_import_task = bool(is_import)
             task.is_tem_photo_task = bool(is_photo)
-            task.is_tem_replace_task = bool(is_replace and not is_import)
+            task.is_tem_replace_task = bool(is_replace and not is_import and not is_bb_replace)
             task.is_tem_bb_replace_task = bool(is_bb_replace and not is_import and not is_replace)
             task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
             task.is_tem_handover_task = bool(is_handover)
@@ -636,6 +646,14 @@ class CtkmTask(models.Model):
             return tem_tag.store_keys_for_user(self.user_ids[:1])
         return tem_tag.current_user_store_keys()
 
+    def _ctkm_tem_tag_managed_store_keys(self):
+        """Mã cửa hàng theo 'Cửa hàng quản lí' của người nhận việc (bước 6)."""
+        self.ensure_one()
+        tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
+        if hasattr(tem_tag, 'managed_store_keys_for_user'):
+            return tem_tag.managed_store_keys_for_user(self.user_ids)
+        return []
+
     def _ctkm_tem_tag_line_values(self):
         """Gom kho Tem/Tag của CTKM theo (Mã vật tư, Store) cho bảng chi tiết."""
         self.ensure_one()
@@ -645,6 +663,7 @@ class CtkmTask(models.Model):
             return []
         if not (
             self.is_tem_tag_import_task
+            or self.is_tem_bb_replace_task
             or self.is_tem_handover_task
             or self.is_tem_receive_task
             or self.is_tem_replace_task
@@ -661,13 +680,20 @@ class CtkmTask(models.Model):
             if not store_keys:
                 return []
             domain = domain + [('store_key', 'in', store_keys)]
+        if self.is_tem_bb_replace_task:
+            # Bước 6 "Lập BB thay tem": chỉ cửa hàng trong "Cửa hàng quản lí"
+            # (Nhân viên → Cấu hình) của người nhận việc.
+            store_keys = self._ctkm_tem_tag_managed_store_keys()
+            if not store_keys:
+                return []
+            domain = domain + [('store_key', 'in', store_keys)]
         groups = tem_tag._read_group(
             domain,
             ['material_code', 'store', 'tem_tag'],
-            ['quantity:sum', 'replaced_quantity:sum', 'date:max'],
+            ['quantity:sum', 'replaced_quantity:sum', 'date:max', 'ctkm_name:max'],
         )
         by_key = {}
-        for material_code, store, kind_value, quantity, replaced_quantity, last_date in groups:
+        for material_code, store, kind_value, quantity, replaced_quantity, last_date, ctkm_name in groups:
             kinds = classify_tem_tag_kinds(kind_value)
             is_tag = bool(kinds == {'tag'})
             kind = 'tag' if is_tag else 'tem'
@@ -680,6 +706,7 @@ class CtkmTask(models.Model):
                 'replaced_quantity': 0.0,
                 'is_tem': not is_tag,
                 'is_tag': is_tag,
+                'ctkm_name': ctkm_name or False,
             })
             rec['total_quantity'] += quantity or 0.0
             rec['replaced_quantity'] += replaced_quantity or 0.0
@@ -1100,14 +1127,15 @@ class CtkmTask(models.Model):
 
     @api.model
     def _ctkm_sync_tem_tag_lines_for_programs(self, program_ids):
-        """Cập nhật bảng chi tiết của mọi công việc bước 4 / 9–12 của CTKM."""
+        """Cập nhật bảng chi tiết của mọi công việc bước 4 / 6 / 9–12 của CTKM."""
         program_ids = [program_id for program_id in (program_ids or []) if program_id]
         if not program_ids:
             return self.browse()
         tasks = self.sudo().search([
             ('program_id', 'in', program_ids),
-            '|', '|', '|', '|',
+            '|', '|', '|', '|', '|',
             ('is_tem_tag_import_task', '=', True),
+            ('is_tem_bb_replace_task', '=', True),
             ('is_tem_print_task', '=', True),
             ('is_tem_handover_task', '=', True),
             ('is_tem_receive_task', '=', True),

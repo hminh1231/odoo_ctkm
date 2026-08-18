@@ -10,6 +10,7 @@ TASK_LINE_TRIGGER_FIELDS = {
     'quantity',
     'replaced_quantity',
     'date',
+    'ctkm_name',
 }
 
 
@@ -37,6 +38,16 @@ class CtkmInventoryTemTag(models.Model):
         required=True,
         ondelete='cascade',
         index=True,
+    )
+    ctkm_name = fields.Char(
+        string='Tên CTKM (file)',
+        index=True,
+        help='Nội dung cột "CTKM" của file Excel import (VD: "Balo National giảm đến 70%"). '
+             'Hiển thị ở cột "GHI CHÚ" của bước "Lập BB thay tem".',
+    )
+    bb_work_content = fields.Char(
+        string='Nội dung BB (file)',
+        help='Nội dung biên bản lấy từ dòng tiêu đề của file Excel import.',
     )
     tem_tag = fields.Char(string='Tem/tag', index=True)
     barcode = fields.Char(
@@ -150,3 +161,31 @@ class CtkmInventoryTemTag(models.Model):
     @api.model
     def current_user_store_keys(self):
         return self.store_keys_for_user(self.env.user)
+
+    @api.model
+    def managed_store_keys_for_user(self, user):
+        """Mã/tên cửa hàng theo 'Cửa hàng quản lí' của một người dùng (đã chuẩn hóa).
+
+        Dùng cho bảng "Chi tiết tem/tag" của bước 6 "Lập BB thay tem": chỉ hiện
+        tem/tag thuộc các cửa hàng nhân viên này quản lí
+        (Nhân viên → Cấu hình → Cửa hàng quản lí, hr.employee.managed_store_ids).
+        """
+        users = user.sudo() if user else self.env['res.users']
+        if not users:
+            return []
+        employees = self.env['hr.employee']
+        for user in users:
+            if 'employee_id' in user._fields and user.employee_id:
+                employees |= user.employee_id.sudo()
+            if user.employee_ids:
+                employees |= user.employee_ids.sudo()
+        keys = []
+        for employee in employees:
+            if 'managed_store_ids' not in employee._fields:
+                continue
+            for store in employee.sudo().managed_store_ids:
+                for raw in (store.code, store.name):
+                    key = _normalize_store_code(raw)
+                    if key and key not in keys:
+                        keys.append(key)
+        return keys

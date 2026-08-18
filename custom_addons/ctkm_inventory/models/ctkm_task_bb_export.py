@@ -45,6 +45,26 @@ class CtkmTask(models.Model):
         string='Cửa hàng',
         help='Chọn một hoặc nhiều cửa hàng để xuất biên bản thay tem (bước 6).',
     )
+    bb_export_store_domain_ids = fields.Many2many(
+        'hr.store',
+        string='Cửa hàng được xuất BB',
+        compute='_compute_bb_export_store_domain_ids',
+        help='Các cửa hàng vừa có dữ liệu Tem/Tag import bước 4, vừa thuộc Cửa hàng quản lí.',
+    )
+
+    @api.depends('program_id', 'user_ids')
+    def _compute_bb_export_store_domain_ids(self):
+        for task in self:
+            task.bb_export_store_domain_ids = task._bb_export_allowed_stores()
+
+    @api.onchange('bb_export_store_domain_ids')
+    def _onchange_bb_export_store_domain_ids(self):
+        for task in self:
+            allowed = task.bb_export_store_domain_ids
+            if allowed:
+                task.store_ids &= allowed
+            else:
+                task.store_ids = False
 
     def action_export_bb_file(self):
         self.ensure_one()
@@ -55,6 +75,7 @@ class CtkmTask(models.Model):
             ))
         if not self.store_ids:
             raise UserError(_('Vui lòng chọn ít nhất một Cửa hàng trước khi xuất file.'))
+        self._check_bb_export_store_ids()
         if Workbook is None:
             raise UserError(_('Thiếu thư viện openpyxl để xuất file Excel.'))
         data = self._build_bb_xlsx()
@@ -76,6 +97,55 @@ class CtkmTask(models.Model):
             'url': '/web/content/%s?download=true' % attachment.id,
             'target': 'self',
         }
+
+    def _bb_export_allowed_store_keys(self):
+        self.ensure_one()
+        if not self.program_id:
+            return set()
+        Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
+        groups = Inventory.read_group(
+            [('program_id', '=', self.program_id.id)],
+            ['store_key'], ['store_key'],
+        )
+        inventory_keys = {
+            row['store_key']
+            for row in groups
+            if row.get('store_key')
+        }
+        managed_keys = set()
+        if hasattr(self, '_ctkm_tem_tag_managed_store_keys'):
+            managed_keys = set(self._ctkm_tem_tag_managed_store_keys())
+        return inventory_keys & managed_keys
+
+    def _bb_export_allowed_stores(self):
+        self.ensure_one()
+        allowed_keys = self._bb_export_allowed_store_keys()
+        if not allowed_keys or 'hr.store' not in self.env:
+            return self.env['hr.store']
+        stores = self.env['hr.store'].sudo().search([])
+        return stores.filtered(
+            lambda store: bool({
+                _normalize_store_code(store.code),
+                _normalize_store_code(store.name),
+            } & allowed_keys)
+        )
+
+    def _check_bb_export_store_ids(self):
+        self.ensure_one()
+        allowed_keys = self._bb_export_allowed_store_keys()
+        invalid = self.env['hr.store']
+        for store in self.store_ids.sudo():
+            store_keys = {
+                _normalize_store_code(store.code),
+                _normalize_store_code(store.name),
+            }
+            if not (store_keys & allowed_keys):
+                invalid |= store
+        if invalid:
+            raise UserError(_(
+                'Bạn chỉ được xuất BB cho cửa hàng vừa có dữ liệu Tem/Tag bước 4 '
+                'vừa thuộc "Cửa hàng quản lí": %s'
+            ) % ', '.join(invalid.mapped('display_name')))
 
     @api.model
     def _bb_sheet_title(self, store_code):
@@ -100,7 +170,7 @@ class CtkmTask(models.Model):
             Dòng 7: "Nội dung công việc:BIÊN BẢN THAY TAG THEO TB <mã> NGÀY <ngày>" (merge A7:E7)
             Dòng 8: Tiêu đề cột: STT | MÃ VẬT TƯ | GIÁ KM | SL BÀN GIAO | GHI CHÚ
             Dòng 9+: Chi tiết từng Mã vật tư của cửa hàng đó
-            Cột GHI CHÚ để trống (người dùng tự điền sau).
+            Cột GHI CHÚ ghi nội dung CTKM (cột "CTKM" của file import bước 4).
         """
         self.ensure_one()
         program = self.program_id
@@ -148,6 +218,7 @@ class CtkmTask(models.Model):
         first = True
         for key, store_code in store_list:
             materials = {}
+            work_contents = []
             for rec in inv_records:
                 if rec.store_key != key:
                     continue
@@ -157,8 +228,15 @@ class CtkmTask(models.Model):
                 mat = materials.setdefault(code, {
                     'promo': rec.promo_price or 0.0,
                     'qty': 0.0,
+                    'notes': [],
                 })
                 mat['qty'] += rec.quantity or 0.0
+                note = (rec.ctkm_name or '').strip()
+                if note and note not in mat['notes']:
+                    mat['notes'].append(note)
+                work_content = (rec.bb_work_content or '').strip()
+                if work_content and work_content not in work_contents:
+                    work_contents.append(work_content)
             material_codes = sorted(materials.keys())
 
             ws = wb.active if first else wb.create_sheet()
@@ -176,7 +254,7 @@ class CtkmTask(models.Model):
 
             self._build_bb_sheet(
                 ws, store_code, material_codes, materials,
-                date_vn, date_str, notify_code,
+                date_vn, date_str, notify_code, work_contents[:1],
             )
 
         stream = io.BytesIO()
@@ -184,7 +262,7 @@ class CtkmTask(models.Model):
         return stream.getvalue()
 
     def _build_bb_sheet(self, ws, store_code, material_codes, materials,
-                       date_vn, date_str, notify_code):
+                       date_vn, date_str, notify_code, work_contents):
         """Vẽ nội dung một sheet biên bản cho một cửa hàng."""
         thin = Side(style='thin', color='FF000000')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -233,9 +311,12 @@ class CtkmTask(models.Model):
         # Dòng 7: nội dung công việc
         ws.merge_cells('A7:E7')
         c = ws['A7']
-        c.value = 'Nội dung công việc:BIÊN BẢN THAY TAG THEO TB %s NGÀY %s' % (
-            notify_code, date_str,
-        )
+        work_content = work_contents[0] if work_contents else ''
+        if not work_content:
+            work_content = 'BIÊN BẢN THAY TAG THEO TB %s NGÀY %s' % (
+                notify_code, date_str,
+            )
+        c.value = 'Nội dung công việc: %s' % work_content
         c.font = cell_font
         c.alignment = left_top
         ws.row_dimensions[7].height = 28
@@ -259,7 +340,7 @@ class CtkmTask(models.Model):
             gc.number_format = ACCOUNTING_NUMBER_FORMAT
             qc = ws.cell(row=r, column=COL_SL_BAN_GIAO, value=mat['qty'])
             qc.number_format = QUANTITY_NUMBER_FORMAT
-            # Cột GHI CHÚ (COL_GHI_CHU) để trống theo yêu cầu.
+            ws.cell(row=r, column=COL_GHI_CHU, value='\n'.join(mat['notes']))
             for col_idx in range(1, COL_GHI_CHU + 1):
                 cell = ws.cell(row=r, column=col_idx)
                 cell.font = cell_font

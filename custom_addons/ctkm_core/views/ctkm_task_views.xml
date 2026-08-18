@@ -144,7 +144,7 @@
                                 </group>
                             </group>
                             <group string="Chi tiết tem/tag" name="tem_tag_detail_group"
-                                invisible="not is_tem_replace_task and not is_tem_tag_import_task">
+                                invisible="not is_tem_replace_task and not is_tem_bb_replace_task and not is_tem_tag_import_task">
                                 <div colspan="2" class="text-muted mb-2"
                                     invisible="not is_tem_replace_task">
                                     Nhập <b>Tổng SL đã thay</b> cho từng Mã vật tư thuộc cửa hàng của bạn trong chương trình này.
@@ -154,8 +154,13 @@
                                     Tem/tag lấy từ sheet <b>TEM</b> và <b>TAG</b> của file tổng (tất cả cửa hàng).
                                     Mỗi dòng chỉ tích <b>Tem</b> hoặc <b>Tag</b> theo sheet chứa mã + cửa hàng đó.
                                 </div>
+                                <div colspan="2" class="text-muted mb-2"
+                                    invisible="not is_tem_bb_replace_task">
+                                    Chỉ hiện tem/tag thuộc cửa hàng trong <b>Cửa hàng quản lí</b> của bạn
+                                    (Nhân viên → Cấu hình). Cột <b>GHI CHÚ</b> lấy nội dung CTKM từ file import.
+                                </div>
                                 <div colspan="2" class="mb-2"
-                                    invisible="not is_tem_tag_import_task">
+                                    invisible="not is_tem_tag_import_task and not is_tem_bb_replace_task">
                                     <button name="action_refresh_tem_tag_lines" type="object"
                                         string="Làm mới danh sách" class="btn-secondary btn-sm"
                                         icon="fa-refresh"/>
@@ -177,6 +182,8 @@
                                         <field name="remaining_quantity" readonly="1"
                                             sum="Tổng SL chưa thay"
                                             column_invisible="parent.is_tem_tag_import_task"/>
+                                        <field name="ctkm_name" readonly="1"
+                                            column_invisible="not parent.is_tem_bb_replace_task"/>
                                     </list>
                                 </field>
                             </group>

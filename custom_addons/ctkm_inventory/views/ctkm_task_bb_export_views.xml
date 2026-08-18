@@ -12,9 +12,11 @@
                 position="before">
                 <group string="Xuất biên bản thay tem"
                     invisible="not is_tem_bb_replace_task and not is_tem_replace_task">
+                    <field name="bb_export_store_domain_ids" invisible="1"/>
                     <field name="store_ids" widget="many2many_tags"
+                        domain="[('id', 'in', bb_export_store_domain_ids)]"
                         options="{'no_create': True}"
-                        help="Chọn một hoặc nhiều cửa hàng (giống Cửa hàng ở Cấu hình nhân viên)."/>
+                        help="Chỉ chọn được các cửa hàng vừa có dữ liệu Tem/Tag import bước 4, vừa thuộc 'Cửa hàng quản lí' của nhân viên nhận việc."/>
                     <div colspan="2" class="mt-2">
                         <button name="action_export_bb_file" type="object"
                             string="Xuất file" class="btn-primary"

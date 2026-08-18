@@ -14,6 +14,8 @@ class CtkmTaskTemTagReplaceLine(models.Model):
     của chương trình khuyến mãi:
 
     * Bước 4 (Đổ BB thay tem/tag): xem toàn bộ cửa hàng (cột Store hiển thị).
+    * Bước 6 (Lập BB thay tem): chỉ cửa hàng trong "Cửa hàng quản lí" của người
+      nhận việc; cột "GHI CHÚ" (ctkm_name) hiển thị nội dung CTKM từ file import.
     * Bước 12 (Thay tem Tag): chỉ cửa hàng của nhân viên nhận việc (ẩn cột Store),
       nhân viên nhập "Tổng SL đã thay" và số này được ghi ngược về kho Tem/Tag.
 
@@ -36,6 +38,12 @@ class CtkmTaskTemTagReplaceLine(models.Model):
     material_code = fields.Char(string='Mã vật tư', readonly=True, index=True)
     store = fields.Char(string='Store', readonly=True)
     date = fields.Date(string='Ngày', readonly=True)
+    ctkm_name = fields.Char(
+        string='GHI CHÚ',
+        readonly=True,
+        help='Nội dung CTKM lấy từ cột "CTKM" của file Excel import. '
+             'Chỉ hiển thị ở bước "Lập BB thay tem".',
+    )
     total_quantity = fields.Float(string='Tổng SL', readonly=True)
     replaced_quantity = fields.Float(string='Tổng SL đã thay')
     remaining_quantity = fields.Float(
