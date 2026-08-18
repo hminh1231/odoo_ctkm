@@ -67,6 +67,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
                 'promo_price': row.get('promo_price') or 0.0,
                 'program_id': program.id,
                 'tem_tag': row.get('tem_tag'),
+                'barcode': row.get('barcode') or False,
                 'store': row.get('store'),
                 'quantity': row.get('quantity') or 0.0,
                 'import_filename': self.filename,
@@ -432,10 +433,14 @@ class CtkmInventoryImportWizard(models.TransientModel):
         promo_price = 0.0
         if 'promo_price' in columns:
             promo_price = self._to_float(row.iloc[columns['promo_price']])
+        barcode = False
+        if 'barcode' in columns:
+            barcode = self._clean_text(row.iloc[columns['barcode']]) or False
         base_values = {
             'date': sheet_date,
             'material_code': material_code,
             'promo_price': promo_price,
+            'barcode': barcode,
             'tem_tag': tem_tag_label_from_kinds(kinds) or column_kind or False,
             'sheet_name': sheet_name,
         }
@@ -468,6 +473,8 @@ class CtkmInventoryImportWizard(models.TransientModel):
             'gia km': 'promo_price',
             'ctkm': 'ctkm_name',
             'tem tag': 'tem_tag',
+            'ma vach': 'barcode',
+            'barcode': 'barcode',
         }
         for row_index in range(len(frame.index)):
             found = {}
@@ -491,7 +498,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
             'tong cong', 'ma goc',
         }
         fixed_columns = {columns['material_code']}
-        for key in ('promo_price', 'ctkm_name', 'tem_tag'):
+        for key in ('promo_price', 'ctkm_name', 'tem_tag', 'barcode'):
             if key in columns:
                 fixed_columns.add(columns[key])
         total_col = columns.get('quantity_total')
@@ -518,7 +525,7 @@ class CtkmInventoryImportWizard(models.TransientModel):
 
         numeric_values = []
         fixed_columns = {columns['material_code']}
-        for key in ('promo_price', 'ctkm_name', 'tem_tag'):
+        for key in ('promo_price', 'ctkm_name', 'tem_tag', 'barcode'):
             if key in columns:
                 fixed_columns.add(columns[key])
         for index, value in enumerate(row):

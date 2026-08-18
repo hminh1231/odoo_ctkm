@@ -39,6 +39,11 @@ class CtkmInventoryTemTag(models.Model):
         index=True,
     )
     tem_tag = fields.Char(string='Tem/tag', index=True)
+    barcode = fields.Char(
+        string='Mã vạch',
+        index=True,
+        help='Mã vạch trên tem (EAN-13, ví dụ 8937000274600).',
+    )
     store = fields.Char(string='Store', index=True)
     store_key = fields.Char(
         string='Store Key',

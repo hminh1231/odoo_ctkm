@@ -35,3 +35,6 @@ access_ctkm_task_tem_step10_line_manager,ctkm.task.tem.step10.line.manager,model
 access_ctkm_task_time_line_employee,ctkm.task.time.line.employee,model_ctkm_task_time_line,base.group_user,1,1,1,1
 access_ctkm_task_time_line_user,ctkm.task.time.line.user,model_ctkm_task_time_line,ctkm_core.group_ctkm_user,1,1,1,1
 access_ctkm_task_time_line_manager,ctkm.task.time.line.manager,model_ctkm_task_time_line,ctkm_core.group_ctkm_manager,1,1,1,1
+access_ctkm_barcode_lookup_employee,ctkm.barcode.lookup.employee,model_ctkm_barcode_lookup,base.group_user,1,1,1,0
+access_ctkm_barcode_lookup_user,ctkm.barcode.lookup.user,model_ctkm_barcode_lookup,ctkm_core.group_ctkm_user,1,1,1,1
+access_ctkm_barcode_lookup_manager,ctkm.barcode.lookup.manager,model_ctkm_barcode_lookup,ctkm_core.group_ctkm_manager,1,1,1,1

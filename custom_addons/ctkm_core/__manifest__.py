@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Chương trình khuyến mãi',
-    'version': '3.90',
+    'version': '3.92',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý chương trình khuyến mãi',
     'description': """
@@ -16,6 +16,7 @@ Module cung cấp quản lý các chương trình khuyến mãi.
         'security/ir.model.access.csv',
         'data/ctkm_stage_default.xml',
         'views/ctkm_menu_views.xml',
+        'views/ctkm_barcode_views.xml',
         'views/ctkm_stage_views.xml',
         'views/ctkm_program_views.xml',
         'views/ctkm_notify_report_views.xml',
@@ -32,6 +33,9 @@ Module cung cấp quản lý các chương trình khuyến mãi.
             'ctkm_core/static/src/scss/ctkm_notify_report.scss',
             'ctkm_core/static/src/css/ctkm_task_status.css',
             'ctkm_core/static/src/js/pivot_notify_detail_patch.js',
+            'ctkm_core/static/src/js/ctkm_barcode_scan.js',
+            'ctkm_core/static/src/xml/ctkm_barcode_scan.xml',
+            'ctkm_core/static/src/scss/ctkm_barcode_scan.scss',
             (
                 'after',
                 'mail/static/src/chatter/web/chatter_patch.js',

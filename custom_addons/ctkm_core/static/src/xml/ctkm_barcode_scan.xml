@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="ctkm_core.BarcodeScan">
+        <div class="o_ctkm_barcode_scan h-100 overflow-auto">
+            <div class="o_ctkm_barcode_inner mx-auto py-4 px-3">
+                <div class="text-center mb-4">
+                    <div class="o_ctkm_barcode_icon mb-2">
+                        <i class="fa fa-barcode"/>
+                    </div>
+                    <h2 class="mb-1">Quét mã vạch</h2>
+                    <p class="text-muted mb-0">
+                        Quét tem EAN-13 trên sản phẩm, dùng máy quét, hoặc nhập mã hàng.
+                    </p>
+                </div>
+
+                <div class="d-flex flex-column flex-md-row gap-2 mb-3">
+                    <button t-if="cameraSupported"
+                            class="btn btn-primary flex-grow-1 py-3"
+                            t-att-disabled="state.loading || state.decoding"
+                            t-on-click="openCamera">
+                        <i class="fa fa-camera me-2"/>Mở camera quét
+                    </button>
+                    <button class="btn btn-outline-primary flex-grow-1 py-3"
+                            t-att-disabled="state.loading || state.decoding"
+                            t-on-click="openFilePicker">
+                        <i class="fa fa-picture-o me-2"/>
+                        <t t-if="state.decoding">Đang đọc ảnh...</t>
+                        <t t-else="">Chọn ảnh tem</t>
+                    </button>
+                    <input type="file"
+                           class="d-none"
+                           t-ref="fileInput"
+                           accept="image/*"
+                           t-on-change="onFileSelected"/>
+                </div>
+
+                <div class="input-group input-group-lg mb-4">
+                    <input type="text"
+                           class="form-control"
+                           t-ref="barcodeInput"
+                           t-att-value="state.query"
+                           t-att-disabled="state.loading"
+                           placeholder="Quét hoặc nhập mã vạch / mã hàng (NTAL90269)"
+                           autocomplete="off"
+                           inputmode="text"
+                           t-on-input="onInput"
+                           t-on-keydown="onKeydown"/>
+                    <button class="btn btn-secondary"
+                            t-att-disabled="state.loading"
+                            t-on-click="submitQuery">
+                        <i class="fa fa-search me-1"/>Tìm
+                    </button>
+                </div>
+
+                <t t-if="state.loading">
+                    <div class="text-center text-muted py-4">
+                        <i class="fa fa-spinner fa-spin fa-2x mb-2"/>
+                        <div>Đang tra cứu...</div>
+                    </div>
+                </t>
+
+                <t t-elif="state.searched">
+                    <div class="o_ctkm_barcode_result card shadow-sm mb-3">
+                        <div class="card-body">
+                            <div class="text-muted small mb-1">Mã vừa quét</div>
+                            <div class="o_ctkm_barcode_value font-monospace">
+                                <t t-esc="state.scanned"/>
+                            </div>
+                            <div t-if="state.found" class="text-success mt-2">
+                                <i class="fa fa-check-circle me-1"/>Tìm thấy trong CTKM
+                            </div>
+                            <div t-else="" class="text-warning mt-2">
+                                <i class="fa fa-info-circle me-1"/>
+                                Không thấy mã này trong kho Tem/Tag.
+                                Thử nhập <strong>mã hàng</strong> trên tem (ví dụ NTAL90269, 17_0721).
+                            </div>
+                        </div>
+                    </div>
+
+                    <t t-foreach="groups" t-as="group" t-key="group_index">
+                        <div class="card shadow-sm mb-3 o_ctkm_barcode_match">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                    <div>
+                                        <div class="fw-bold fs-5" t-esc="group.material_code"/>
+                                        <div t-if="group.barcode" class="text-muted small font-monospace" t-esc="group.barcode"/>
+                                    </div>
+                                    <span t-if="group.tem_tag" class="badge text-bg-secondary" t-esc="group.tem_tag"/>
+                                </div>
+                                <div class="mb-2">
+                                    <button class="btn btn-link p-0 text-start"
+                                            t-att-data-program-id="group.program_id"
+                                            t-on-click="onOpenProgram">
+                                        <t t-esc="group.program_name"/>
+                                    </button>
+                                    <div t-if="group.notify_code" class="small text-muted">
+                                        Mã thông báo: <t t-esc="group.notify_code"/>
+                                    </div>
+                                    <div t-if="group.date_begin or group.date_end" class="small text-muted">
+                                        <t t-esc="formatDateTime(group.date_begin)"/>
+                                        <t t-if="group.date_begin and group.date_end"> — </t>
+                                        <t t-esc="formatDateTime(group.date_end)"/>
+                                    </div>
+                                </div>
+                                <div class="o_ctkm_barcode_price mb-3">
+                                    Giá KM
+                                    <strong t-esc="formatPrice(group.promo_price)"/>
+                                    <span class="ms-1">đ</span>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Store</th>
+                                                <th class="text-end">SL</th>
+                                                <th class="text-end">Đã thay</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr t-foreach="group.lines" t-as="line" t-key="line.id">
+                                                <td t-esc="line.store or '—'"/>
+                                                <td class="text-end" t-esc="line.quantity"/>
+                                                <td class="text-end" t-esc="line.replaced_quantity"/>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </t>
+            </div>
+        </div>
+    </t>
+</templates>

@@ -1,0 +1,40 @@
+.o_ctkm_barcode_scan {
+    background: #f8f6f8;
+}
+
+.o_ctkm_barcode_inner {
+    max-width: 640px;
+}
+
+.o_ctkm_barcode_icon {
+    width: 64px;
+    height: 64px;
+    margin-inline: auto;
+    border-radius: 16px;
+    background: #714b67;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+}
+
+.o_ctkm_barcode_value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    word-break: break-all;
+}
+
+.o_ctkm_barcode_price {
+    font-size: 1.05rem;
+}
+
+.o_ctkm_barcode_price strong {
+    font-size: 1.45rem;
+    color: #714b67;
+}
+
+.o_ctkm_barcode_match .btn-link {
+    font-weight: 600;
+}

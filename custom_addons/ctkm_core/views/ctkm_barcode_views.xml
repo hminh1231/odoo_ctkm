@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<odoo noupdate="0">
+
+    <record id="action_ctkm_barcode_scan" model="ir.actions.client">
+        <field name="name">Mã vạch</field>
+        <field name="tag">ctkm_barcode_scan</field>
+        <field name="path">ctkm-barcode</field>
+        <field name="target">current</field>
+    </record>
+
+    <record id="asset_ctkm_barcode_scan_js" model="ir.asset">
+        <field name="name">CTKM barcode scan JS</field>
+        <field name="bundle">web.assets_backend</field>
+        <field name="path">ctkm_core/static/src/js/ctkm_barcode_scan.js</field>
+    </record>
+    <record id="asset_ctkm_barcode_scan_xml" model="ir.asset">
+        <field name="name">CTKM barcode scan XML</field>
+        <field name="bundle">web.assets_backend</field>
+        <field name="path">ctkm_core/static/src/xml/ctkm_barcode_scan.xml</field>
+    </record>
+    <record id="asset_ctkm_barcode_scan_scss" model="ir.asset">
+        <field name="name">CTKM barcode scan SCSS</field>
+        <field name="bundle">web.assets_backend</field>
+        <field name="path">ctkm_core/static/src/scss/ctkm_barcode_scan.scss</field>
+    </record>
+
+    <record id="menu_ctkm_barcode" model="ir.ui.menu">
+        <field name="action" ref="action_ctkm_barcode_scan"/>
+    </record>
+
+</odoo>

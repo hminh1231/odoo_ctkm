@@ -13,6 +13,7 @@
                 <field name="promo_price"/>
                 <field name="program_id"/>
                 <field name="tem_tag"/>
+                <field name="barcode" optional="show"/>
                 <field name="store"/>
                 <field name="quantity"/>
                 <field name="replaced_quantity" optional="show"/>
@@ -49,6 +50,7 @@
                         <field name="promo_price"/>
                         <field name="program_id"/>
                         <field name="tem_tag"/>
+                        <field name="barcode"/>
                         <field name="store"/>
                         <field name="quantity"/>
                         <field name="replaced_quantity"/>
@@ -66,6 +68,7 @@
         <field name="arch" type="xml">
             <search string="Tem/Tag">
                 <field name="material_code"/>
+                <field name="barcode"/>
                 <field name="program_id"/>
                 <field name="tem_tag"/>
                 <field name="store"/>
