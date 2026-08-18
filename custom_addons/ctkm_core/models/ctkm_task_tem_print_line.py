@@ -266,6 +266,14 @@ class CtkmTaskTemPrintLine(models.Model):
             self._push_to_step10()
         return res
 
+    def action_toggle_print_done(self):
+        """Tick Kết quả trên list: ghi done rồi form tự load lại hai bảng tại chỗ."""
+        self._check_can_edit_print_lines()
+        for line in self:
+            line.with_context(ctkm_tem_tag_line_sync=True).write({'done': not line.done})
+        self._push_to_step10()
+        return False
+
     def unlink(self):
         internal = self.env.context.get('ctkm_tem_tag_line_sync')
         if not internal:

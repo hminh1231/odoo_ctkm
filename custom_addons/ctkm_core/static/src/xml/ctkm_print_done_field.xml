@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="ctkm_core.CtkmPrintDoneField">
+        <div class="o_ctkm_print_done d-inline-flex align-items-center justify-content-center"
+             t-on-click.stop.prevent="onClick"
+             t-att-class="{ 'o_ctkm_print_done_saving': state.saving }">
+            <input type="checkbox"
+                   class="form-check-input"
+                   t-att-checked="state.value"
+                   t-att-disabled="isDisabled"
+                   tabindex="-1"/>
+        </div>
+    </t>
+</templates>

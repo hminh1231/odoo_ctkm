@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Chương trình khuyến mãi',
-    'version': '3.82',
+    'version': '3.86',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý chương trình khuyến mãi',
     'description': """
@@ -25,6 +25,8 @@ Module cung cấp quản lý các chương trình khuyến mãi.
     'assets': {
         'web.assets_backend': [
             'ctkm_core/static/src/js/ctkm_model_alias_patch.js',
+            'ctkm_core/static/src/js/ctkm_print_done_field.js',
+            'ctkm_core/static/src/xml/ctkm_print_done_field.xml',
             'ctkm_core/static/src/js/ctkm_navbar_app_patch.js',
             'ctkm_core/static/src/scss/ctkm_notify_report.scss',
             'ctkm_core/static/src/css/ctkm_task_status.css',

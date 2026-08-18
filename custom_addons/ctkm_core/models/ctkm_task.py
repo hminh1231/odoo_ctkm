@@ -179,6 +179,22 @@ class CtkmTask(models.Model):
         string='Cửa hàng in tem/tag',
         help='Danh sách cửa hàng cần in tem/tag ở bước 9, gom từ file tổng.',
     )
+    print_store_pending_ids = fields.One2many(
+        'ctkm.task.tem.print.line',
+        'task_id',
+        string='Thông tin cửa hàng và số lượng tem/tag cần in',
+        domain=[('done', '=', False)],
+        copy=False,
+        help='Cửa hàng chưa tick Kết quả; tick để chuyển xuống bảng đã hoàn thành.',
+    )
+    print_store_done_ids = fields.One2many(
+        'ctkm.task.tem.print.line',
+        'task_id',
+        string='Cửa hàng đã hoàn thành in tem/tag',
+        domain=[('done', '=', True)],
+        copy=False,
+        help='Cửa hàng đã tick Kết quả. Bỏ tick để đưa lại bảng cần in.',
+    )
     handover_store_search = fields.Char(string='Tìm cửa hàng bàn giao')
     collect_store_search = fields.Char(string='Tìm cửa hàng thu')
     handover_store_ids = fields.One2many(
@@ -1409,8 +1425,16 @@ class CtkmTask(models.Model):
     @api.onchange('print_store_search')
     def _onchange_print_store_search(self):
         search = (self.print_store_search or '').strip()
-        domain = [('store', 'ilike', search)] if search else []
-        return {'domain': {'print_store_ids': domain}}
+        pending = [('done', '=', False)]
+        done = [('done', '=', True)]
+        if search:
+            pending.append(('store', 'ilike', search))
+            done.append(('store', 'ilike', search))
+        return {'domain': {
+            'print_store_pending_ids': pending,
+            'print_store_done_ids': done,
+            'print_store_ids': [('store', 'ilike', search)] if search else [],
+        }}
 
     @api.onchange('handover_store_search')
     def _onchange_handover_store_search(self):
@@ -1442,8 +1466,22 @@ class CtkmTask(models.Model):
         tasks.sudo()._ctkm_ensure_time_lines()
         return tasks
 
+    @staticmethod
+    def _ctkm_keep_print_split_commands(commands):
+        """Hai One2many cùng inverse: bỏ (5)/(6) để không xóa dòng bảng kia."""
+        kept = []
+        for cmd in commands or []:
+            code = cmd[0] if isinstance(cmd, (list, tuple)) and cmd else None
+            if code in (3, 5, 6):
+                continue
+            kept.append(cmd)
+        return kept
+
     def write(self, vals):
         vals = dict(vals)
+        for fname in ('print_store_pending_ids', 'print_store_done_ids'):
+            if fname in vals:
+                vals[fname] = self._ctkm_keep_print_split_commands(vals[fname])
         # Đồng bộ từ checklist / nút workflow dùng context nội bộ.
         internal = (
             self.env.context.get('ctkm_internal_state_write')

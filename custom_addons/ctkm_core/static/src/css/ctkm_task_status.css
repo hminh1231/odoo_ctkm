@@ -73,6 +73,23 @@
     white-space: nowrap;
 }
 
+.o_form_view .o_ctkm_print_section_title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #212529;
+    margin: 0.5rem 0 0.35rem;
+}
+
+.o_ctkm_print_store_list td.o_list_button .o_ctkm_print_done_btn {
+    min-width: 28px;
+    min-height: 28px;
+    line-height: 1;
+    font-size: 1.15rem;
+}
+.o_ctkm_print_store_list td.o_list_button .o_ctkm_print_done_btn .fa-check-square-o {
+    color: #198754;
+}
+
 .o_ctkm_time_table th[data-name="date_start"],
 .o_ctkm_time_table td[data-name="date_start"],
 .o_ctkm_time_table th[data-name="date_end"],
