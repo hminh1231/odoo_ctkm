@@ -167,16 +167,17 @@
                                 </div>
                                 <field name="tem_tag_replace_ids" nolabel="1" colspan="2"
                                     readonly="not is_tem_replace_task">
-                                    <list editable="bottom" create="0" delete="0">
-                                        <field name="material_code" readonly="1"/>
+                                    <list editable="bottom" create="0" delete="0"
+                                        default_group_by="store">
                                         <field name="store" readonly="1"
                                             column_invisible="parent.is_tem_replace_task"/>
+                                        <field name="material_code" readonly="1"/>
                                         <field name="date" readonly="1" optional="hide"/>
-                                        <field name="total_quantity" readonly="1" sum="Tổng SL"/>
                                         <field name="is_tem"
                                             column_invisible="not parent.is_tem_tag_import_task"/>
                                         <field name="is_tag"
                                             column_invisible="not parent.is_tem_tag_import_task"/>
+                                        <field name="total_quantity" readonly="1" sum="Tổng SL"/>
                                         <field name="replaced_quantity" sum="Tổng SL đã thay"
                                             column_invisible="parent.is_tem_tag_import_task"/>
                                         <field name="remaining_quantity" readonly="1"
@@ -409,10 +410,9 @@
                                 </div>
                                 <field name="tem_tag_replace_ids" nolabel="1" colspan="2"
                                     readonly="1">
-                                    <list create="0" delete="0">
+                                    <list create="0" delete="0" default_group_by="store">
+                                        <field name="store" readonly="1"/>
                                         <field name="material_code" readonly="1"/>
-                                        <field name="store" readonly="1"
-                                            column_invisible="parent.is_tem_receive_task"/>
                                         <field name="date" readonly="1" optional="hide"/>
                                         <field name="total_quantity" readonly="1" sum="Tổng SL"/>
                                         <field name="replaced_quantity" readonly="1"

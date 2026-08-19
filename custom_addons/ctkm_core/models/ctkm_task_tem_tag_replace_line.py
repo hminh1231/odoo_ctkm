@@ -26,7 +26,7 @@ class CtkmTaskTemTagReplaceLine(models.Model):
     _name = 'ctkm.task.tem.tag.replace.line'
     _description = 'Chi tiết tem/tag của công việc'
     _rec_name = 'material_code'
-    _order = 'material_code, store, id'
+    _order = 'store, material_code, id'
 
     task_id = fields.Many2one(
         'ctkm.task',
