@@ -189,6 +189,31 @@
                                 </field>
                             </group>
                         </page>
+                        <page string="Thiết kế mẫu tem/tag" name="task_tem_design"
+                            invisible="not is_tem_design_task">
+                            <group string="Thiết kế mẫu tem/tag, Bảng nhận diện">
+                                <div colspan="2" class="text-muted mb-2">
+                                    Mỗi dòng là một <b>Mã vật tư</b> lấy từ bảng
+                                    <b>Chi tiết tem/tag</b> của chương trình. Tải lên
+                                    file mẫu thiết kế (PDF / ảnh) cho từng mã vật tư.
+                                </div>
+                                <div colspan="2" class="mb-2">
+                                    <button name="action_refresh_tem_design_lines" type="object"
+                                        string="Làm mới danh sách" class="btn-secondary btn-sm"
+                                        icon="fa-refresh"/>
+                                </div>
+                                <field name="tem_design_ids" nolabel="1" colspan="2"
+                                    widget="one2many" class="o_ctkm_tem_design_list">
+                                    <list editable="bottom" create="0" delete="0"
+                                        default_order="material_code">
+                                        <field name="material_code" readonly="1"/>
+                                        <field name="filename" column_invisible="1"/>
+                                        <field name="file" filename="filename" widget="binary"
+                                            options="{'accepted_file_extensions': '.pdf,.png,.jpg,.jpeg,.gif,.webp'}"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
                         <page string="Ghi chú &amp; Tài liệu" name="task_notes">
                             <group>
                                 <group string="Nhãn chương trình">
@@ -500,6 +525,8 @@
                 <filter string="Hoàn thành" name="state_done"
                     domain="[('state', '=', 'done')]"/>
                 <group>
+                    <filter string="Tên CTKM" name="group_program_id"
+                        context="{'group_by': 'program_id'}"/>
                     <filter string="Trạng thái" name="group_state"
                         context="{'group_by': 'state'}"/>
                     <filter string="Ngày bắt đầu" name="group_process_date"
@@ -524,7 +551,8 @@
             '&amp;',
                 ('state', '=', 'waiting_confirm'),
                 ('user_ids.employee_ids.parent_id.user_id', 'in', [uid])]</field>
-        <field name="context">{'search_default_is_current_stage_task': 1}</field>
+        <field name="context">{'search_default_is_current_stage_task': 1,
+            'search_default_group_program_id': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Chưa có công việc nào.

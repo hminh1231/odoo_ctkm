@@ -32,12 +32,15 @@ TEM_BB_REPLACE_TASK_MARKERS = ('lapbbthaytem',)
 TEM_HANDOVER_TASK_MARKERS = ('bangiaotemtag', 'thuhoitentagcu')
 # Bước 11 "Nhận tem tag mới".
 TEM_RECEIVE_TASK_MARKERS = ('nhantemtagmoi', 'nhantemtag')
+# Bước 7 "Thiết kế mẫu tem/tag, Bảng nhận diện".
+TEM_DESIGN_TASK_MARKERS = ('thietkemautemtag', 'bangnhandien', 'thietkemau')
 # Ưu tiên nhận diện theo giai đoạn mặc định (bền hơn khi bước bị đổi tên).
 TEM_TAG_IMPORT_STAGE_XMLID = 'ctkm_core.ctkm_stage_4'
 TEM_BB_REPLACE_STAGE_XMLID = 'ctkm_core.ctkm_stage_6'
 TEM_PRINT_STAGE_XMLID = 'ctkm_core.ctkm_stage_9'
 TEM_HANDOVER_STAGE_XMLID = 'ctkm_core.ctkm_stage_10'
 TEM_RECEIVE_STAGE_XMLID = 'ctkm_core.ctkm_stage_11'
+TEM_DESIGN_STAGE_XMLID = 'ctkm_core.ctkm_stage_7'
 TEM_REPLACE_STAGE_XMLID = 'ctkm_core.ctkm_stage_12'
 TEM_PHOTO_STAGE_XMLID = 'ctkm_core.ctkm_stage_13'
 # Các trường kho Tem/Tag được gom vào bảng "Chi tiết tem/tag".
@@ -161,6 +164,12 @@ class CtkmTask(models.Model):
         store=True,
         help='Công việc thuộc bước "Nhận tem tag mới".',
     )
+    is_tem_design_task = fields.Boolean(
+        string='Bước thiết kế mẫu tem/tag',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc thuộc bước "Thiết kế mẫu tem/tag, Bảng nhận diện".',
+    )
     show_work_processing_tab = fields.Boolean(
         string='Hiện tab Xử lý công việc',
         compute='_compute_show_work_processing_tab',
@@ -241,6 +250,14 @@ class CtkmTask(models.Model):
         string='Chi tiết tem/tag',
         help='Tem/Tag của CTKM này: bước 4 / 10 xem toàn bộ cửa hàng, '
              'bước 11 / 12 chỉ cửa hàng của người nhận việc.',
+    )
+    tem_design_ids = fields.One2many(
+        'ctkm.task.tem.design.line',
+        'task_id',
+        string='Thiết kế mẫu tem/tag',
+        copy=False,
+        help='Mỗi mã vật tư từ "Chi tiết tem/tag" của chương trình kèm file '
+             'mẫu thiết kế (PDF / ảnh).',
     )
     support_employee_ids = fields.Many2many(
         'hr.employee',
@@ -576,6 +593,7 @@ class CtkmTask(models.Model):
                 ('receive', TEM_RECEIVE_STAGE_XMLID),
                 ('replace', TEM_REPLACE_STAGE_XMLID),
                 ('photo', TEM_PHOTO_STAGE_XMLID),
+                ('design', TEM_DESIGN_STAGE_XMLID),
             )
         }
         for task in self:
@@ -618,6 +636,10 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['receive'])
                 or any(marker in key for key in keys for marker in TEM_RECEIVE_TASK_MARKERS)
             )
+            is_design = (
+                (stage_id and stage_id == stage_ids['design'])
+                or any(marker in key for key in keys for marker in TEM_DESIGN_TASK_MARKERS)
+            )
             # Bước 6 "Lập BB thay tem": nhận diện riêng (không trùng bước 4 / 12 / 15).
             is_bb_replace = (
                 (stage_id and stage_id == stage_ids['bb_replace'])
@@ -630,6 +652,16 @@ class CtkmTask(models.Model):
             task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
             task.is_tem_handover_task = bool(is_handover)
             task.is_tem_receive_task = bool(is_receive and not is_handover)
+            task.is_tem_design_task = bool(
+                is_design
+                and not is_import
+                and not is_bb_replace
+                and not is_print
+                and not is_handover
+                and not is_receive
+                and not is_replace
+                and not is_photo
+            )
 
     @api.model
     def _ctkm_step_stage_id(self, xmlid):
@@ -775,6 +807,70 @@ class CtkmTask(models.Model):
             obsolete |= Line.browse([line.id for line in existing.values()])
             if obsolete:
                 obsolete.unlink()
+
+    def _ctkm_tem_design_line_values(self):
+        """Lấy các Mã vật tư phân biệt từ bảng 'Chi tiết tem/tag' của chương trình.
+
+        Nguồn là ``ctkm.task.tem.tag.replace.line`` của mọi công việc thuộc cùng
+        chương trình (chủ yếu từ bước 'Đổ BB thay tem/tag' / 'Lập BB thay tem').
+        Trả về danh sách ``{'material_code': <mã>}`` đã sắp xếp, mỗi mã một dòng.
+        """
+        self.ensure_one()
+        if not self.program_id:
+            return []
+        if 'ctkm.task.tem.tag.replace.line' not in self.env:
+            return []
+        program_tasks = self.sudo().search([('program_id', '=', self.program_id.id)])
+        replace_lines = self.env['ctkm.task.tem.tag.replace.line'].sudo().search(
+            [('task_id', 'in', program_tasks.ids)]
+        )
+        codes = sorted({line.material_code for line in replace_lines if line.material_code})
+        return [{'material_code': code} for code in codes]
+
+    def _ctkm_sync_tem_design_lines(self):
+        """Dựng lại bảng 'Thiết kế mẫu tem/tag' từ Mã vật tư của chương trình.
+
+        Mỗi Mã vật tư phân biệt từ bảng 'Chi tiết tem/tag' ứng với một dòng.
+        Dòng đã có (có thể đã tải file) được giữ lại; dòng không còn trong nguồn
+        (và chưa tải file) bị xóa.
+        """
+        Line = self.env['ctkm.task.tem.design.line'].sudo().with_context(
+            ctkm_tem_design_sync=True,
+        )
+        for task in self:
+            if not task.is_tem_design_task:
+                continue
+            values = task._ctkm_tem_design_line_values()
+            value_codes = {vals['material_code'] for vals in values}
+            existing = {line.material_code: line for line in task.sudo().tem_design_ids}
+            to_create = [
+                dict(vals, task_id=task.id)
+                for vals in values
+                if vals['material_code'] not in existing
+            ]
+            if to_create:
+                Line.create(to_create)
+            # Xóa các dòng không còn trong nguồn và chưa tải file (tránh mất file đã up).
+            obsolete = Line.browse()
+            for code, line in existing.items():
+                if code not in value_codes and not line.file:
+                    obsolete |= line
+            if obsolete:
+                obsolete.unlink()
+
+    def action_refresh_tem_design_lines(self):
+        """Nút 'Làm mới' bảng Thiết kế mẫu tem/tag trên form bước 7."""
+        task = self[:1]
+        if not task.is_tem_design_task:
+            return self._ctkm_notify_reload(
+                _('Không áp dụng'),
+                _('Chỉ bước "Thiết kế mẫu tem/tag, Bảng nhận diện" mới có bảng này.'),
+            )
+        self.sudo()._ctkm_sync_tem_design_lines()
+        return self._ctkm_notify_reload(
+            _('Đã làm mới'),
+            _('Đã cập nhật danh sách Mã vật tư từ bảng "Chi tiết tem/tag" của chương trình.'),
+        )
 
     def _ctkm_print_store_line_values(self):
         """Gom file tổng Tem/Tag theo cửa hàng: cộng SL tem/tag cho bước In tem, Tag.
@@ -1197,6 +1293,13 @@ class CtkmTask(models.Model):
                 handover.sudo().with_context(
                     ctkm_skip_step10_autosync=True,
                 )._ctkm_sync_step10_lines()
+        # Mở form bước 7: dựng bảng thiết kế mẫu tem/tag từ "Chi tiết tem/tag".
+        if self.ids and not self.env.context.get('ctkm_skip_tem_design_sync'):
+            design_tasks = self.filtered('is_tem_design_task')
+            if design_tasks:
+                design_tasks.sudo().with_context(
+                    ctkm_skip_tem_design_sync=True,
+                )._ctkm_sync_tem_design_lines()
         if self.ids and not self.env.context.get('ctkm_skip_time_line_ensure'):
             self.sudo().with_context(
                 ctkm_skip_time_line_ensure=True,

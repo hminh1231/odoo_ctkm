@@ -9,6 +9,7 @@ from . import ctkm_stage
 from . import ctkm_task
 from . import ctkm_task_tem_tag_replace_line
 from . import ctkm_task_tem_tag_recover_line
+from . import ctkm_task_tem_design_line
 from . import ctkm_task_tem_print_line
 from . import ctkm_task_tem_step10_line
 from . import ctkm_task_time_line
