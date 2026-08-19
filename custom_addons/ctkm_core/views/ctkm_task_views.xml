@@ -210,6 +210,10 @@
                                         <field name="filename" column_invisible="1"/>
                                         <field name="file" filename="filename" widget="binary"
                                             options="{'accepted_file_extensions': '.pdf,.png,.jpg,.jpeg,.gif,.webp'}"/>
+                                        <button name="action_preview_file" type="object"
+                                            string="Xem" icon="fa-eye" class="btn-link"
+                                            title="Xem trước file (PDF / ảnh)"
+                                            invisible="not file"/>
                                     </list>
                                 </field>
                             </group>
