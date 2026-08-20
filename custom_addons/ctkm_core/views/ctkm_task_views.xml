@@ -339,92 +339,90 @@
                                 </field>
                             </group>
                             <group invisible="not is_tem_print_task">
-                                <div colspan="2" class="text-muted mb-2">
-                                    Danh sách cửa hàng cần in tem/tag theo file tổng, đã cộng dồn số lượng theo cửa hàng (không tách từng mã tem).
-                                    Tick <b>Kết quả</b> để chuyển cửa hàng xuống bảng đã hoàn thành.
-                                </div>
-                                <field name="print_store_search" placeholder="Tìm cửa hàng..."
-                                    nolabel="1" colspan="2"/>
-                                <div colspan="2" class="mb-2">
-                                    <button name="action_add_print_store_line" type="object"
-                                        string="Tạo dòng" class="btn-primary btn-sm"
-                                        icon="fa-plus"/>
-                                    <button name="action_refresh_tem_tag_lines" type="object"
-                                        string="Làm mới danh sách" class="btn-secondary btn-sm ms-2"
-                                        icon="fa-refresh"/>
-                                </div>
-                                <separator string="Thông tin cửa hàng và số lượng tem/tag cần in"
-                                    colspan="2"/>
-                                <field name="print_store_pending_ids" nolabel="1" colspan="2"
-                                    widget="one2many"
+                            <div colspan="2" class="text-muted mb-2">
+                                Danh sách cửa hàng cần in tem/tag lấy từ bước <b>Đổ BB thay tem/tag (file tổng)</b>,
+                                đã cộng dồn số lượng theo cửa hàng (không tách từng mã tem).
+                                Tick <b>Đã in</b> để chuyển cửa hàng xuống bảng đã hoàn thành.
+                            </div>
+                            <field name="print_store_search" placeholder="Tìm cửa hàng..."
+                                nolabel="1" colspan="2"/>
+                            <div colspan="2" class="mb-2">
+                                <button name="action_refresh_tem_tag_lines" type="object"
+                                    string="Làm mới danh sách" class="btn-secondary btn-sm"
+                                    icon="fa-refresh"/>
+                            </div>
+                            <separator string="Thông tin cửa hàng và số lượng tem/tag cần in"
+                                colspan="2"/>
+                            <field name="print_store_pending_ids" nolabel="1" colspan="2"
+                                widget="one2many"
+                                class="o_ctkm_print_store_list"
+                                context="{'default_done': False}"
+                                domain="[('done', '=', False), ('store', 'ilike', print_store_search or '%')]">
+                                <list editable="bottom" create="0" delete="0"
                                     class="o_ctkm_print_store_list"
-                                    context="{'default_done': False}"
-                                    domain="[('done', '=', False), ('store', 'ilike', print_store_search or '%')]">
-                                    <list editable="bottom" create="1" delete="1"
-                                        class="o_ctkm_print_store_list"
-                                        default_order="sequence, store">
-                                        <field name="sequence" readonly="1" width="50px"/>
-                                        <field name="store_id"
-                                            options="{'no_create': True, 'no_open': True}"
-                                            placeholder="Tìm cửa hàng..."/>
-                                        <field name="store_code" readonly="1" width="110px"/>
-                                        <field name="store" column_invisible="1"/>
-                                        <field name="store_key" column_invisible="1"/>
-                                        <field name="is_manual" column_invisible="1"/>
-                                        <field name="tem_quantity" width="90px" sum="Tổng SL tem"/>
-                                        <field name="tag_quantity" width="90px" sum="Tổng SL tag"/>
-                                        <field name="done" column_invisible="1"/>
-                                        <button name="action_toggle_print_done" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-square-o"
-                                            invisible="done"
-                                            title="Tick khi đã in xong"
-                                            string="Kết quả"/>
-                                        <button name="action_toggle_print_done" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-check-square-o"
-                                            invisible="not done"
-                                            title="Bỏ tick để đưa lại bảng cần in"
-                                            string="Kết quả"/>
-                                    </list>
-                                </field>
-                                <separator string="Cửa hàng đã hoàn thành in tem/tag"
-                                    colspan="2"/>
-                                <field name="print_store_done_ids" nolabel="1" colspan="2"
-                                    widget="one2many"
+                                    default_order="sequence, store">
+                                    <field name="sequence" readonly="1" width="50px"/>
+                                    <field name="store_id"
+                                        string="Cửa hàng"
+                                        options="{'no_create': True, 'no_open': True}"
+                                        readonly="1"/>
+                                    <field name="store" column_invisible="1"/>
+                                    <field name="store_key" column_invisible="1"/>
+                                    <field name="is_manual" column_invisible="1"/>
+                                    <field name="tem_quantity" readonly="1" width="90px" sum="Tổng SL tem"/>
+                                    <field name="tag_quantity" readonly="1" width="90px" sum="Tổng SL tag"/>
+                                    <field name="done" column_invisible="1"/>
+                                    <button name="action_toggle_print_done" type="object"
+                                        class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                        icon="fa-square-o"
+                                        invisible="done"
+                                        title="Tick khi đã in xong"
+                                        string="Đã in"/>
+                                    <button name="action_toggle_print_done" type="object"
+                                        class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                        icon="fa-check-square-o"
+                                        invisible="not done"
+                                        title="Bỏ tick để đưa lại bảng cần in"
+                                        string="Đã in"/>
+                                </list>
+                            </field>
+                            <separator string="Cửa hàng đã hoàn thành in tem/tag"
+                                colspan="2"/>
+                            <field name="print_store_done_ids" nolabel="1" colspan="2"
+                                widget="one2many"
+                                class="o_ctkm_print_store_list"
+                                context="{'default_done': True}"
+                                domain="[('done', '=', True), ('store', 'ilike', print_store_search or '%')]">
+                                <list editable="bottom" create="0" delete="0"
                                     class="o_ctkm_print_store_list"
-                                    context="{'default_done': True}"
-                                    domain="[('done', '=', True), ('store', 'ilike', print_store_search or '%')]">
-                                    <list editable="bottom" create="0" delete="1"
-                                        class="o_ctkm_print_store_list"
-                                        default_order="sequence, store">
-                                        <field name="sequence" readonly="1" width="50px"/>
-                                        <field name="store_id"
-                                            options="{'no_create': True, 'no_open': True}"
-                                            placeholder="Tìm cửa hàng..."/>
-                                        <field name="store_code" readonly="1" width="110px"/>
-                                        <field name="store" column_invisible="1"/>
-                                        <field name="store_key" column_invisible="1"/>
-                                        <field name="is_manual" column_invisible="1"/>
-                                        <field name="tem_quantity" width="90px" sum="Tổng SL tem"/>
-                                        <field name="tag_quantity" width="90px" sum="Tổng SL tag"/>
-                                        <field name="done" column_invisible="1"/>
-                                        <button name="action_toggle_print_done" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-square-o"
-                                            invisible="done"
-                                            title="Tick khi đã in xong"
-                                            string="Kết quả"/>
-                                        <button name="action_toggle_print_done" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-check-square-o"
-                                            invisible="not done"
-                                            title="Bỏ tick để đưa lại bảng cần in"
-                                            string="Kết quả"/>
-                                        <field name="done_date" readonly="1" width="120px"
-                                            optional="show"/>
-                                    </list>
-                                </field>
+                                    default_order="sequence, store">
+                                    <field name="sequence" readonly="1" width="50px"/>
+                                    <field name="store_id"
+                                        string="Cửa hàng"
+                                        options="{'no_create': True, 'no_open': True}"
+                                        readonly="1"/>
+                                    <field name="store" column_invisible="1"/>
+                                    <field name="store_key" column_invisible="1"/>
+                                    <field name="is_manual" column_invisible="1"/>
+                                    <field name="tem_quantity" readonly="1" width="90px" sum="Tổng SL tem"/>
+                                    <field name="tag_quantity" readonly="1" width="90px" sum="Tổng SL tag"/>
+                                    <field name="done" column_invisible="1"/>
+                                    <button name="action_toggle_print_done" type="object"
+                                        class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                        icon="fa-square-o"
+                                        invisible="done"
+                                        title="Tick khi đã in xong"
+                                        string="Đã in"/>
+                                    <button name="action_toggle_print_done" type="object"
+                                        class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                        icon="fa-check-square-o"
+                                        invisible="not done"
+                                        title="Bỏ tick để đưa lại bảng cần in"
+                                        string="Đã in"/>
+                                    <field name="done_date" readonly="1" width="120px"
+                                        optional="show"/>
+                                </list>
+                            </field>
                             </group>
                             <group string="Chi tiết tem/tag"
                                 invisible="not is_tem_receive_task">

@@ -151,12 +151,12 @@ class CtkmTaskTemPrintLine(models.Model):
     tem_quantity = fields.Float(string='SL tem')
     tag_quantity = fields.Float(string='SL tag')
     done = fields.Boolean(
-        string='Kết quả',
+        string='Đã in',
         help='Tick khi cửa hàng này đã in tem/tag xong.',
     )
     done_date = fields.Date(
         string='Ngày hoàn thành',
-        help='Tự điền ngày khi tick Kết quả. Bỏ tick thì xóa; tick lại lấy ngày mới.',
+        help='Tự điền ngày khi tick Đã in. Bỏ tick thì xóa; tick lại lấy ngày mới.',
     )
     is_manual = fields.Boolean(
         string='Thêm tay',
@@ -296,7 +296,7 @@ class CtkmTaskTemPrintLine(models.Model):
         return res
 
     def action_toggle_print_done(self):
-        """Tick Kết quả: chuyển bảng và ghi/xóa ngày hoàn thành theo lần tick."""
+        """Tick Đã in: chuyển bảng và ghi/xóa ngày hoàn thành theo lần tick."""
         self._check_can_edit_print_lines()
         today = fields.Date.context_today(self)
         for line in self:
