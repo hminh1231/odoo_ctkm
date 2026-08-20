@@ -52,6 +52,11 @@ class CtkmTaskTemStep10Line(models.Model):
         index=True,
         help='Dòng bước 9 tương ứng; SL bàn giao lấy từ đây.',
     )
+    material_code = fields.Char(
+        string='Mã sản phẩm',
+        index=True,
+        help='Mã vật tư thu hồi (bước Thu tem/tag).',
+    )
     tem_quantity = fields.Float(string='SL tem')
     tag_quantity = fields.Float(string='SL tag')
     handover_tem_quantity = fields.Float(
@@ -64,12 +69,12 @@ class CtkmTaskTemStep10Line(models.Model):
         compute='_compute_handover_qty',
         help='Luôn lấy SL tag từ bước In tem, Tag.',
     )
-    done = fields.Boolean(string='Kết quả')
+    done = fields.Boolean(string='Đã in')
     is_manual = fields.Boolean(string='Thêm tay', default=False)
 
     _task_type_store_uniq = models.Constraint(
-        'UNIQUE(task_id, line_type, store_key)',
-        'Mỗi cửa hàng chỉ có một dòng trên mỗi bảng bước 10.',
+        'UNIQUE(task_id, line_type, store_key, material_code)',
+        'Mỗi cửa hàng chỉ có một dòng trên mỗi bảng bước 10 (theo Mã sản phẩm).',
     )
 
     @api.depends('store_id.code', 'store_key')
@@ -151,6 +156,14 @@ class CtkmTaskTemStep10Line(models.Model):
         if not self.env.context.get('ctkm_tem_tag_line_sync'):
             self._check_can_edit_step10_lines()
         return super().unlink()
+
+    def action_toggle_step10_done(self):
+        """Tick Đã in: đánh dấu cửa hàng đã bàn giao / thu xong."""
+        self._check_can_edit_step10_lines()
+        for line in self:
+            done = not line.done
+            line.with_context(ctkm_tem_tag_line_sync=True).write({'done': done})
+        return False
 
     def _check_can_edit_step10_lines(self):
         is_ctkm_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')

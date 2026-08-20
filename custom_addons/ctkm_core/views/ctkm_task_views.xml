@@ -167,10 +167,8 @@
                                 </div>
                                 <field name="tem_tag_replace_ids" nolabel="1" colspan="2"
                                     readonly="not is_tem_replace_task">
-                                    <list editable="bottom" create="0" delete="0"
-                                        default_group_by="store">
-                                        <field name="store" readonly="1"
-                                            column_invisible="parent.is_tem_replace_task"/>
+                                    <list editable="bottom" create="0" delete="0">
+                                        <field name="store" readonly="1"/>
                                         <field name="material_code" readonly="1"/>
                                         <field name="date" readonly="1" optional="hide"/>
                                         <field name="is_tem"
@@ -185,6 +183,20 @@
                                             column_invisible="parent.is_tem_tag_import_task"/>
                                         <field name="ctkm_name" readonly="1"
                                             column_invisible="not parent.is_tem_bb_replace_task"/>
+                                        <field name="received"
+                                            column_invisible="not parent.is_tem_replace_task"/>
+                                        <button name="action_toggle_received" type="object"
+                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                            icon="fa-square-o"
+                                            invisible="received"
+                                            title="Tick khi đã nhận tem/tag mới"
+                                            string="Đã nhận"/>
+                                        <button name="action_toggle_received" type="object"
+                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                            icon="fa-check-square-o"
+                                            invisible="not received"
+                                            title="Bỏ tick"
+                                            string="Đã nhận"/>
                                     </list>
                                 </field>
                             </group>
@@ -267,7 +279,7 @@
                             invisible="not show_work_processing_tab">
                             <group string="Bàn giao tem/tag" invisible="not is_tem_handover_task">
                                 <div colspan="2" class="text-muted mb-2">
-                                    Tên cửa hàng và số lượng tem/tag lấy từ bước <b>In tem, Tag</b>.
+                                    Cửa hàng và số lượng tem/tag lấy từ bước <b>In tem, Tag</b>.
                                 </div>
                                 <field name="handover_store_search" placeholder="Tìm cửa hàng..."
                                     nolabel="1" colspan="2"/>
@@ -286,24 +298,38 @@
                                         default_order="sequence, store">
                                         <field name="line_type" column_invisible="1"/>
                                         <field name="sequence" readonly="1" width="50px"/>
-                                        <field name="store_id" readonly="1"
-                                            options="{'no_create': True, 'no_open': True}"/>
-                                        <field name="store_code" readonly="1" width="110px"/>
-                                        <field name="store" column_invisible="1"/>
+                                        <field name="store"
+                                            string="Cửa hàng"
+                                            readonly="1"/>
+                                        <field name="store_id" column_invisible="1"/>
+                                        <field name="store_code" column_invisible="1"/>
                                         <field name="store_key" column_invisible="1"/>
                                         <field name="is_manual" column_invisible="1"/>
                                         <field name="tem_quantity" readonly="1" width="90px"
                                             sum="Tổng SL tem"/>
                                         <field name="tag_quantity" readonly="1" width="90px"
                                             sum="Tổng SL tag"/>
-                                        <field name="done" width="80px"/>
+                                        <field name="done" column_invisible="1"/>
+                                        <button name="action_toggle_step10_done" type="object"
+                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                            icon="fa-square-o"
+                                            invisible="done"
+                                            title="Tick khi đã bàn giao xong"
+                                            string="Đã giao"/>
+                                        <button name="action_toggle_step10_done" type="object"
+                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                            icon="fa-check-square-o"
+                                            invisible="not done"
+                                            title="Bỏ tick để đưa lại chưa hoàn thành"
+                                            string="Đã giao"/>
                                     </list>
                                 </field>
                             </group>
                             <group string="Thu tem/tag" invisible="not is_tem_handover_task">
                                 <div colspan="2" class="text-muted mb-2">
-                                    Mã cửa hàng lấy từ bước <b>In tem, Tag</b>.
-                                    Điền <b>SL tem</b> / <b>SL tag</b> thu về.
+                                    Bảng thu hồi Tem/Tag do người dùng tự nhập: chọn <b>Cửa hàng</b>,
+                                    nhập <b>Mã sản phẩm</b>, điền <b>SL tem</b> / <b>SL tag</b> thu về,
+                                    tick <b>Đã thu</b> khi xong.
                                 </div>
                                 <field name="collect_store_search" placeholder="Tìm cửa hàng..."
                                     nolabel="1" colspan="2"/>
@@ -311,6 +337,9 @@
                                     <button name="action_add_collect_store_line" type="object"
                                         string="Tạo dòng" class="btn-primary btn-sm"
                                         icon="fa-plus"/>
+                                    <button name="action_export_thu_tem_file" type="object"
+                                        string="Xuất biên bản thu tem" class="btn-secondary btn-sm ms-2"
+                                        icon="fa-file-excel-o"/>
                                     <button name="action_refresh_tem_tag_lines" type="object"
                                         string="Làm mới danh sách" class="btn-secondary btn-sm ms-2"
                                         icon="fa-refresh"/>
@@ -326,15 +355,30 @@
                                         <field name="line_type" column_invisible="1"/>
                                         <field name="sequence" readonly="1" width="50px"/>
                                         <field name="store_id"
+                                            string="Cửa hàng"
                                             options="{'no_create': True, 'no_open': True}"
                                             placeholder="Tìm cửa hàng..."/>
-                                        <field name="store_code" readonly="1" width="110px"/>
+                                        <field name="material_code" string="Mã sản phẩm"
+                                            width="140px"/>
+                                        <field name="store_code" column_invisible="1"/>
                                         <field name="store" column_invisible="1"/>
                                         <field name="store_key" column_invisible="1"/>
                                         <field name="is_manual" column_invisible="1"/>
                                         <field name="tem_quantity" width="90px" sum="Tổng SL tem"/>
                                         <field name="tag_quantity" width="90px" sum="Tổng SL tag"/>
-                                        <field name="done" width="80px"/>
+                                        <field name="done" column_invisible="1"/>
+                                        <button name="action_toggle_step10_done" type="object"
+                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                            icon="fa-square-o"
+                                            invisible="done"
+                                            title="Tick khi đã thu xong"
+                                            string="Đã thu"/>
+                                        <button name="action_toggle_step10_done" type="object"
+                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                            icon="fa-check-square-o"
+                                            invisible="not done"
+                                            title="Bỏ tick để đưa lại chưa thu"
+                                            string="Đã thu"/>
                                     </list>
                                 </field>
                             </group>
@@ -433,17 +477,23 @@
                                         string="Làm mới danh sách" class="btn-secondary btn-sm"
                                         icon="fa-refresh"/>
                                 </div>
-                                <field name="tem_tag_replace_ids" nolabel="1" colspan="2"
-                                    readonly="1">
-                                    <list create="0" delete="0" default_group_by="store">
+                                <field name="tem_tag_replace_ids" nolabel="1" colspan="2">
+                                    <list editable="bottom" create="0" delete="0">
                                         <field name="store" readonly="1"/>
                                         <field name="material_code" readonly="1"/>
-                                        <field name="date" readonly="1" optional="hide"/>
-                                        <field name="total_quantity" readonly="1" sum="Tổng SL"/>
-                                        <field name="replaced_quantity" readonly="1"
-                                            sum="Tổng SL đã thay"/>
-                                        <field name="remaining_quantity" readonly="1"
-                                            sum="Tổng SL chưa thay"/>
+                                        <field name="received" column_invisible="1"/>
+                                        <button name="action_toggle_received" type="object"
+                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                            icon="fa-square-o"
+                                            invisible="received"
+                                            title="Tick khi đã nhận tem/tag mới"
+                                            string="Đã nhận"/>
+                                        <button name="action_toggle_received" type="object"
+                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
+                                            icon="fa-check-square-o"
+                                            invisible="not received"
+                                            title="Bỏ tick"
+                                            string="Đã nhận"/>
                                     </list>
                                 </field>
                             </group>

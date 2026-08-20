@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import base64
+import io
 import logging
 import re
 import unicodedata
@@ -10,6 +12,13 @@ from psycopg2 import IntegrityError
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import html2plaintext
+
+try:
+    from openpyxl import load_workbook
+    from openpyxl.styles import Alignment, Border, Font, Side
+    from openpyxl.utils import get_column_letter
+except ImportError:
+    load_workbook = None
 
 _logger = logging.getLogger(__name__)
 
@@ -1080,7 +1089,6 @@ class CtkmTask(models.Model):
             print_task = task._ctkm_source_print_task()
             sources = print_task.sudo().print_store_ids
             task._ctkm_sync_step10_type(Line, 'handover', sources, copy_qty=True)
-            task._ctkm_sync_step10_type(Line, 'collect', sources, copy_qty=False)
 
     def _ctkm_sync_step10_type(self, Line, line_type, sources, copy_qty):
         self.ensure_one()
@@ -1209,6 +1217,125 @@ class CtkmTask(models.Model):
             _('Đã tạo dòng'),
             _('Chọn cửa hàng trên dòng mới (Cấu hình nhân viên → Cửa hàng).'),
         )
+
+    def action_export_thu_tem_file(self):
+        """Xuất biên bản thu tem/tag (bảng Thu tem/tag) theo mẫu thutem.xlsx."""
+        self.ensure_one()
+        if not self.is_tem_handover_task:
+            raise UserError(_(
+                'Chỉ công việc bước "Bàn giao Tem Tag / Thu hồi tem tag cũ" '
+                'mới được xuất biên bản thu tem.'
+            ))
+        if load_workbook is None:
+            raise UserError(_('Thiếu thư viện openpyxl để xuất file Excel.'))
+        template_path = self._ctkm_thu_tem_template_path()
+        if not template_path:
+            raise UserError(_(
+                'Không tìm thấy tệp mẫu biên bản thu tem (thutem_template.xlsx).'
+            ))
+        data = self._build_thu_tem_xlsx(template_path)
+        date_str = fields.Date.context_today(self).strftime('%d_%m_%Y')
+        filename = 'Bien_ban_thu_tem_%s_%s.xlsx' % (
+            self.program_id.notify_code or self.program_id.id or 'CTKM',
+            date_str,
+        )
+        attachment = self.env['ir.attachment'].sudo().create({
+            'name': filename,
+            'datas': base64.b64encode(data),
+            'res_model': 'ctkm.task',
+            'res_id': self.id,
+            'type': 'binary',
+            'public': True,
+        })
+        return {
+            'type': 'ir.actions.act_url',
+            'url': '/web/content/%s?download=true' % attachment.id,
+            'target': 'self',
+        }
+
+    def _ctkm_thu_tem_template_path(self):
+        from odoo.modules.module import get_module_resource
+        return get_module_resource('ctkm_core', 'data', 'thutem_template.xlsx')
+
+    def _build_thu_tem_xlsx(self, template_path):
+        """Xuất bảng Thu tem/tag ra sheet TH: Mã sản phẩm (dòng) × Cửa hàng (cột).
+
+        Mỗi ô = SL tem + SL tag thu hồi của Mã sản phẩm đó tại cửa hàng đó.
+        Dựa trên bố cục biên bản (vật tư làm dòng, cửa hàng làm cột) của mẫu TH.
+        """
+        self.ensure_one()
+        wb = load_workbook(template_path)
+        ws = wb['TH'] if 'TH' in wb.sheetnames else wb.active
+
+        thin = Side(style='thin', color='FF000000')
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        bold = Font(bold=True, size=11)
+        title_font = Font(bold=True, size=14)
+        center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+        today = fields.Date.context_today(self)
+        date_vn = 'Ngày %s Tháng %s Năm %s' % (today.day, today.month, today.year)
+
+        collect = self.collect_store_ids.sudo()
+        materials = sorted({line.material_code for line in collect if line.material_code})
+        stores = sorted(
+            {(line.store_key or '', line.store or line.store_code or '') for line in collect},
+            key=lambda item: item[1],
+        )
+        grid = {}
+        for line in collect:
+            key = (line.material_code or '', line.store_key or '')
+            grid[key] = (grid.get(key, 0.0)
+                         + (line.tem_quantity or 0.0) + (line.tag_quantity or 0.0))
+
+        # Xóa toàn bộ nội dung sheet TH (gồm cả vùng helper/dữ liệu mẫu).
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.value = None
+
+        last_col = 2 + len(stores) + 1  # A: STT, B: Mã sản phẩm, stores..., cuối: Tổng
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
+        c = ws.cell(row=1, column=1, value='BIÊN BẢN THU TEM/TAG')
+        c.font = title_font
+        c.alignment = center
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
+        d = ws.cell(row=2, column=1, value=date_vn)
+        d.font = bold
+        d.alignment = center
+
+        header_row = 3
+        headers = ['STT', 'Mã sản phẩm'] + [name for _, name in stores] + ['Tổng']
+        for col_idx, h in enumerate(headers, start=1):
+            cell = ws.cell(row=header_row, column=col_idx, value=h)
+            cell.font = bold
+            cell.border = border
+            cell.alignment = center
+
+        r = header_row + 1
+        for idx, mat in enumerate(materials, start=1):
+            ws.cell(row=r, column=1, value=idx).border = border
+            ws.cell(row=r, column=2, value=mat).border = border
+            row_total = 0.0
+            for j, (skey, _name) in enumerate(stores):
+                val = grid.get((mat, skey), 0.0)
+                cell = ws.cell(row=r, column=3 + j, value=val)
+                cell.border = border
+                cell.alignment = center
+                row_total += val
+            total_cell = ws.cell(row=r, column=last_col, value=row_total)
+            total_cell.border = border
+            total_cell.alignment = center
+            r += 1
+
+        ws.column_dimensions['A'].width = 6
+        ws.column_dimensions['B'].width = 18
+        for j in range(len(stores)):
+            ws.column_dimensions[get_column_letter(3 + j)].width = 14
+        ws.column_dimensions[get_column_letter(last_col)].width = 10
+
+        stream = io.BytesIO()
+        wb.save(stream)
+        return stream.getvalue()
 
     @api.model
     def _ctkm_sync_tem_tag_lines_for_programs(self, program_ids):

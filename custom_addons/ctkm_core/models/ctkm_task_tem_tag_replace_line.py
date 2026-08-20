@@ -62,6 +62,10 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         readonly=True,
         help='Mã vật tư lấy từ sheet TAG của file tổng.',
     )
+    received = fields.Boolean(
+        string='Đã nhận',
+        help='Đã nhận tem/tag mới tại cửa hàng này (bước Nhận tem tag mới).',
+    )
 
     @api.depends('total_quantity', 'replaced_quantity')
     def _compute_remaining_quantity(self):
@@ -95,6 +99,30 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         if 'replaced_quantity' in vals and not internal:
             self._distribute_replaced_quantity()
         return res
+
+    def action_toggle_received(self):
+        """Tick Đã nhận: đánh dấu cửa hàng đã nhận tem/tag mới."""
+        self._check_can_update_received()
+        for line in self:
+            received = not line.received
+            line.with_context(ctkm_tem_tag_line_sync=True).write({'received': received})
+        return False
+
+    def _check_can_update_received(self):
+        """Chỉ người nhận việc bước 'Nhận tem tag mới' / 'Thay tem Tag' được tick."""
+        is_ctkm_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')
+        for line in self:
+            task = line.task_id
+            if not (task.is_tem_receive_task or task.is_tem_replace_task):
+                raise UserError(_(
+                    'Chỉ bước "Nhận tem tag mới" / "Thay tem Tag" '
+                    'mới được cập nhật Đã nhận.'
+                ))
+            if not is_ctkm_manager and self.env.user not in task.user_ids:
+                raise UserError(_(
+                    'Chỉ người nhận việc mới được cập nhật Đã nhận.'
+                ))
+        return True
 
     def _check_can_update_replaced(self):
         """Chỉ người nhận việc bước 'Thay tem Tag' (hoặc CTKM Administrator) được nhập."""
