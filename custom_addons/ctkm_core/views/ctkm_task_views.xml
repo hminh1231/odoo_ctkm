@@ -362,11 +362,10 @@
                                     class="o_ctkm_print_store_list"
                                     default_order="sequence, store">
                                     <field name="sequence" readonly="1" width="50px"/>
-                                    <field name="store_id"
+                                    <field name="store"
                                         string="Cửa hàng"
-                                        options="{'no_create': True, 'no_open': True}"
                                         readonly="1"/>
-                                    <field name="store" column_invisible="1"/>
+                                    <field name="store_id" column_invisible="1"/>
                                     <field name="store_key" column_invisible="1"/>
                                     <field name="is_manual" column_invisible="1"/>
                                     <field name="tem_quantity" readonly="1" width="90px" sum="Tổng SL tem"/>
@@ -397,11 +396,10 @@
                                     class="o_ctkm_print_store_list"
                                     default_order="sequence, store">
                                     <field name="sequence" readonly="1" width="50px"/>
-                                    <field name="store_id"
+                                    <field name="store"
                                         string="Cửa hàng"
-                                        options="{'no_create': True, 'no_open': True}"
                                         readonly="1"/>
-                                    <field name="store" column_invisible="1"/>
+                                    <field name="store_id" column_invisible="1"/>
                                     <field name="store_key" column_invisible="1"/>
                                     <field name="is_manual" column_invisible="1"/>
                                     <field name="tem_quantity" readonly="1" width="90px" sum="Tổng SL tem"/>

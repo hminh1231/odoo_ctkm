@@ -875,8 +875,10 @@ class CtkmTask(models.Model):
     def _ctkm_print_store_line_values(self):
         """Gom file tổng Tem/Tag theo cửa hàng: cộng SL tem/tag cho bước In tem, Tag.
 
-        Ví dụ file tổng có AETL / N21080_0_NAVY = 1 và AETL / N21080_0_YELLOW = 1
-        → một dòng cửa hàng AETL với SL tem = 2.
+        Không phụ thuộc hr.store: mỗi cửa hàng là một store_key phân biệt lấy trực
+        tiếp từ file tổng, tên hiển thị là ``store`` (tên trên file). Ví dụ file tổng
+        có AETL / N21080_0_NAVY = 1 và AETL / N21080_0_YELLOW = 1 → một dòng cửa hàng
+        AETL với SL tem = 2.
         """
         self.ensure_one()
         if 'ctkm.inventory.tem.tag' not in self.env:
@@ -885,7 +887,6 @@ class CtkmTask(models.Model):
             return []
         from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
             classify_tem_tag_kinds,
-            match_hr_store,
             normalize_store_key,
         )
         rows = self.env['ctkm.inventory.tem.tag'].sudo().search([
@@ -915,33 +916,6 @@ class CtkmTask(models.Model):
             vals for vals in by_store.values()
             if vals['tem_quantity'] or vals['tag_quantity']
         ]
-        values.sort(key=lambda vals: (vals['store'] or '', vals['store_key'] or ''))
-        stores = self.env['hr.store'].sudo().search([]) if 'hr.store' in self.env else self.env['hr.store']
-        merged = {}
-        for vals in values:
-            store_rec = match_hr_store(stores, vals['store_key'], vals['store'])
-            if store_rec:
-                vals['store_id'] = store_rec.id
-                name = store_rec.name
-                if isinstance(name, dict):
-                    name = next(iter(name.values()), '') if name else ''
-                if name:
-                    vals['store'] = name
-                if store_rec.code:
-                    vals['store_key'] = (
-                        normalize_store_key(store_rec.code) or vals['store_key']
-                    )
-            merge_key = vals['store_key']
-            existing = merged.get(merge_key)
-            if existing:
-                existing['tem_quantity'] += vals['tem_quantity']
-                existing['tag_quantity'] += vals['tag_quantity']
-                if not existing.get('store_id') and vals.get('store_id'):
-                    existing['store_id'] = vals['store_id']
-                    existing['store'] = vals['store']
-            else:
-                merged[merge_key] = vals
-        values = list(merged.values())
         values.sort(key=lambda vals: (vals['store'] or '', vals['store_key'] or ''))
         for index, vals in enumerate(values, start=1):
             vals['sequence'] = index
@@ -1130,14 +1104,29 @@ class CtkmTask(models.Model):
             else:
                 existing[key] = line
         to_create = []
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            match_hr_store,
+        )
+        stores = (
+            self.env['hr.store'].sudo().search([])
+            if 'hr.store' in self.env else self.env['hr.store']
+        )
         for source in sources.sorted(lambda line: (line.sequence, line.id)):
             key = self._ctkm_print_line_store_key(source)
             if not key:
                 continue
+            store_rec = match_hr_store(stores, source.store_key, source.store)
+            store_name = source.store or source.store_code or ''
+            if store_rec:
+                name = store_rec.name
+                if isinstance(name, dict):
+                    name = next(iter(name.values()), '') if name else ''
+                if name:
+                    store_name = name
             vals = {
                 'sequence': source.sequence or 1,
-                'store_id': source.store_id.id,
-                'store': source.store or source.store_id.name or source.store_code,
+                'store_id': store_rec.id if store_rec else False,
+                'store': store_name,
                 'store_key': key,
                 'print_line_id': source.id,
             }
