@@ -3,6 +3,7 @@
 import base64
 import io
 import logging
+import os
 import re
 import unicodedata
 
@@ -1254,8 +1255,12 @@ class CtkmTask(models.Model):
         }
 
     def _ctkm_thu_tem_template_path(self):
-        from odoo.modules.module import get_module_resource
-        return get_module_resource('ctkm_core', 'data', 'thutem_template.xlsx')
+        # get_module_resource đã bị loại bỏ ở các phiên bản Odoo mới:
+        # dựng đường dẫn trực tiếp từ thư mục module.
+        from odoo.modules.module import get_module_path
+        return os.path.join(
+            get_module_path('ctkm_core'), 'data', 'thutem_template.xlsx',
+        )
 
     def _build_thu_tem_xlsx(self, template_path):
         """Xuất bảng Thu tem/tag ra sheet TH: Mã sản phẩm (dòng) × Cửa hàng (cột).
