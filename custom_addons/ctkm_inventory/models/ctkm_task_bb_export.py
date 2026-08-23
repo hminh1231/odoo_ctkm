@@ -73,12 +73,21 @@ class CtkmTask(models.Model):
                 'Chỉ công việc bước "Lập BB thay tem" (hoặc "Thay tem Tag") mới '
                 'được xuất biên bản thay tem.'
             ))
-        if not self.store_ids:
-            raise UserError(_('Vui lòng chọn ít nhất một Cửa hàng trước khi xuất file.'))
-        self._check_bb_export_store_ids()
+        # Không chọn cửa hàng nào: xuất toàn bộ cửa hàng của nhân viên nhận việc
+        # (vừa có dữ liệu Tem/Tag bước 4, vừa thuộc "Cửa hàng quản lí").
+        if self.store_ids:
+            self._check_bb_export_store_ids()
+            stores = self.store_ids
+        else:
+            stores = self._bb_export_allowed_stores()
+            if not stores:
+                raise UserError(_(
+                    'Bạn chưa chọn Cửa hàng và không có cửa hàng nào thuộc '
+                    '"Cửa hàng quản lí" của bạn có dữ liệu Tem/Tag bước 4.'
+                ))
         if Workbook is None:
             raise UserError(_('Thiếu thư viện openpyxl để xuất file Excel.'))
-        data = self._build_bb_xlsx()
+        data = self._build_bb_xlsx(stores)
         date_str = fields.Date.context_today(self).strftime('%d_%m_%Y')
         filename = 'BB_thay_tem_%s_%s.xlsx' % (
             self.program_id.notify_code or self.program_id.id or 'CTKM',
@@ -157,7 +166,7 @@ class CtkmTask(models.Model):
         # Đảm bảo tên không được đặt trong dấu ngoặc đơn/đơn.
         return title
 
-    def _build_bb_xlsx(self):
+    def _build_bb_xlsx(self, selected_stores=None):
         """Xuất biên bản thay tem theo mẫu Bien_Ban_In_Va_Ban_Giao_Tag.xlsx.
 
         Mỗi cửa hàng được chọn xuất thành một sheet riêng. Bố cục mỗi sheet:
@@ -181,28 +190,15 @@ class CtkmTask(models.Model):
         )
         notify_code = (program.notify_code or '').strip()
 
-        # --- Các cửa hàng: lấy từ selection, hoặc toàn bộ cửa hàng có trong
-        #     kho Tem/Tag (import bước 4) khi không chọn cửa hàng nào. ---
-        selected = self.store_ids.sudo()
+        # --- Các cửa hàng: lấy từ danh sách truyền vào (đã chọn hoặc toàn bộ
+        #     cửa hàng của nhân viên khi không chọn cửa hàng nào). ---
         store_list = []  # (store_key, mã hiển thị)
         seen = set()
-        if selected:
-            for store in selected:
-                key = _normalize_store_code(store.code or store.name)
-                if key and key not in seen:
-                    seen.add(key)
-                    store_list.append((key, store.code or store.name or key))
-        else:
-            Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
-            groups = Inventory.read_group(
-                [('program_id', '=', program.id)],
-                ['store_key'], ['store_key'],
-            )
-            for row in groups:
-                key = row['store_key']
-                if key and key not in seen:
-                    seen.add(key)
-                    store_list.append((key, key))
+        for store in (selected_stores or self.store_ids).sudo():
+            key = _normalize_store_code(store.code or store.name)
+            if key and key not in seen:
+                seen.add(key)
+                store_list.append((key, store.code or store.name or key))
         if not store_list:
             raise UserError(_(
                 'Không có dữ liệu kho Tem/Tag (import bước 4) cho chương trình này.'

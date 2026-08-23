@@ -16,7 +16,7 @@
                     <field name="store_ids" widget="many2many_tags"
                         domain="[('id', 'in', bb_export_store_domain_ids)]"
                         options="{'no_create': True}"
-                        help="Chỉ chọn được các cửa hàng vừa có dữ liệu Tem/Tag import bước 4, vừa thuộc 'Cửa hàng quản lí' của nhân viên nhận việc."/>
+                        help="Chỉ chọn được các cửa hàng vừa có dữ liệu Tem/Tag import bước 4, vừa thuộc 'Cửa hàng quản lí' của nhân viên nhận việc. Bỏ trống để xuất tất cả cửa hàng của bạn."/>
                     <div colspan="2" class="mt-2">
                         <button name="action_export_bb_file" type="object"
                             string="Xuất file" class="btn-primary"
