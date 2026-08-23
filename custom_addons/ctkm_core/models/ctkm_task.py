@@ -3,7 +3,6 @@
 import base64
 import io
 import logging
-import os
 import re
 import unicodedata
 
@@ -15,11 +14,11 @@ from odoo.exceptions import UserError
 from odoo.tools import html2plaintext
 
 try:
-    from openpyxl import load_workbook
+    from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, Side
     from openpyxl.utils import get_column_letter
 except ImportError:
-    load_workbook = None
+    Workbook = None
 
 _logger = logging.getLogger(__name__)
 
@@ -1227,14 +1226,9 @@ class CtkmTask(models.Model):
                 'Chỉ công việc bước "Bàn giao Tem Tag / Thu hồi tem tag cũ" '
                 'mới được xuất biên bản thu tem.'
             ))
-        if load_workbook is None:
+        if Workbook is None:
             raise UserError(_('Thiếu thư viện openpyxl để xuất file Excel.'))
-        template_path = self._ctkm_thu_tem_template_path()
-        if not template_path:
-            raise UserError(_(
-                'Không tìm thấy tệp mẫu biên bản thu tem (thutem_template.xlsx).'
-            ))
-        data = self._build_thu_tem_xlsx(template_path)
+        data = self._build_thu_tem_xlsx()
         date_str = fields.Date.context_today(self).strftime('%d_%m_%Y')
         filename = 'Bien_ban_thu_tem_%s_%s.xlsx' % (
             self.program_id.notify_code or self.program_id.id or 'CTKM',
@@ -1254,23 +1248,17 @@ class CtkmTask(models.Model):
             'target': 'self',
         }
 
-    def _ctkm_thu_tem_template_path(self):
-        # get_module_resource đã bị loại bỏ ở các phiên bản Odoo mới:
-        # dựng đường dẫn trực tiếp từ thư mục module.
-        from odoo.modules.module import get_module_path
-        return os.path.join(
-            get_module_path('ctkm_core'), 'data', 'thutem_template.xlsx',
-        )
-
-    def _build_thu_tem_xlsx(self, template_path):
+    def _build_thu_tem_xlsx(self):
         """Xuất bảng Thu tem/tag ra sheet TH: Mã sản phẩm (dòng) × Cửa hàng (cột).
 
         Mỗi ô = SL tem + SL tag thu hồi của Mã sản phẩm đó tại cửa hàng đó.
-        Dựa trên bố cục biên bản (vật tư làm dòng, cửa hàng làm cột) của mẫu TH.
+        File chỉ gồm duy nhất sheet TH, dựng hoàn toàn bằng openpyxl
+        (không đọc file mẫu .xlsx).
         """
         self.ensure_one()
-        wb = load_workbook(template_path)
-        ws = wb['TH'] if 'TH' in wb.sheetnames else wb.active
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'TH'
 
         thin = Side(style='thin', color='FF000000')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -1292,11 +1280,6 @@ class CtkmTask(models.Model):
             key = (line.material_code or '', line.store_key or '')
             grid[key] = (grid.get(key, 0.0)
                          + (line.tem_quantity or 0.0) + (line.tag_quantity or 0.0))
-
-        # Xóa toàn bộ nội dung sheet TH (gồm cả vùng helper/dữ liệu mẫu).
-        for row in ws.iter_rows():
-            for cell in row:
-                cell.value = None
 
         last_col = 2 + len(stores) + 1  # A: STT, B: Mã sản phẩm, stores..., cuối: Tổng
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
