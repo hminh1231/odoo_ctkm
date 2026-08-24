@@ -138,7 +138,7 @@
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
                                 <group string="Kiểm tra hình ảnh tem/tag"
-                                    invisible="not is_tem_photo_task">
+                                    invisible="not is_tem_check_task">
                                     <div colspan="2" class="mb-2">
                                         <button name="action_refresh_tem_tag_lines" type="object"
                                             string="Làm mới danh sách" class="btn-secondary btn-sm"
@@ -155,7 +155,7 @@
                                         </list>
                                     </field>
                                 </group>
-                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task or show_work_processing_tab">
+                                <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_check_task or is_tem_replace_task or show_work_processing_tab">
                                     <div colspan="2" class="text-muted">
                                         Đang để trống, sẽ bổ sung sau.
                                     </div>

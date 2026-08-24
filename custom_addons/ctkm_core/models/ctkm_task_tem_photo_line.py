@@ -42,7 +42,7 @@ class CtkmTaskTemPhotoLine(models.Model):
         is_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')
         for line in self:
             task = line.task_id
-            if not task.is_tem_photo_task:
+            if not task.is_tem_check_task:
                 raise UserError(_(
                     'Chỉ bước "Kiểm tra hình ảnh tem tag" '
                     'mới được cập nhật Xác nhận thay.'

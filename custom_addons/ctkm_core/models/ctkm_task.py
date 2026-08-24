@@ -26,6 +26,8 @@ _logger = logging.getLogger(__name__)
 # thuộc vào khoảng trắng hay lỗi chính tả nhỏ khi đặt tên giai đoạn.
 TEM_TAG_IMPORT_TASK_MARKERS = ('dobbthaytemtag',)
 TEM_PHOTO_TASK_MARKERS = ('chuptemguilengroup', 'chupteamguilengroup')
+# Bước 14 "Kiểm tra hình ảnh tem tag".
+TEM_CHECK_TASK_MARKERS = ('kiemtrahinhanhtemtag',)
 # Bước 12 "Thay tem Tag" phải khớp tuyệt đối: nhiều bước khác (bước 4, 6, 15)
 # cũng chứa chuỗi "thaytemtag" trong tên nên không dùng so khớp chứa được.
 TEM_REPLACE_TASK_KEYS = ('thaytemtag',)
@@ -52,6 +54,7 @@ TEM_RECEIVE_STAGE_XMLID = 'ctkm_core.ctkm_stage_11'
 TEM_DESIGN_STAGE_XMLID = 'ctkm_core.ctkm_stage_7'
 TEM_REPLACE_STAGE_XMLID = 'ctkm_core.ctkm_stage_12'
 TEM_PHOTO_STAGE_XMLID = 'ctkm_core.ctkm_stage_13'
+TEM_CHECK_STAGE_XMLID = 'ctkm_core.ctkm_stage_14'
 # Các trường kho Tem/Tag được gom vào bảng "Chi tiết tem/tag".
 TEM_TAG_LINE_KEY_FIELDS = ('material_code', 'store')
 
@@ -142,6 +145,12 @@ class CtkmTask(models.Model):
         string='Bước chụp ảnh tem/tag',
         compute='_compute_task_step_flags',
         store=True,
+    )
+    is_tem_check_task = fields.Boolean(
+        string='Bước kiểm tra hình ảnh tem/tag',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc thuộc bước "Kiểm tra hình ảnh tem tag".',
     )
     is_tem_replace_task = fields.Boolean(
         string='Bước thay tem/tag',
@@ -610,6 +619,7 @@ class CtkmTask(models.Model):
                 ('receive', TEM_RECEIVE_STAGE_XMLID),
                 ('replace', TEM_REPLACE_STAGE_XMLID),
                 ('photo', TEM_PHOTO_STAGE_XMLID),
+                ('check', TEM_CHECK_STAGE_XMLID),
                 ('design', TEM_DESIGN_STAGE_XMLID),
             )
         }
@@ -630,6 +640,10 @@ class CtkmTask(models.Model):
             is_photo = (
                 (stage_id and stage_id == stage_ids['photo'])
                 or any(marker in key for key in keys for marker in TEM_PHOTO_TASK_MARKERS)
+            )
+            is_check = (
+                (stage_id and stage_id == stage_ids['check'])
+                or any(marker in key for key in keys for marker in TEM_CHECK_TASK_MARKERS)
             )
             # So khớp tuyệt đối để bước 4 / 6 / 15 (tên cũng chứa "thay tem tag")
             # không bị nhận nhầm thành bước 12.
@@ -664,6 +678,7 @@ class CtkmTask(models.Model):
             )
             task.is_tem_tag_import_task = bool(is_import)
             task.is_tem_photo_task = bool(is_photo)
+            task.is_tem_check_task = bool(is_check)
             task.is_tem_replace_task = bool(is_replace and not is_import and not is_bb_replace)
             task.is_tem_bb_replace_task = bool(is_bb_replace and not is_import and not is_replace)
             task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
@@ -1191,7 +1206,7 @@ class CtkmTask(models.Model):
             if obsolete:
                 obsolete.unlink()
         # Bước Kiểm tra ảnh: đồng bộ bảng từ kho Tem/Tag (file tổng).
-        self.filtered('is_tem_photo_task').sudo()._ctkm_sync_tem_photo_lines()
+        self.filtered('is_tem_check_task').sudo()._ctkm_sync_tem_photo_lines()
 
     def _ctkm_tem_photo_line_values(self):
         """Gom kho Tem/Tag (file tổng) theo (Cửa hàng, Mã vật tư) cho bước Kiểm tra ảnh.
@@ -1201,7 +1216,7 @@ class CtkmTask(models.Model):
         hiển thị đúng các Store / Mã vật tư của bước đó.
         """
         self.ensure_one()
-        if not self.is_tem_photo_task or not self.program_id:
+        if not self.is_tem_check_task or not self.program_id:
             return []
         if 'ctkm.inventory.tem.tag' not in self.env:
             return []
@@ -1229,7 +1244,7 @@ class CtkmTask(models.Model):
             ctkm_tem_photo_sync=True,
         )
         for task in self:
-            if not task.is_tem_photo_task:
+            if not task.is_tem_check_task:
                 continue
             values = task._ctkm_tem_photo_line_values()
             existing = {}
@@ -1496,10 +1511,10 @@ class CtkmTask(models.Model):
             ('is_tem_handover_task', '=', True),
             ('is_tem_receive_task', '=', True),
             ('is_tem_replace_task', '=', True),
-            ('is_tem_photo_task', '=', True),
+            ('is_tem_check_task', '=', True),
         ])
         tasks._ctkm_sync_tem_tag_lines()
-        tasks.filtered('is_tem_photo_task')._ctkm_sync_tem_photo_lines()
+        tasks.filtered('is_tem_check_task')._ctkm_sync_tem_photo_lines()
         return tasks
 
     def _ctkm_clear_program_tem_tag_inventory(self):
@@ -1564,7 +1579,7 @@ class CtkmTask(models.Model):
                 )._ctkm_sync_tem_design_lines()
         # Mở form bước Kiểm tra ảnh: đồng bộ bảng (Cửa hàng, Mã vật tư).
         if self.ids and not self.env.context.get('ctkm_skip_tem_photo_sync'):
-            photo_tasks = self.filtered('is_tem_photo_task')
+            photo_tasks = self.filtered('is_tem_check_task')
             if photo_tasks:
                 photo_tasks.sudo().with_context(
                     ctkm_skip_tem_photo_sync=True,
@@ -1958,7 +1973,7 @@ class CtkmTask(models.Model):
         # (bước 12 lọc theo cửa hàng của người nhận việc).
         if {'program_id', 'user_ids', 'name', 'checklist_line_id'} & set(vals):
             self.sudo()._ctkm_sync_tem_tag_lines()
-            self.sudo().filtered('is_tem_photo_task')._ctkm_sync_tem_photo_lines()
+            self.sudo().filtered('is_tem_check_task')._ctkm_sync_tem_photo_lines()
 
         if {'process_date', 'done_date'} & set(vals):
             self.sudo()._ctkm_touch_main_time_line(vals)
