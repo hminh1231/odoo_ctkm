@@ -1247,17 +1247,6 @@ class CtkmTask(models.Model):
             removed = Line.browse([line.id for line in existing.values()])
             if removed:
                 removed.unlink()
-        self._ctkm_renumber_step10_lines(Line, line_type)
-
-    def _ctkm_renumber_step10_lines(self, Line, line_type):
-        self.ensure_one()
-        lines = Line.search([
-            ('task_id', '=', self.id),
-            ('line_type', '=', line_type),
-        ]).sorted(lambda line: (line.sequence or 0, line.store or '', line.id))
-        for index, line in enumerate(lines, start=1):
-            if line.sequence != index:
-                line.write({'sequence': index})
 
     def action_add_collect_store_line(self):
         """Nút Tạo dòng trên bảng Thu tem/tag."""
