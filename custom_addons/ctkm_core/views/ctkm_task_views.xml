@@ -137,6 +137,24 @@
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
+                                <group string="Kiểm tra hình ảnh tem/tag"
+                                    invisible="not is_tem_photo_task">
+                                    <div colspan="2" class="mb-2">
+                                        <button name="action_refresh_tem_tag_lines" type="object"
+                                            string="Làm mới danh sách" class="btn-secondary btn-sm"
+                                            icon="fa-refresh"/>
+                                    </div>
+                                    <field name="tem_photo_check_ids" nolabel="1" colspan="2"
+                                        widget="one2many" class="o_ctkm_print_store_list">
+                                        <list editable="bottom" create="0" delete="0"
+                                            default_order="store, material_code">
+                                            <field name="store" readonly="1"/>
+                                            <field name="material_code" readonly="1"/>
+                                            <field name="confirmed" widget="boolean"
+                                                string="Xác nhận thay"/>
+                                        </list>
+                                    </field>
+                                </group>
                                 <group string="Thông tin khác" invisible="is_tem_tag_import_task or is_tem_photo_task or is_tem_replace_task or show_work_processing_tab">
                                     <div colspan="2" class="text-muted">
                                         Đang để trống, sẽ bổ sung sau.

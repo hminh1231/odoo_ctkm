@@ -410,6 +410,14 @@ class CtkmTask(models.Model):
         'attachment_id',
         string='Ảnh tem/tag',
     )
+    tem_photo_check_ids = fields.One2many(
+        'ctkm.task.tem.photo.line',
+        'task_id',
+        string='Kiểm tra hình ảnh tem/tag',
+        readonly=True,
+        help='Bảng (Cửa hàng, Mã vật tư) lấy từ kho Tem/Tag file tổng; '
+             'tick "Xác nhận thay" khi đã kiểm tra xong ảnh.',
+    )
 
     # Bước phạm vi thông báo (Gửi tin tuần tự theo STT dòng)
     notify_line_id = fields.Many2one(
@@ -1180,8 +1188,65 @@ class CtkmTask(models.Model):
         obsolete |= leftover.filtered(lambda line: not line.is_manual)
         if to_create:
             Line.create(to_create)
-        if obsolete:
-            obsolete.unlink()
+            if obsolete:
+                obsolete.unlink()
+        # Bước Kiểm tra ảnh: đồng bộ bảng từ kho Tem/Tag (file tổng).
+        self.filtered('is_tem_photo_task').sudo()._ctkm_sync_tem_photo_lines()
+
+    def _ctkm_tem_photo_line_values(self):
+        """Gom kho Tem/Tag (file tổng) theo (Cửa hàng, Mã vật tư) cho bước Kiểm tra ảnh.
+
+        Nguồn là ``ctkm.inventory.tem.tag`` của chương trình — bước
+        "Đổ BB thay tem/tag (file tổng)" chứa tất cả cửa hàng, nên bảng này
+        hiển thị đúng các Store / Mã vật tư của bước đó.
+        """
+        self.ensure_one()
+        if not self.is_tem_photo_task or not self.program_id:
+            return []
+        if 'ctkm.inventory.tem.tag' not in self.env:
+            return []
+        rows = self.env['ctkm.inventory.tem.tag'].sudo().search([
+            ('program_id', '=', self.program_id.id),
+        ])
+        by_key = {}
+        for rec in rows:
+            key = (rec.store or '', rec.material_code or '')
+            if not key[0] or not key[1]:
+                continue
+            if key not in by_key:
+                by_key[key] = {
+                    'store': rec.store or '',
+                    'store_key': rec.store_key or '',
+                    'material_code': rec.material_code or '',
+                }
+        values = list(by_key.values())
+        values.sort(key=lambda vals: (vals['store'] or '', vals['material_code'] or ''))
+        return values
+
+    def _ctkm_sync_tem_photo_lines(self):
+        """Dựng lại bảng 'Kiểm tra hình ảnh tem/tag' từ kho Tem/Tag (file tổng)."""
+        Line = self.env['ctkm.task.tem.photo.line'].sudo().with_context(
+            ctkm_tem_photo_sync=True,
+        )
+        for task in self:
+            if not task.is_tem_photo_task:
+                continue
+            values = task._ctkm_tem_photo_line_values()
+            existing = {}
+            for line in task.sudo().tem_photo_check_ids:
+                existing[(line.store or '', line.material_code or '')] = line
+            to_create = []
+            for vals in values:
+                key = (vals['store'] or '', vals['material_code'] or '')
+                if key in existing:
+                    existing.pop(key)
+                else:
+                    to_create.append(dict(vals, task_id=task.id))
+            if to_create:
+                Line.create(to_create)
+            removed = Line.browse([line.id for line in existing.values()])
+            if removed:
+                removed.unlink()
         self._ctkm_renumber_step10_lines(Line, line_type)
 
     def _ctkm_renumber_step10_lines(self, Line, line_type):
@@ -1435,15 +1500,17 @@ class CtkmTask(models.Model):
             return self.browse()
         tasks = self.sudo().search([
             ('program_id', 'in', program_ids),
-            '|', '|', '|', '|', '|',
+            '|', '|', '|', '|', '|', '|',
             ('is_tem_tag_import_task', '=', True),
             ('is_tem_bb_replace_task', '=', True),
             ('is_tem_print_task', '=', True),
             ('is_tem_handover_task', '=', True),
             ('is_tem_receive_task', '=', True),
             ('is_tem_replace_task', '=', True),
+            ('is_tem_photo_task', '=', True),
         ])
         tasks._ctkm_sync_tem_tag_lines()
+        tasks.filtered('is_tem_photo_task')._ctkm_sync_tem_photo_lines()
         return tasks
 
     def _ctkm_clear_program_tem_tag_inventory(self):
@@ -1506,6 +1573,13 @@ class CtkmTask(models.Model):
                 design_tasks.sudo().with_context(
                     ctkm_skip_tem_design_sync=True,
                 )._ctkm_sync_tem_design_lines()
+        # Mở form bước Kiểm tra ảnh: đồng bộ bảng (Cửa hàng, Mã vật tư).
+        if self.ids and not self.env.context.get('ctkm_skip_tem_photo_sync'):
+            photo_tasks = self.filtered('is_tem_photo_task')
+            if photo_tasks:
+                photo_tasks.sudo().with_context(
+                    ctkm_skip_tem_photo_sync=True,
+                )._ctkm_sync_tem_photo_lines()
         if self.ids and not self.env.context.get('ctkm_skip_time_line_ensure'):
             self.sudo().with_context(
                 ctkm_skip_time_line_ensure=True,
@@ -1895,6 +1969,7 @@ class CtkmTask(models.Model):
         # (bước 12 lọc theo cửa hàng của người nhận việc).
         if {'program_id', 'user_ids', 'name', 'checklist_line_id'} & set(vals):
             self.sudo()._ctkm_sync_tem_tag_lines()
+            self.sudo().filtered('is_tem_photo_task')._ctkm_sync_tem_photo_lines()
 
         if {'process_date', 'done_date'} & set(vals):
             self.sudo()._ctkm_touch_main_time_line(vals)
