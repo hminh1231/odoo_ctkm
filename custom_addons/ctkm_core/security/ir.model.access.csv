@@ -41,3 +41,6 @@ access_ctkm_barcode_lookup_manager,ctkm.barcode.lookup.manager,model_ctkm_barcod
 access_ctkm_task_tem_design_line_employee,ctkm.task.tem.design.line.employee,model_ctkm_task_tem_design_line,base.group_user,1,1,1,0
 access_ctkm_task_tem_design_line_user,ctkm.task.tem.design.line.user,model_ctkm_task_tem_design_line,ctkm_core.group_ctkm_user,1,1,1,1
 access_ctkm_task_tem_design_line_manager,ctkm.task.tem.design.line.manager,model_ctkm_task_tem_design_line,ctkm_core.group_ctkm_manager,1,1,1,1
+access_ctkm_task_tem_photo_line_employee,ctkm.task.tem.photo.line.employee,model_ctkm_task_tem_photo_line,base.group_user,1,1,1,0
+access_ctkm_task_tem_photo_line_user,ctkm.task.tem.photo.line.user,model_ctkm_task_tem_photo_line,ctkm_core.group_ctkm_user,1,1,1,1
+access_ctkm_task_tem_photo_line_manager,ctkm.task.tem.photo.line.manager,model_ctkm_task_tem_photo_line,ctkm_core.group_ctkm_manager,1,1,1,1
