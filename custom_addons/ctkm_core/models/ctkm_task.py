@@ -1248,12 +1248,26 @@ class CtkmTask(models.Model):
             'target': 'self',
         }
 
-    def _build_thu_tem_xlsx(self):
-        """Xuất bảng Thu tem/tag ra sheet TH: Mã sản phẩm (dòng) × Cửa hàng (cột).
+    # Bố cục sheet TH (khớp mẫu thutem.xlsx, sheet TH).
+    TH_PRICE_FORMAT = '_(* #,##0_);_(* \\(#,##0\\);_(* "-"??_);_(@_)'
+    TH_QTY_FORMAT = '#,##0'
 
-        Mỗi ô = SL tem + SL tag thu hồi của Mã sản phẩm đó tại cửa hàng đó.
-        File chỉ gồm duy nhất sheet TH, dựng hoàn toàn bằng openpyxl
-        (không đọc file mẫu .xlsx).
+    def _build_thu_tem_xlsx(self):
+        """Xuất bảng Thu tem/tag ra sheet TH giống hệt mẫu thutem.xlsx.
+
+        Bố cục (dựng hoàn toàn bằng openpyxl, không đọc file mẫu):
+            Dòng 1: "CÔNG TY TNHH SÁNG TÂM" (bold 10)
+            Dòng 2: địa chỉ công ty (bold 10)
+            Dòng 3: "Tổng hợp nhập xuất tồn theo cột" (bold 18, height 23.4)
+            Dòng 4: "Ngày dd/mm/yyyy" (bold 10)
+            Dòng 6: tiêu đề cột: Mã vật tư | Giá KM | Ghi chú | Tem/tag |
+                    <các mã cửa hàng>... | Tổng cộng | Mã gốc
+                    (bold, căn giữa, viền thin, height 108.6)
+            Dòng 7+: mỗi Mã vật tư một dòng; ô cửa hàng = SL tem + SL tag,
+                    cột Tổng cộng = SUM(E..cột CH cuối), cột Mã gốc = phần
+                    đầu của Mã vật tư (trước dấu "_").
+            Dòng cuối: "Tổng cộng:" + SUM từng cột cửa hàng.
+        Freeze panes tại E7.
         """
         self.ensure_one()
         wb = Workbook()
@@ -1262,64 +1276,133 @@ class CtkmTask(models.Model):
 
         thin = Side(style='thin', color='FF000000')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
-        bold = Font(bold=True, size=11)
-        title_font = Font(bold=True, size=14)
-        center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        bold10 = Font(bold=True, size=10)
+        bold11 = Font(bold=True, size=11)
+        title_font = Font(bold=True, size=18)
+        center = Alignment(horizontal='center', vertical='center')
 
         today = fields.Date.context_today(self)
-        date_vn = 'Ngày %s Tháng %s Năm %s' % (today.day, today.month, today.year)
+
+        ws['A1'] = 'CÔNG TY TNHH SÁNG TÂM'
+        ws['A1'].font = bold10
+        ws['A2'] = '32-34 đường 74, Phường 10, Quận 6, TP. Hồ Chí Minh'
+        ws['A2'].font = bold10
+        ws['A3'] = 'Tổng hợp nhập xuất tồn theo cột'
+        ws['A3'].font = title_font
+        ws.row_dimensions[3].height = 23.4
+        ws['A4'] = 'Ngày %s' % today.strftime('%d/%m/%Y')
+        ws['A4'].font = bold10
 
         collect = self.collect_store_ids.sudo()
         materials = sorted({line.material_code for line in collect if line.material_code})
         stores = sorted(
-            {(line.store_key or '', line.store or line.store_code or '') for line in collect},
-            key=lambda item: item[1],
+            {line.store_key or '' for line in collect if line.store_key},
         )
         grid = {}
+        kinds = {}  # material_code -> set('tem'/'tag') có số lượng > 0
         for line in collect:
-            key = (line.material_code or '', line.store_key or '')
-            grid[key] = (grid.get(key, 0.0)
-                         + (line.tem_quantity or 0.0) + (line.tag_quantity or 0.0))
+            mat = line.material_code or ''
+            key = (mat, line.store_key or '')
+            qty = ((line.tem_quantity or 0.0) + (line.tag_quantity or 0.0))
+            if qty:
+                grid[key] = grid.get(key, 0.0) + qty
+                if (line.tem_quantity or 0.0) > 0:
+                    kinds.setdefault(mat, set()).add('tem')
+                if (line.tag_quantity or 0.0) > 0:
+                    kinds.setdefault(mat, set()).add('tag')
 
-        last_col = 2 + len(stores) + 1  # A: STT, B: Mã sản phẩm, stores..., cuối: Tổng
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
-        c = ws.cell(row=1, column=1, value='BIÊN BẢN THU TEM/TAG')
-        c.font = title_font
-        c.alignment = center
-        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
-        d = ws.cell(row=2, column=1, value=date_vn)
-        d.font = bold
-        d.alignment = center
+        # Giá KM + Ghi chú lấy từ kho Tem/Tag (import bước 4) theo Mã vật tư.
+        prices, notes = {}, {}
+        program = self.program_id
+        if program and 'ctkm.inventory.tem.tag' in self.env:
+            Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
+            for rec in Inventory.search([('program_id', '=', program.id)]):
+                code = rec.material_code or ''
+                if not code:
+                    continue
+                if rec.promo_price:
+                    prices.setdefault(code, rec.promo_price)
+                note = (rec.ctkm_name or '').strip()
+                if note:
+                    notes.setdefault(code, note)
 
-        header_row = 3
-        headers = ['STT', 'Mã sản phẩm'] + [name for _, name in stores] + ['Tổng']
+        # Cột: A Mã vật tư | B Giá KM | C Ghi chú | D Tem/tag |
+        #      E.. stores | Tổng cộng | Mã gốc
+        store_start_col = 5
+        total_col = store_start_col + len(stores)
+        origin_col = total_col + 1
+
+        header_row = 6
+        headers = ['Mã vật tư', 'Giá KM', 'Ghi chú', 'Tem/tag']
+        headers += list(stores) + ['Tổng cộng', 'Mã gốc']
         for col_idx, h in enumerate(headers, start=1):
             cell = ws.cell(row=header_row, column=col_idx, value=h)
-            cell.font = bold
+            cell.font = bold11
             cell.border = border
             cell.alignment = center
+        ws.row_dimensions[header_row].height = 108.6
 
+        last_store_col_letter = get_column_letter(total_col - 1)
         r = header_row + 1
-        for idx, mat in enumerate(materials, start=1):
-            ws.cell(row=r, column=1, value=idx).border = border
-            ws.cell(row=r, column=2, value=mat).border = border
-            row_total = 0.0
-            for j, (skey, _name) in enumerate(stores):
-                val = grid.get((mat, skey), 0.0)
-                cell = ws.cell(row=r, column=3 + j, value=val)
+        for mat in materials:
+            kind = kinds.get(mat) or set()
+            label = (
+                'TEM+TAG' if kind == {'tem', 'tag'}
+                else 'TEM' if kind == {'tem'}
+                else 'TAG' if kind == {'tag'}
+                else ''
+            )
+            row_vals = [
+                mat, prices.get(mat), notes.get(mat, ''), label,
+            ] + [grid.get((mat, skey)) for skey in stores]
+            for col_idx, val in enumerate(row_vals, start=1):
+                cell = ws.cell(row=r, column=col_idx, value=val)
                 cell.border = border
-                cell.alignment = center
-                row_total += val
-            total_cell = ws.cell(row=r, column=last_col, value=row_total)
-            total_cell.border = border
-            total_cell.alignment = center
+                if col_idx == 2:
+                    cell.number_format = self.TH_PRICE_FORMAT
+                elif col_idx >= store_start_col:
+                    cell.number_format = self.TH_QTY_FORMAT
+            # Cột "Tổng cộng": công thức SUM như mẫu.
+            tc = ws.cell(
+                row=r, column=total_col,
+                value='=SUM(%s%d:%s%d)' % (
+                    get_column_letter(store_start_col), r,
+                    last_store_col_letter, r,
+                ),
+            )
+            tc.font = bold11
+            tc.border = border
+            tc.number_format = self.TH_QTY_FORMAT
+            # Cột "Mã gốc": phần trước dấu "_" của Mã vật tư.
+            oc = ws.cell(row=r, column=origin_col, value=mat.split('_')[0])
+            oc.border = border
             r += 1
 
-        ws.column_dimensions['A'].width = 6
-        ws.column_dimensions['B'].width = 18
-        for j in range(len(stores)):
-            ws.column_dimensions[get_column_letter(3 + j)].width = 14
-        ws.column_dimensions[get_column_letter(last_col)].width = 10
+        # Dòng cộng dồn cuối bảng.
+        first_data_row = header_row + 1
+        last_data_row = r - 1
+        trow = ws.cell(row=r, column=1, value='Tổng cộng:')
+        trow.font = bold11
+        trow.border = border
+        for col_idx in range(2, origin_col + 1):
+            cell = ws.cell(row=r, column=col_idx)
+            cell.border = border
+            if col_idx >= store_start_col:
+                letter = get_column_letter(col_idx)
+                cell.value = '=SUM(%s%d:%s%d)' % (
+                    letter, first_data_row, letter, last_data_row,
+                )
+                cell.font = bold11
+                cell.number_format = self.TH_QTY_FORMAT
+
+        # Độ rộng cột & freeze panes đúng mẫu.
+        widths = {'A': 29.33, 'B': 13.44, 'C': 80.66, 'D': 15.55}
+        for letter, width in widths.items():
+            ws.column_dimensions[letter].width = width
+        for col_idx in range(store_start_col, origin_col - 1):
+            ws.column_dimensions[get_column_letter(col_idx)].width = 8.0
+        ws.column_dimensions[get_column_letter(origin_col)].width = 25.33
+        ws.freeze_panes = 'E7'
 
         stream = io.BytesIO()
         wb.save(stream)
