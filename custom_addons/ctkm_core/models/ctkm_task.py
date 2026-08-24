@@ -423,7 +423,6 @@ class CtkmTask(models.Model):
         'ctkm.task.tem.photo.line',
         'task_id',
         string='Kiểm tra hình ảnh tem/tag',
-        readonly=True,
         help='Bảng (Cửa hàng, Mã vật tư) lấy từ kho Tem/Tag file tổng; '
              'tick "Xác nhận thay" khi đã kiểm tra xong ảnh.',
     )
