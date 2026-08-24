@@ -183,7 +183,8 @@
                                             column_invisible="parent.is_tem_tag_import_task"/>
                                         <field name="ctkm_name" readonly="1"
                                             column_invisible="not parent.is_tem_bb_replace_task"/>
-                                        <field name="received"
+                                        <field name="received" column_invisible="1"/>
+                                        <field name="replaced_done" widget="boolean"
                                             column_invisible="not parent.is_tem_replace_task"/>
                                         <button name="action_toggle_received" type="object"
                                             class="btn btn-link p-0 o_ctkm_print_done_btn"
@@ -309,19 +310,8 @@
                                             sum="Tổng SL tem"/>
                                         <field name="tag_quantity" readonly="1" width="90px"
                                             sum="Tổng SL tag"/>
-                                        <field name="done" column_invisible="1"/>
-                                        <button name="action_toggle_step10_done" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-square-o"
-                                            invisible="done"
-                                            title="Tick khi đã bàn giao xong"
-                                            string="Đã giao"/>
-                                        <button name="action_toggle_step10_done" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-check-square-o"
-                                            invisible="not done"
-                                            title="Bỏ tick để đưa lại chưa hoàn thành"
-                                            string="Đã giao"/>
+                                        <field name="done" string="Đã giao"
+                                            widget="boolean"/>
                                     </list>
                                 </field>
                             </group>
@@ -366,19 +356,8 @@
                                         <field name="is_manual" column_invisible="1"/>
                                         <field name="tem_quantity" width="90px" sum="Tổng SL tem"/>
                                         <field name="tag_quantity" width="90px" sum="Tổng SL tag"/>
-                                        <field name="done" column_invisible="1"/>
-                                        <button name="action_toggle_step10_done" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-square-o"
-                                            invisible="done"
-                                            title="Tick khi đã thu xong"
-                                            string="Đã thu"/>
-                                        <button name="action_toggle_step10_done" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-check-square-o"
-                                            invisible="not done"
-                                            title="Bỏ tick để đưa lại chưa thu"
-                                            string="Đã thu"/>
+                                        <field name="done" string="Đã thu"
+                                            widget="boolean"/>
                                     </list>
                                 </field>
                             </group>

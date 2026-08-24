@@ -687,6 +687,24 @@ class CtkmTask(models.Model):
             return tem_tag.store_keys_for_user(self.user_ids[:1])
         return tem_tag.current_user_store_keys()
 
+    def _ctkm_tem_tag_receive_store_keys(self):
+        """Mã cửa hàng bước 11 "Nhận tem tag mới".
+
+        Gồm mã cửa hàng của nhân viên nhận việc + các mã trong
+        LUG Permission "Mã bộ phận được xem (STORE)" (Settings → Users,
+        có thể chọn nhiều mã) của mọi người nhận việc.
+        """
+        self.ensure_one()
+        keys = list(self._ctkm_tem_tag_store_keys())
+        tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
+        getter = getattr(tem_tag, 'lug_permission_store_keys_for_user', None)
+        if getter is None or not self.user_ids:
+            return keys
+        for key in getter(self.user_ids):
+            if key not in keys:
+                keys.append(key)
+        return keys
+
     def _ctkm_tem_tag_managed_store_keys(self):
         """Mã cửa hàng theo 'Cửa hàng quản lí' của người nhận việc (bước 6)."""
         self.ensure_one()
@@ -715,9 +733,10 @@ class CtkmTask(models.Model):
         )
         tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
         domain = [('program_id', '=', self.program_id.id)]
-        if self.is_tem_replace_task or self.is_tem_receive_task:
-            # Bước 11 / 12: chỉ Mã vật tư thuộc cửa hàng của nhân viên nhận việc.
-            store_keys = self._ctkm_tem_tag_store_keys()
+        if self.is_tem_receive_task or self.is_tem_replace_task:
+            # Bước 11 / 12: cùng dữ liệu — cửa hàng của nhân viên nhận việc
+            # + các mã trong LUG Permission "Mã bộ phận được xem (STORE)".
+            store_keys = self._ctkm_tem_tag_receive_store_keys()
             if not store_keys:
                 return []
             domain = domain + [('store_key', 'in', store_keys)]

@@ -163,6 +163,32 @@ class CtkmInventoryTemTag(models.Model):
         return self.store_keys_for_user(self.env.user)
 
     @api.model
+    def lug_permission_store_keys_for_user(self, user):
+        """Mã cửa hàng theo LUG Permission 'Mã bộ phận được xem (STORE)'.
+
+        Đọc res.users.assigned_ma_bo_phan_ids (Settings → Users → LUG Permission
+        → "Mã bộ phận được xem (STORE)") — có thể chọn nhiều mã. Kết quả đã
+        chuẩn hóa để so khớp cột Store của kho Tem/Tag.
+        """
+        users = user.sudo() if user else self.env['res.users']
+        if not users:
+            return []
+        keys = []
+        for u in users:
+            if 'assigned_ma_bo_phan_ids' not in u._fields:
+                continue
+            for rec in u.sudo().assigned_ma_bo_phan_ids:
+                for raw in (rec.code, rec.name):
+                    key = _normalize_store_code(raw)
+                    if key and key not in keys:
+                        keys.append(key)
+        return keys
+
+    @api.model
+    def current_user_lug_permission_store_keys(self):
+        return self.lug_permission_store_keys_for_user(self.env.user)
+
+    @api.model
     def managed_store_keys_for_user(self, user):
         """Mã/tên cửa hàng theo 'Cửa hàng quản lí' của một người dùng (đã chuẩn hóa).
 

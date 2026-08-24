@@ -66,6 +66,10 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         string='Đã nhận',
         help='Đã nhận tem/tag mới tại cửa hàng này (bước Nhận tem tag mới).',
     )
+    replaced_done = fields.Boolean(
+        string='Đã thay',
+        help='Đã thay xong tem/tag tại cửa hàng này (bước Thay tem Tag).',
+    )
 
     @api.depends('total_quantity', 'replaced_quantity')
     def _compute_remaining_quantity(self):
@@ -93,7 +97,7 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         # Sync nội bộ (dựng lại bảng từ kho Tem/Tag) không cần kiểm tra quyền
         # và cũng không ghi ngược về kho (tránh vòng lặp).
         internal = self.env.context.get('ctkm_tem_tag_line_sync')
-        if 'replaced_quantity' in vals and not internal:
+        if ('replaced_quantity' in vals or 'replaced_done' in vals) and not internal:
             self._check_can_update_replaced()
         res = super().write(vals)
         if 'replaced_quantity' in vals and not internal:
@@ -131,7 +135,7 @@ class CtkmTaskTemTagReplaceLine(models.Model):
             task = line.task_id
             if not task.is_tem_replace_task:
                 raise UserError(_(
-                    'Chỉ bước "Thay tem Tag" mới được cập nhật Tổng SL đã thay.'
+                    'Chỉ bước "Thay tem Tag" mới được cập nhật Tổng SL đã thay / Đã thay.'
                 ))
             if not is_ctkm_manager and self.env.user not in task.user_ids:
                 raise UserError(_(
