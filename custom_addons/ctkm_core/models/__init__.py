@@ -16,3 +16,6 @@ from . import ctkm_task_tem_step10_line
 from . import ctkm_task_time_line
 from . import ctkm_barcode_lookup
 from . import ir_attachment
+from . import res_users
+from . import ir_ui_menu
+from . import ir_actions_act_window

@@ -183,14 +183,10 @@
             (0, 0, {'view_mode': 'form', 'view_id': ref('view_ctkm_print_progress_report_form')})]"/>
     </record>
 
-    <record id="menu_ctkm_report" model="ir.ui.menu">
-        <field name="action" eval="False"/>
-    </record>
-
     <record id="menu_ctkm_report_printed_stores" model="ir.ui.menu">
         <field name="name">Danh sách cửa hàng đã in tem/tag</field>
-        <field name="sequence">1</field>
-        <field name="parent_id" ref="ctkm_core.menu_ctkm_progress_report"/>
+        <field name="sequence">2</field>
+        <field name="parent_id" ref="ctkm_core.menu_ctkm_report"/>
         <field name="action" ref="action_ctkm_print_progress_report"/>
         <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
     </record>
