@@ -57,6 +57,8 @@ TEM_PHOTO_STAGE_XMLID = 'ctkm_core.ctkm_stage_13'
 TEM_CHECK_STAGE_XMLID = 'ctkm_core.ctkm_stage_14'
 # Các trường kho Tem/Tag được gom vào bảng "Chi tiết tem/tag".
 TEM_TAG_LINE_KEY_FIELDS = ('material_code', 'store')
+# Chức danh trên hồ sơ nhân viên (hr_job_title_vn) dùng để gán bước 11–14.
+STORE_MANAGER_JOB_TITLE = 'cửa hàng trưởng'
 
 
 def normalize_step_key(value):
@@ -64,6 +66,16 @@ def normalize_step_key(value):
     text = unicodedata.normalize('NFD', (value or '').lower())
     text = ''.join(char for char in text if unicodedata.category(char) != 'Mn')
     return re.sub(r'[^a-z0-9]+', '', text.replace('đ', 'd'))
+
+
+def _ctkm_normalize_store_key(value):
+    """Chuẩn hóa mã Store / mã bộ phận để so khớp (hoa, bỏ khoảng trắng thừa)."""
+    if isinstance(value, dict):
+        value = next(iter(value.values()), '') if value else ''
+    if not isinstance(value, str):
+        value = str(value) if value else ''
+    value = ' '.join(value.strip().split())
+    return value.upper() if value else False
 
 
 class CtkmTask(models.Model):
@@ -744,6 +756,182 @@ class CtkmTask(models.Model):
         if hasattr(tem_tag, 'managed_store_keys_for_user'):
             return tem_tag.managed_store_keys_for_user(self.user_ids)
         return []
+
+    def _ctkm_bb_store_keys(self):
+        """Mã Store trên biên bản bước 4 (bảng Chi tiết tem/tag / kho Tem-Tag)."""
+        self.ensure_one()
+        keys = set()
+        for line in self.tem_tag_replace_ids:
+            key = _ctkm_normalize_store_key(line.store)
+            if key:
+                keys.add(key)
+        if self.program_id and 'ctkm.inventory.tem.tag' in self.env:
+            rows = self.env['ctkm.inventory.tem.tag'].sudo().search([
+                ('program_id', '=', self.program_id.id),
+            ])
+            for rec in rows:
+                key = rec.store_key or _ctkm_normalize_store_key(rec.store)
+                if key:
+                    keys.add(key)
+        return keys
+
+    def _ctkm_employee_department_store_keys(self, employee):
+        """Mã bộ phận / cửa hàng trên hồ sơ nhân viên, đã chuẩn hóa."""
+        codes = []
+        if 'ma_bo_phan' in employee._fields:
+            codes.append(employee.ma_bo_phan)
+        if 'ma_bo_phan_id' in employee._fields and employee.ma_bo_phan_id:
+            store_code = employee.ma_bo_phan_id.sudo()
+            codes.extend([store_code.code, store_code.name])
+        if 'store_id' in employee._fields and employee.store_id:
+            store = employee.store_id.sudo()
+            codes.extend([store.code, store.name])
+        keys = set()
+        for code in codes:
+            key = _ctkm_normalize_store_key(code)
+            if key:
+                keys.add(key)
+        return keys
+
+    def _ctkm_department_contains_store(self, dept_key, store_key):
+        """Mã Store trên BB nằm trong mã bộ phận (store ngắn, mã bộ phận dài hơn).
+
+        Ví dụ: store ``AEBD`` khớp mã bộ phận ``AEBD_DDL``.
+        """
+        if not dept_key or not store_key:
+            return False
+        if dept_key == store_key:
+            return True
+        # Tránh khớp nhầm với 1–2 ký tự; mã store thực tế thường từ 3 ký tự.
+        if len(store_key) < 3:
+            return False
+        return store_key in dept_key
+
+    def _ctkm_employee_matches_bb_stores(self, employee, store_keys):
+        dept_keys = self._ctkm_employee_department_store_keys(employee)
+        if not dept_keys or not store_keys:
+            return False
+        return any(
+            self._ctkm_department_contains_store(dept_key, store_key)
+            for dept_key in dept_keys
+            for store_key in store_keys
+        )
+
+    def _ctkm_find_store_manager_users(self, store_keys):
+        """Cửa hàng trưởng có mã bộ phận chứa một mã Store trên biên bản."""
+        if not store_keys:
+            return self.env['res.users']
+        Employee = self.env['hr.employee'].sudo()
+        domain = [
+            ('active', '=', True),
+            ('user_id', '!=', False),
+        ]
+        if 'job_title' in Employee._fields:
+            domain.append(('job_title', '=', STORE_MANAGER_JOB_TITLE))
+        employees = Employee.search(domain)
+        matched = employees.filtered(
+            lambda emp: self._ctkm_employee_matches_bb_stores(emp, store_keys)
+        )
+        return matched.mapped('user_id').filtered(
+            lambda user: user.active and not user.share
+        )
+
+    def _ctkm_checklist_line_is_store_manager_step(self, line):
+        """Bước 11–14: Nhận tem, Thay tem, Chụp ảnh, Kiểm tra hình ảnh."""
+        if not line:
+            return False
+        stage_id = line.stage_id.id if line.stage_id else False
+        target_stage_ids = {
+            self._ctkm_step_stage_id(TEM_RECEIVE_STAGE_XMLID),
+            self._ctkm_step_stage_id(TEM_REPLACE_STAGE_XMLID),
+            self._ctkm_step_stage_id(TEM_PHOTO_STAGE_XMLID),
+            self._ctkm_step_stage_id(TEM_CHECK_STAGE_XMLID),
+        }
+        target_stage_ids.discard(False)
+        if stage_id and stage_id in target_stage_ids:
+            return True
+        key = normalize_step_key(line.name)
+        if not key:
+            return False
+        if any(marker in key for marker in TEM_RECEIVE_TASK_MARKERS):
+            return True
+        if key in TEM_REPLACE_TASK_KEYS:
+            return True
+        if any(marker in key for marker in TEM_PHOTO_TASK_MARKERS):
+            return True
+        if any(marker in key for marker in TEM_CHECK_TASK_MARKERS):
+            return True
+        return False
+
+    def _ctkm_assign_store_managers_after_bb_import(self):
+        """Khi hoàn thành bước 4: gán Cửa hàng trưởng vào người thực hiện bước 11–14.
+
+        Khớp khi mã bộ phận trên hồ sơ *chứa* mã Store trên biên bản
+        (ví dụ AEBD → AEBD_DDL) và chức danh là Cửa hàng trưởng.
+        """
+        self.ensure_one()
+        if not self.is_tem_tag_import_task or not self.program_id:
+            return self.env['res.users']
+        store_keys = self._ctkm_bb_store_keys()
+        if not store_keys:
+            return self.env['res.users']
+        users = self._ctkm_find_store_manager_users(store_keys)
+        target_lines = self.program_id.checklist_line_ids.filtered(
+            lambda line: (
+                self._ctkm_checklist_line_is_store_manager_step(line)
+                and line.state != 'done'
+            )
+        )
+        if users:
+            user_ids = users.ids
+            for line in target_lines:
+                if set(line.user_ids.ids) == set(user_ids):
+                    continue
+                line.sudo().write({'user_ids': [(6, 0, user_ids)]})
+            # Công việc đã tạo theo cờ bước (checklist đổi tên / chưa gắn stage).
+            flag_tasks = self.env['ctkm.task'].sudo().search([
+                ('program_id', '=', self.program_id.id),
+                ('state', '!=', 'done'),
+                '|', '|', '|',
+                ('is_tem_receive_task', '=', True),
+                ('is_tem_replace_task', '=', True),
+                ('is_tem_photo_task', '=', True),
+                ('is_tem_check_task', '=', True),
+            ])
+            for other in flag_tasks:
+                line = other.checklist_line_id
+                if line and line.state != 'done':
+                    if set(line.user_ids.ids) != set(user_ids):
+                        line.sudo().write({'user_ids': [(6, 0, user_ids)]})
+                    continue
+                if set(other.user_ids.ids) == set(user_ids):
+                    continue
+                other.with_context(
+                    ctkm_task_sync=True,
+                    ctkm_internal_state_write=True,
+                ).write({'user_ids': [(6, 0, user_ids)]})
+        store_label = ', '.join(sorted(store_keys))
+        if users:
+            body = _(
+                'Đã gán cửa hàng trưởng <b>%(users)s</b> làm người thực hiện '
+                'bước 11–14 (Nhận tem tag mới, Thay tem Tag, Chụp ảnh, '
+                'Kiểm tra hình ảnh) theo mã Store trên biên bản: %(stores)s.'
+            ) % {
+                'users': escape(', '.join(users.mapped('name'))),
+                'stores': escape(store_label),
+            }
+        else:
+            body = _(
+                'Không tìm thấy nhân viên chức danh Cửa hàng trưởng có '
+                'mã bộ phận chứa mã Store trên biên bản thay tem/tag (%s). '
+                'Bước 11–14 giữ nguyên người thực hiện hiện tại.'
+            ) % escape(store_label)
+        self.message_post(
+            body=body,
+            subtype_xmlid='mail.mt_note',
+            body_is_html=True,
+        )
+        return users
 
     def _ctkm_tem_tag_line_values(self):
         """Gom kho Tem/Tag của CTKM theo (Mã vật tư, Store) cho bảng chi tiết."""
@@ -2089,6 +2277,10 @@ class CtkmTask(models.Model):
                 if already_completed:
                     already_done |= task
                 continue
+            # Bước 4 đổ BB: gán cửa hàng trưởng (theo Store / mã bộ phận)
+            # vào người thực hiện bước 11–14.
+            if task.is_tem_tag_import_task:
+                task._ctkm_assign_store_managers_after_bb_import()
             # Tất cả đã hoàn thành → tiếp tục luồng xác nhận như cũ.
             checklist = task.checklist_line_id
             need_confirm = task._ctkm_task_needs_manager_confirm()
