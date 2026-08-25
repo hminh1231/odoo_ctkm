@@ -18,6 +18,17 @@ export class CtkmPrintDoneField extends Component {
         });
     }
 
+    get label() {
+        const field = this.props.record?.fields?.[this.props.name];
+        return field?.string || "";
+    }
+
+    get showLabel() {
+        const options =
+            this.props.record?.activeFields?.[this.props.name]?.options || {};
+        return options.show_label === true || options.showLabel === true;
+    }
+
     /** List gán readonly khi hàng chưa edit — không dùng cờ đó để chặn tick. */
     get isDisabled() {
         if (this.state.saving) {
@@ -25,13 +36,6 @@ export class CtkmPrintDoneField extends Component {
         }
         const record = this.props.record;
         if (typeof record._isReadonly === "function" && record._isReadonly(this.props.name)) {
-            return true;
-        }
-        if (record.config?.mode === "readonly") {
-            return true;
-        }
-        const parent = record._parentRecord;
-        if (parent?.config?.mode === "readonly") {
             return true;
         }
         return false;
@@ -42,16 +46,17 @@ export class CtkmPrintDoneField extends Component {
             return;
         }
         const record = this.props.record;
-        const newValue = !record.data[this.props.name];
+        const fieldName = this.props.name;
+        const newValue = !record.data[fieldName];
         this.state.value = newValue;
         if (!record.resId) {
-            await record.update({ [this.props.name]: newValue });
+            await record.update({ [fieldName]: newValue });
             return;
         }
         this.state.saving = true;
         try {
-            await this.orm.write("ctkm.task.tem.print.line", [record.resId], {
-                done: newValue,
+            await this.orm.write(record.resModel, [record.resId], {
+                [fieldName]: newValue,
             });
             const parent = record._parentRecord || record.model.root;
             if (parent && typeof parent.load === "function") {
@@ -68,8 +73,11 @@ export class CtkmPrintDoneField extends Component {
 
 export const ctkmPrintDoneField = {
     component: CtkmPrintDoneField,
+    displayName: "Checkbox",
     supportedTypes: ["boolean"],
 };
 
+registry.category("fields").add("ctkm_tick", ctkmPrintDoneField);
+registry.category("fields").add("list.ctkm_tick", ctkmPrintDoneField);
 registry.category("fields").add("ctkm_print_done", ctkmPrintDoneField);
 registry.category("fields").add("list.ctkm_print_done", ctkmPrintDoneField);

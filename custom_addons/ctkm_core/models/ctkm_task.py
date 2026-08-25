@@ -1564,6 +1564,30 @@ class CtkmTask(models.Model):
             _('Bảng Chi tiết tem/tag đã cập nhật theo dữ liệu kho Tem/Tag.'),
         )
 
+    def action_tick_all_print_done(self):
+        """Tick Đã in cho mọi cửa hàng đang ở bảng cần in (theo ô tìm kiếm nếu có)."""
+        self.ensure_one()
+        if not self.is_tem_print_task:
+            raise UserError(_('Chỉ bước "In tem, Tag" mới dùng nút này.'))
+        lines = self.print_store_pending_ids
+        search = (self.print_store_search or '').strip()
+        if search:
+            key = search.lower()
+            lines = lines.filtered(
+                lambda line: key in (line.store or '').lower()
+            )
+        if not lines:
+            return self._ctkm_notify_reload(
+                _('Không có dòng'),
+                _('Không còn cửa hàng nào để tick Đã in.'),
+                notif_type='warning',
+            )
+        lines.write({'done': True})
+        return self._ctkm_notify_reload(
+            _('Đã tick tất cả'),
+            _('Đã đánh dấu Đã in cho %s cửa hàng.') % len(lines),
+        )
+
     def web_read(self, specification):
         # Mở form bước 9: gom SL tem/tag theo cửa hàng từ file tổng.
         if self.ids and not self.env.context.get('ctkm_skip_print_autosync'):

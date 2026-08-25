@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-inherit="web.ListRenderer" t-inherit-mode="extension">
+        <xpath expr="//span[@t-esc='column.label']" position="before">
+            <div t-if="this.isTickAllColumn and isTickAllColumn(column)"
+                 class="o_ctkm_tick_all me-1"
+                 title="Tick tất cả"
+                 t-on-click.stop.prevent="() => {}"
+                 t-on-pointerup.stop="() => {}">
+                <CheckBox className="'d-flex m-0'"
+                          value="isTickAllChecked(column)"
+                          indeterminate="isTickAllIndeterminate(column)"
+                          disabled="isTickAllDisabled(column)"
+                          onChange="(checked) => this.onTickAllChange(column, checked)"/>
+            </div>
+        </xpath>
+    </t>
+</templates>

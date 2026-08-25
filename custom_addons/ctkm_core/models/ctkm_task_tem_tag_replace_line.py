@@ -99,6 +99,8 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         internal = self.env.context.get('ctkm_tem_tag_line_sync')
         if ('replaced_quantity' in vals or 'replaced_done' in vals) and not internal:
             self._check_can_update_replaced()
+        if 'received' in vals and not internal:
+            self._check_can_update_received()
         res = super().write(vals)
         if 'replaced_quantity' in vals and not internal:
             self._distribute_replaced_quantity()

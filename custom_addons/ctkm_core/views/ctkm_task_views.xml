@@ -152,8 +152,9 @@
                                             default_order="store, material_code">
                                             <field name="store" readonly="1"/>
                                             <field name="material_code" readonly="1"/>
-                                            <field name="confirmed" widget="boolean"
-                                                string="Xác nhận thay"/>
+                                            <field name="confirmed" widget="ctkm_tick"
+                                                string="Xác nhận thay"
+                                                options="{'tick_all': True}"/>
                                         </list>
                                     </field>
                                 </group>
@@ -203,21 +204,12 @@
                                             column_invisible="parent.is_tem_tag_import_task"/>
                                         <field name="ctkm_name" readonly="1"
                                             column_invisible="not parent.is_tem_bb_replace_task"/>
-                                        <field name="received" column_invisible="1"/>
-                                        <field name="replaced_done" widget="boolean"
+                                        <field name="replaced_done" widget="ctkm_tick"
+                                            options="{'tick_all': True}"
                                             column_invisible="not parent.is_tem_replace_task"/>
-                                        <button name="action_toggle_received" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-square-o"
-                                            invisible="received"
-                                            title="Tick khi đã nhận tem/tag mới"
-                                            string="Đã nhận"/>
-                                        <button name="action_toggle_received" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-check-square-o"
-                                            invisible="not received"
-                                            title="Bỏ tick"
-                                            string="Đã nhận"/>
+                                        <field name="received" widget="ctkm_tick"
+                                            options="{'tick_all': True}"
+                                            column_invisible="not parent.is_tem_replace_task"/>
                                     </list>
                                 </field>
                             </group>
@@ -331,7 +323,8 @@
                                         <field name="tag_quantity" readonly="1" width="90px"
                                             sum="Tổng SL tag"/>
                                         <field name="done" string="Đã giao"
-                                            widget="boolean"/>
+                                            widget="ctkm_tick"
+                                            options="{'tick_all': True}"/>
                                     </list>
                                 </field>
                             </group>
@@ -377,7 +370,8 @@
                                         <field name="tem_quantity" width="90px" sum="Tổng SL tem"/>
                                         <field name="tag_quantity" width="90px" sum="Tổng SL tag"/>
                                         <field name="done" string="Đã thu"
-                                            widget="boolean"/>
+                                            widget="ctkm_tick"
+                                            options="{'tick_all': True}"/>
                                     </list>
                                 </field>
                             </group>
@@ -393,6 +387,10 @@
                                 <button name="action_refresh_tem_tag_lines" type="object"
                                     string="Làm mới danh sách" class="btn-secondary btn-sm"
                                     icon="fa-refresh"/>
+                                <button name="action_tick_all_print_done" type="object"
+                                    string="Tick tất cả Đã in" class="btn-primary btn-sm ms-2"
+                                    icon="fa-check-square-o"
+                                    title="Đánh dấu Đã in cho mọi cửa hàng trên bảng cần in"/>
                             </div>
                             <separator string="Thông tin cửa hàng và số lượng tem/tag cần in"
                                 colspan="2"/>
@@ -413,19 +411,8 @@
                                     <field name="is_manual" column_invisible="1"/>
                                     <field name="tem_quantity" readonly="1" width="90px" sum="Tổng SL tem"/>
                                     <field name="tag_quantity" readonly="1" width="90px" sum="Tổng SL tag"/>
-                                    <field name="done" column_invisible="1"/>
-                                    <button name="action_toggle_print_done" type="object"
-                                        class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                        icon="fa-square-o"
-                                        invisible="done"
-                                        title="Tick khi đã in xong"
-                                        string="Đã in"/>
-                                    <button name="action_toggle_print_done" type="object"
-                                        class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                        icon="fa-check-square-o"
-                                        invisible="not done"
-                                        title="Bỏ tick để đưa lại bảng cần in"
-                                        string="Đã in"/>
+                                    <field name="done" string="Đã in" widget="ctkm_tick"
+                                        options="{'tick_all': True, 'show_label': True}"/>
                                 </list>
                             </field>
                             <separator string="Cửa hàng đã hoàn thành in tem/tag"
@@ -447,19 +434,8 @@
                                     <field name="is_manual" column_invisible="1"/>
                                     <field name="tem_quantity" readonly="1" width="90px" sum="Tổng SL tem"/>
                                     <field name="tag_quantity" readonly="1" width="90px" sum="Tổng SL tag"/>
-                                    <field name="done" column_invisible="1"/>
-                                    <button name="action_toggle_print_done" type="object"
-                                        class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                        icon="fa-square-o"
-                                        invisible="done"
-                                        title="Tick khi đã in xong"
-                                        string="Đã in"/>
-                                    <button name="action_toggle_print_done" type="object"
-                                        class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                        icon="fa-check-square-o"
-                                        invisible="not done"
-                                        title="Bỏ tick để đưa lại bảng cần in"
-                                        string="Đã in"/>
+                                    <field name="done" string="Đã in" widget="ctkm_tick"
+                                        options="{'tick_all': True, 'show_label': True}"/>
                                     <field name="done_date" readonly="1" width="120px"
                                         optional="show"/>
                                 </list>
@@ -480,19 +456,8 @@
                                     <list editable="bottom" create="0" delete="0">
                                         <field name="store" readonly="1"/>
                                         <field name="material_code" readonly="1"/>
-                                        <field name="received" column_invisible="1"/>
-                                        <button name="action_toggle_received" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-square-o"
-                                            invisible="received"
-                                            title="Tick khi đã nhận tem/tag mới"
-                                            string="Đã nhận"/>
-                                        <button name="action_toggle_received" type="object"
-                                            class="btn btn-link p-0 o_ctkm_print_done_btn"
-                                            icon="fa-check-square-o"
-                                            invisible="not received"
-                                            title="Bỏ tick"
-                                            string="Đã nhận"/>
+                                        <field name="received" widget="ctkm_tick"
+                                            options="{'tick_all': True}"/>
                                     </list>
                                 </field>
                             </group>

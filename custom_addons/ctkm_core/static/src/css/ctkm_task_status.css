@@ -65,13 +65,18 @@
 .o_ctkm_print_store_list td[data-name="tem_quantity"],
 .o_ctkm_print_store_list th[data-name="tag_quantity"],
 .o_ctkm_print_store_list td[data-name="tag_quantity"],
-.o_ctkm_print_store_list th[data-name="done"],
-.o_ctkm_print_store_list td[data-name="done"],
 .o_ctkm_print_store_list th[data-name="done_date"],
 .o_ctkm_print_store_list td[data-name="done_date"] {
     width: 96px !important;
     min-width: 80px !important;
     max-width: 130px !important;
+    white-space: nowrap;
+}
+.o_ctkm_print_store_list th[data-name="done"],
+.o_ctkm_print_store_list td[data-name="done"] {
+    width: 160px !important;
+    min-width: 140px !important;
+    max-width: 220px !important;
     white-space: nowrap;
 }
 
@@ -90,6 +95,29 @@
 }
 .o_ctkm_print_store_list td.o_list_button .o_ctkm_print_done_btn .fa-check-square-o {
     color: #198754;
+}
+
+th .o_ctkm_tick_all {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+}
+th .o_ctkm_tick_all .form-check-input {
+    cursor: pointer;
+}
+.o_ctkm_print_done {
+    cursor: pointer;
+    min-width: 1.25rem;
+    min-height: 1.25rem;
+}
+.o_ctkm_print_done .form-check-input {
+    cursor: pointer;
+    width: 1.15rem;
+    height: 1.15rem;
+}
+.o_ctkm_print_done_saving {
+    opacity: 0.6;
+    pointer-events: none;
 }
 
 .o_ctkm_time_table th[data-name="date_start"],
