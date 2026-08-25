@@ -47,7 +47,9 @@
                     <button name="action_advance_stage" type="object"
                         string="Chuyển tiếp" class="btn-secondary" icon="fa-forward"
                         invisible="state != 'done' or forwarded or (checklist_need_manager_confirm and not manager_confirmed)"/>
-                    <field name="program_stage_id" widget="statusbar"/>
+                    <field name="program_stage_progress_json" invisible="1"/>
+                    <field name="program_checklist_current_stage_id" invisible="1"/>
+                    <field name="program_stage_id" widget="ctkm_stage_statusbar"/>
                 </header>
                 <sheet>
                     <field name="program_id" invisible="1"/>

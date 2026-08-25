@@ -125,6 +125,17 @@ class CtkmProgram(models.Model):
         string='Đang ở bước',
         compute='_compute_checklist_progress',
     )
+    stage_progress_json = fields.Json(
+        string='Tiến độ từng giai đoạn',
+        compute='_compute_stage_progress_json',
+        help='Map stage_id → trạng thái checklist (todo/progress/done) để tô màu thanh giai đoạn.',
+    )
+    checklist_current_stage_id = fields.Many2one(
+        'ctkm.stage',
+        string='Giai đoạn đang làm',
+        compute='_compute_stage_progress_json',
+        help='Bước Đang làm, hoặc bước Chưa làm gần nhất — dùng để neo thanh giai đoạn.',
+    )
     report_print_pending_ids = fields.Many2many(
         'ctkm.task.tem.print.line',
         compute='_compute_report_print_store_ids',
@@ -196,6 +207,40 @@ class CtkmProgram(models.Model):
                 program.checklist_current_step = _('Đã hoàn thành tất cả bước')
             else:
                 program.checklist_current_step = False
+
+    @api.depends(
+        'checklist_line_ids.state',
+        'checklist_line_ids.stage_id',
+        'checklist_line_ids.sequence',
+        'checklist_line_ids.name',
+    )
+    def _compute_stage_progress_json(self):
+        stages = self.env['ctkm.stage'].search([])
+        stages_by_name = {stage.name: stage for stage in stages}
+        for program in self:
+            mapping = {}
+            progress_stage = False
+            todo_stage = False
+            last_stage = False
+            lines = program.checklist_line_ids.sorted(
+                lambda line: (line.sequence, line.id)
+            )
+            for line in lines:
+                stage = line.stage_id
+                if not stage and line.name:
+                    stage = stages_by_name.get(line.name)
+                if not stage:
+                    continue
+                mapping[str(stage.id)] = line.state or 'todo'
+                last_stage = stage
+                if line.state == 'progress' and not progress_stage:
+                    progress_stage = stage
+                elif line.state == 'todo' and not todo_stage:
+                    todo_stage = stage
+            program.stage_progress_json = mapping
+            program.checklist_current_stage_id = (
+                progress_stage or todo_stage or last_stage
+            )
 
     def _ctkm_default_checklist_vals(self):
         stages = self.env['ctkm.stage'].search([], order='sequence, id')

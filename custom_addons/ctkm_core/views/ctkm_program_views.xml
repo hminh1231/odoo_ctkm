@@ -8,7 +8,9 @@
         <field name="arch" type="xml">
             <form string="Chương trình khuyến mãi">
                 <header>
-                    <field name="stage_id" widget="statusbar" options="{'clickable': '1'}"/>
+                    <field name="stage_progress_json" invisible="1"/>
+                    <field name="checklist_current_stage_id" invisible="1"/>
+                    <field name="stage_id" widget="ctkm_stage_statusbar" options="{'clickable': '1'}"/>
                 </header>
                 <sheet>
                     <field name="active" invisible="1"/>
@@ -106,6 +108,7 @@
                             <field name="checklist_line_ids" nolabel="1">
                                 <list editable="bottom" default_order="sequence">
                                     <field name="sequence" string="STT" width="60px"/>
+                                    <field name="stage_id" column_invisible="1"/>
                                     <field name="name" string="Công việc"/>
                                     <field name="user_ids" string="Phụ trách" widget="many2many_avatar_user"
                                         options="{'no_create': True}"/>

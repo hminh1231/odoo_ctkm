@@ -1,0 +1,51 @@
+.o_field_statusbar.o_field_ctkm_stage_statusbar {
+    > .o_statusbar_status > .o_arrow_button:not(.d-none) {
+        &[data-progress="done"],
+        &[data-progress="done"].o_arrow_button_current:disabled,
+        &[data-progress="done"]:active:not(.o_last) {
+            background-color: #28a745 !important;
+            color: #fff !important;
+
+            &::before {
+                background-color: var(--o-statusbar-border) !important;
+            }
+            &:hover,
+            &:focus {
+                background-color: #218838 !important;
+            }
+            &:disabled {
+                color: #fff !important;
+            }
+        }
+
+        &[data-progress="progress"],
+        &[data-progress="progress"].o_arrow_button_current:disabled,
+        &[data-progress="progress"]:active:not(.o_last) {
+            background-color: #ffc107 !important;
+            color: #212529 !important;
+
+            &::before {
+                background-color: var(--o-statusbar-border) !important;
+            }
+            &:hover,
+            &:focus {
+                background-color: #e0a800 !important;
+            }
+            &:disabled {
+                color: #212529 !important;
+            }
+        }
+    }
+}
+
+.dropdown-item.o_ctkm_stage_done,
+.dropdown-item.o_ctkm_stage_done.active {
+    background-color: #28a745 !important;
+    color: #fff !important;
+}
+
+.dropdown-item.o_ctkm_stage_progress,
+.dropdown-item.o_ctkm_stage_progress.active {
+    background-color: #ffc107 !important;
+    color: #212529 !important;
+}

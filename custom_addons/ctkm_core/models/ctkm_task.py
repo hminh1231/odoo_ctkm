@@ -339,6 +339,16 @@ class CtkmTask(models.Model):
     program_stage_id = fields.Many2one(
         related='program_id.stage_id', string='Giai đoạn', readonly=True,
     )
+    program_stage_progress_json = fields.Json(
+        related='program_id.stage_progress_json',
+        string='Tiến độ từng giai đoạn',
+        readonly=True,
+    )
+    program_checklist_current_stage_id = fields.Many2one(
+        related='program_id.checklist_current_stage_id',
+        string='Giai đoạn đang làm',
+        readonly=True,
+    )
     program_date_begin = fields.Datetime(
         related='program_id.date_begin', string='Ngày bắt đầu', readonly=True,
     )
