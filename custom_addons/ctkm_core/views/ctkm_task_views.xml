@@ -62,6 +62,7 @@
                     <field name="is_tem_print_task" invisible="1"/>
                     <field name="is_tem_handover_task" invisible="1"/>
                     <field name="is_tem_receive_task" invisible="1"/>
+                    <field name="is_tem_postcheck_task" invisible="1"/>
                     <field name="show_work_processing_tab" invisible="1"/>
                     <field name="program_kanban_state" widget="statusbar"
                         class="ms-auto float-end"/>
@@ -300,6 +301,9 @@
                                     <button name="action_refresh_tem_tag_lines" type="object"
                                         string="Làm mới danh sách" class="btn-secondary btn-sm"
                                         icon="fa-refresh"/>
+                                    <button name="action_export_handover_bb_file" type="object"
+                                        string="Xuất biên bản bàn giao" class="btn-primary btn-sm ms-2"
+                                        icon="fa-file-excel-o"/>
                                 </div>
                                 <field name="handover_store_ids" nolabel="1" colspan="2"
                                     widget="one2many"
@@ -445,7 +449,8 @@
                                 invisible="not is_tem_receive_task">
                                 <div colspan="2" class="text-muted mb-2"
                                     invisible="not is_tem_receive_task">
-                                    Tem/tag mới cần nhận cho cửa hàng của bạn.
+                                    Tem/tag mới cần nhận cho cửa hàng của bạn
+                                    (mã Store trên biên bản khớp mã bộ phận trên hồ sơ).
                                 </div>
                                 <div colspan="2" class="mb-2">
                                     <button name="action_refresh_tem_tag_lines" type="object"
@@ -457,6 +462,53 @@
                                         <field name="store" readonly="1"/>
                                         <field name="material_code" readonly="1"/>
                                         <field name="received" widget="ctkm_tick"
+                                            options="{'tick_all': True}"/>
+                                    </list>
+                                </field>
+                            </group>
+                            <group string="Hậu kiểm thay tem"
+                                invisible="not is_tem_postcheck_task">
+                                <div colspan="2" class="text-muted mb-2">
+                                    Cửa hàng và số lượng tem/tag lấy từ bước <b>In tem, Tag</b>.
+                                    Tick <b>Đã thay đủ tem</b>, <b>Đã thay đủ tag</b> hoặc
+                                    <b>Chưa thay/thay thiếu</b> khi giám sát kiểm tra tại cửa hàng.
+                                </div>
+                                <field name="postcheck_store_search" placeholder="Tìm cửa hàng..."
+                                    nolabel="1" colspan="2"/>
+                                <div colspan="2" class="mb-2">
+                                    <button name="action_refresh_tem_tag_lines" type="object"
+                                        string="Làm mới danh sách" class="btn-secondary btn-sm"
+                                        icon="fa-refresh"/>
+                                </div>
+                                <field name="postcheck_store_ids" nolabel="1" colspan="2"
+                                    widget="one2many"
+                                    class="o_ctkm_print_store_list"
+                                    domain="[('store', 'ilike', postcheck_store_search or '%')]">
+                                    <list editable="bottom" create="0" delete="0"
+                                        class="o_ctkm_print_store_list"
+                                        default_order="sequence, store">
+                                        <field name="sequence" readonly="1" width="50px"/>
+                                        <field name="store"
+                                            string="Cửa hàng"
+                                            readonly="1"/>
+                                        <field name="store_id" column_invisible="1"/>
+                                        <field name="store_code" column_invisible="1"/>
+                                        <field name="store_key" column_invisible="1"/>
+                                        <field name="print_line_id" column_invisible="1"/>
+                                        <field name="tem_quantity" readonly="1" width="110px"
+                                            string="Số lượng tem"
+                                            sum="Tổng SL tem"/>
+                                        <field name="tag_quantity" readonly="1" width="110px"
+                                            string="Số lượng tag"
+                                            sum="Tổng SL tag"/>
+                                        <field name="replaced" string="Đã thay đủ tem"
+                                            widget="ctkm_tick"
+                                            options="{'tick_all': True}"/>
+                                        <field name="tag_replaced" string="Đã thay đủ tag"
+                                            widget="ctkm_tick"
+                                            options="{'tick_all': True}"/>
+                                        <field name="not_replaced" string="Chưa thay/thay thiếu"
+                                            widget="ctkm_tick"
                                             options="{'tick_all': True}"/>
                                     </list>
                                 </field>

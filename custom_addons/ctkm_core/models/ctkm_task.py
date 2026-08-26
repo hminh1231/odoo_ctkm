@@ -17,8 +17,10 @@ try:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, Side
     from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.page import PageMargins
 except ImportError:
     Workbook = None
+    PageMargins = None
 
 _logger = logging.getLogger(__name__)
 
@@ -55,10 +57,14 @@ TEM_DESIGN_STAGE_XMLID = 'ctkm_core.ctkm_stage_7'
 TEM_REPLACE_STAGE_XMLID = 'ctkm_core.ctkm_stage_12'
 TEM_PHOTO_STAGE_XMLID = 'ctkm_core.ctkm_stage_13'
 TEM_CHECK_STAGE_XMLID = 'ctkm_core.ctkm_stage_14'
+TEM_POSTCHECK_STAGE_XMLID = 'ctkm_core.ctkm_stage_16'
 # Các trường kho Tem/Tag được gom vào bảng "Chi tiết tem/tag".
 TEM_TAG_LINE_KEY_FIELDS = ('material_code', 'store')
-# Chức danh trên hồ sơ nhân viên (hr_job_title_vn) dùng để gán bước 11–14.
+# Chức danh trên hồ sơ nhân viên (hr_job_title_vn) dùng để gán bước 11–14 / hậu kiểm.
 STORE_MANAGER_JOB_TITLE = 'cửa hàng trưởng'
+SUPERVISOR_JOB_TITLE = 'giám sát'
+# Bước 16 "Hậu kiểm CTKM Giám sát đi kiểm tra thay tem".
+TEM_POSTCHECK_TASK_MARKERS = ('haukiem',)
 
 
 def normalize_step_key(value):
@@ -200,10 +206,16 @@ class CtkmTask(models.Model):
         store=True,
         help='Công việc thuộc bước "Thiết kế mẫu tem/tag, Bảng nhận diện".',
     )
+    is_tem_postcheck_task = fields.Boolean(
+        string='Bước hậu kiểm CTKM',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc thuộc bước "Hậu kiểm CTKM Giám sát đi kiểm tra thay tem".',
+    )
     show_work_processing_tab = fields.Boolean(
         string='Hiện tab Xử lý công việc',
         compute='_compute_show_work_processing_tab',
-        help='Tab "Xử lý công việc" cho bước 9–11 (In tem, Bàn giao/Thu hồi, Nhận tem).',
+        help='Tab "Xử lý công việc" cho bước 9–11 và bước Hậu kiểm.',
     )
     handover_quantity = fields.Float(string='Số lượng bàn giao')
     recovery_quantity = fields.Float(string='Số lượng thu hồi')
@@ -257,6 +269,13 @@ class CtkmTask(models.Model):
         context={'default_line_type': 'collect'},
         help='Mã cửa hàng lấy từ bước 9; SL tem/tag điền tay.',
     )
+    postcheck_store_search = fields.Char(string='Tìm cửa hàng hậu kiểm')
+    postcheck_store_ids = fields.One2many(
+        'ctkm.task.tem.postcheck.line',
+        'task_id',
+        string='Hậu kiểm thay tem',
+        help='Cửa hàng và SL tem/tag lấy từ bước 9 In tem, Tag.',
+    )
     time_line_ids = fields.One2many(
         'ctkm.task.time.line',
         'task_id',
@@ -279,7 +298,7 @@ class CtkmTask(models.Model):
         'task_id',
         string='Chi tiết tem/tag',
         help='Tem/Tag của CTKM này: bước 4 / 10 xem toàn bộ cửa hàng, '
-             'bước 11 / 12 chỉ cửa hàng của người nhận việc.',
+             'bước 11 / 12 chỉ cửa hàng của người đang xem.',
     )
     tem_design_ids = fields.One2many(
         'ctkm.task.tem.design.line',
@@ -529,6 +548,32 @@ class CtkmTask(models.Model):
         for task in self:
             task.is_task_assignee = uid in task.user_ids.ids
 
+    def _ctkm_ensure_receive_lines_synced(self):
+        """Bước 11/12: dựng lại bảng nếu còn thiếu store so với kho Tem/Tag."""
+        if self.env.context.get('ctkm_skip_receive_resync'):
+            return
+        targets = self.filtered(
+            lambda t: (t.is_tem_receive_task or t.is_tem_replace_task) and t.program_id
+        )
+        if not targets or 'ctkm.inventory.tem.tag' not in self.env:
+            return
+        TemTag = self.env['ctkm.inventory.tem.tag'].sudo()
+        for task in targets:
+            inv_stores = set(TemTag.search([
+                ('program_id', '=', task.program_id.id),
+            ]).mapped('store_key'))
+            inv_stores.discard(False)
+            line_stores = set(
+                self.env['ctkm.task.tem.tag.replace.line'].sudo().search([
+                    ('task_id', '=', task.id),
+                ]).mapped('store_key')
+            )
+            line_stores.discard(False)
+            if inv_stores and line_stores != inv_stores:
+                task.sudo().with_context(
+                    ctkm_skip_receive_resync=True,
+                )._ctkm_sync_tem_tag_lines()
+
     @api.depends('completion_ids', 'completion_ids.done', 'user_ids')
     @api.depends_context('uid')
     def _compute_is_completed_by_me(self):
@@ -619,6 +664,7 @@ class CtkmTask(models.Model):
 
     @api.depends(
         'is_tem_print_task', 'is_tem_handover_task', 'is_tem_receive_task',
+        'is_tem_postcheck_task',
     )
     def _compute_show_work_processing_tab(self):
         for task in self:
@@ -626,6 +672,7 @@ class CtkmTask(models.Model):
                 task.is_tem_print_task
                 or task.is_tem_handover_task
                 or task.is_tem_receive_task
+                or task.is_tem_postcheck_task
             )
 
     @api.depends('name', 'checklist_line_id.name', 'checklist_line_id.stage_id')
@@ -642,6 +689,7 @@ class CtkmTask(models.Model):
                 ('photo', TEM_PHOTO_STAGE_XMLID),
                 ('check', TEM_CHECK_STAGE_XMLID),
                 ('design', TEM_DESIGN_STAGE_XMLID),
+                ('postcheck', TEM_POSTCHECK_STAGE_XMLID),
             )
         }
         for task in self:
@@ -692,6 +740,10 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['design'])
                 or any(marker in key for key in keys for marker in TEM_DESIGN_TASK_MARKERS)
             )
+            is_postcheck = (
+                (stage_id and stage_id == stage_ids['postcheck'])
+                or any(marker in key for key in keys for marker in TEM_POSTCHECK_TASK_MARKERS)
+            )
             # Bước 6 "Lập BB thay tem": nhận diện riêng (không trùng bước 4 / 12 / 15).
             is_bb_replace = (
                 (stage_id and stage_id == stage_ids['bb_replace'])
@@ -705,6 +757,14 @@ class CtkmTask(models.Model):
             task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
             task.is_tem_handover_task = bool(is_handover)
             task.is_tem_receive_task = bool(is_receive and not is_handover)
+            task.is_tem_postcheck_task = bool(
+                is_postcheck
+                and not is_import
+                and not is_print
+                and not is_handover
+                and not is_receive
+                and not is_replace
+            )
             task.is_tem_design_task = bool(
                 is_design
                 and not is_import
@@ -714,6 +774,7 @@ class CtkmTask(models.Model):
                 and not is_receive
                 and not is_replace
                 and not is_photo
+                and not is_postcheck
             )
 
     @api.model
@@ -732,22 +793,73 @@ class CtkmTask(models.Model):
         return tem_tag.current_user_store_keys()
 
     def _ctkm_tem_tag_receive_store_keys(self):
-        """Mã cửa hàng bước 11 "Nhận tem tag mới".
-
-        Gồm mã cửa hàng của nhân viên nhận việc + các mã trong
-        LUG Permission "Mã bộ phận được xem (STORE)" (Settings → Users,
-        có thể chọn nhiều mã) của mọi người nhận việc.
-        """
+        """Mã cửa hàng bước 11 "Nhận tem tag mới" (theo người đang xem)."""
         self.ensure_one()
-        keys = list(self._ctkm_tem_tag_store_keys())
-        tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
-        getter = getattr(tem_tag, 'lug_permission_store_keys_for_user', None)
-        if getter is None or not self.user_ids:
-            return keys
-        for key in getter(self.user_ids):
-            if key not in keys:
-                keys.append(key)
+        return list(self._ctkm_current_user_visible_store_keys())
+
+    @api.model
+    def _ctkm_user_department_store_keys(self, user):
+        """Mã bộ phận / cửa hàng trên hồ sơ của một user, đã chuẩn hóa."""
+        user = user.sudo() if user else self.env['res.users']
+        if not user:
+            return set()
+        employees = self.env['hr.employee'].sudo()
+        if 'employee_id' in user._fields and user.employee_id:
+            employees |= user.employee_id.sudo()
+        if user.employee_ids:
+            employees |= user.employee_ids.sudo()
+        keys = set()
+        for employee in employees:
+            keys |= self._ctkm_employee_department_store_keys(employee)
         return keys
+
+    @api.model
+    def _ctkm_current_user_visible_store_keys(self):
+        return self._ctkm_visible_store_keys_for_user(self.env.user)
+
+    @api.model
+    def _ctkm_visible_store_keys_for_user(self, user):
+        """Mã Store trên biên bản mà *user* được xem (bước 11–14).
+
+        Chỉ dựa trên mã bộ phận / cửa hàng HRM (AEBD_DDL chứa AEBD).
+        Không lấy LUG Permission — tránh lộ store của cửa hàng khác.
+        """
+        dept_keys = self._ctkm_user_department_store_keys(user)
+        visible = set(dept_keys)
+        for dept in list(dept_keys):
+            for part in re.split(r'[^A-Z0-9]+', dept or ''):
+                if part and len(part) >= 3:
+                    visible.add(part)
+        if 'ctkm.inventory.tem.tag' in self.env and dept_keys:
+            tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
+            groups = tem_tag._read_group(
+                [('store_key', '!=', False)],
+                ['store_key'],
+                ['id:count'],
+            )
+            for store_key, _count in groups:
+                key = _ctkm_normalize_store_key(store_key)
+                if key and any(
+                    self._ctkm_department_contains_store(dept, key)
+                    for dept in dept_keys
+                ):
+                    visible.add(key)
+        return [key for key in visible if key]
+
+    def _ctkm_store_visible_to_user(self, store_value):
+        """True nếu mã Store trên dòng thuộc cửa hàng của user đang xem."""
+        key = _ctkm_normalize_store_key(store_value)
+        if not key:
+            return False
+        if self.env.user.has_group('ctkm_core.group_ctkm_manager'):
+            return True
+        if key in set(self._ctkm_current_user_visible_store_keys()):
+            return True
+        dept_keys = self._ctkm_user_department_store_keys(self.env.user)
+        return any(
+            self._ctkm_department_contains_store(dept, key)
+            for dept in dept_keys
+        )
 
     def _ctkm_tem_tag_managed_store_keys(self):
         """Mã cửa hàng theo 'Cửa hàng quản lí' của người nhận việc (bước 6)."""
@@ -793,6 +905,7 @@ class CtkmTask(models.Model):
                 keys.add(key)
         return keys
 
+    @api.model
     def _ctkm_department_contains_store(self, dept_key, store_key):
         """Mã Store trên BB nằm trong mã bộ phận (store ngắn, mã bộ phận dài hơn).
 
@@ -933,6 +1046,131 @@ class CtkmTask(models.Model):
         )
         return users
 
+    def _ctkm_miens_for_bb_stores(self, store_keys):
+        """Miền của các mã Store trên biên bản, lấy từ danh mục cửa hàng (hr.store)."""
+        if not store_keys:
+            return set()
+        miens = set()
+        Store = (
+            self.env['hr.store'].sudo()
+            if 'hr.store' in self.env
+            else self.env['hr.store.code'].sudo()
+        )
+        stores = Store.search([('code', '!=', False)])
+        for store in stores:
+            code = _ctkm_normalize_store_key(store.code)
+            name = _ctkm_normalize_store_key(store.name)
+            if not store.mien:
+                continue
+            if any(
+                self._ctkm_department_contains_store(code, key)
+                or (name and self._ctkm_department_contains_store(name, key))
+                or key == code
+                for key in store_keys
+            ):
+                miens.add(store.mien)
+        return miens
+
+    def _ctkm_find_supervisor_users(self, miens):
+        """Giám sát thuộc một trong các miền của cửa hàng trên biên bản."""
+        if not miens:
+            return self.env['res.users']
+        Employee = self.env['hr.employee'].sudo()
+        domain = [
+            ('active', '=', True),
+            ('user_id', '!=', False),
+        ]
+        if 'job_title' in Employee._fields:
+            domain.append(('job_title', '=', SUPERVISOR_JOB_TITLE))
+        if 'mien' in Employee._fields:
+            domain.append(('mien', 'in', list(miens)))
+        employees = Employee.search(domain)
+        return employees.mapped('user_id').filtered(
+            lambda user: user.active and not user.share
+        )
+
+    def _ctkm_checklist_line_is_postcheck_step(self, line):
+        """Bước Hậu kiểm (Giám sát đi kiểm tra thay tem)."""
+        if not line:
+            return False
+        stage_id = line.stage_id.id if line.stage_id else False
+        postcheck_id = self._ctkm_step_stage_id(TEM_POSTCHECK_STAGE_XMLID)
+        if stage_id and postcheck_id and stage_id == postcheck_id:
+            return True
+        key = normalize_step_key(line.name)
+        return bool(key and any(marker in key for marker in TEM_POSTCHECK_TASK_MARKERS))
+
+    def _ctkm_assign_supervisors_after_bb_import(self):
+        """Khi hoàn thành bước 4: gán Giám sát (theo miền của Store) vào bước Hậu kiểm."""
+        self.ensure_one()
+        if not self.is_tem_tag_import_task or not self.program_id:
+            return self.env['res.users']
+        store_keys = self._ctkm_bb_store_keys()
+        if not store_keys:
+            return self.env['res.users']
+        miens = self._ctkm_miens_for_bb_stores(store_keys)
+        users = self._ctkm_find_supervisor_users(miens)
+        target_lines = self.program_id.checklist_line_ids.filtered(
+            lambda line: (
+                self._ctkm_checklist_line_is_postcheck_step(line)
+                and line.state != 'done'
+            )
+        )
+        if users:
+            user_ids = users.ids
+            for line in target_lines:
+                if set(line.user_ids.ids) == set(user_ids):
+                    continue
+                line.sudo().write({'user_ids': [(6, 0, user_ids)]})
+            flag_tasks = self.env['ctkm.task'].sudo().search([
+                ('program_id', '=', self.program_id.id),
+                ('state', '!=', 'done'),
+            ]).filtered(
+                lambda t: self._ctkm_checklist_line_is_postcheck_step(t.checklist_line_id)
+                or any(
+                    marker in (normalize_step_key(t.name) or '')
+                    for marker in TEM_POSTCHECK_TASK_MARKERS
+                )
+            )
+            for other in flag_tasks:
+                line = other.checklist_line_id
+                if line and line.state != 'done':
+                    if set(line.user_ids.ids) != set(user_ids):
+                        line.sudo().write({'user_ids': [(6, 0, user_ids)]})
+                    continue
+                if set(other.user_ids.ids) == set(user_ids):
+                    continue
+                other.with_context(
+                    ctkm_task_sync=True,
+                    ctkm_internal_state_write=True,
+                ).write({'user_ids': [(6, 0, user_ids)]})
+        store_label = ', '.join(sorted(store_keys))
+        mien_label = ', '.join(sorted(miens)) if miens else _('(chưa xác định)')
+        if users:
+            body = _(
+                'Đã gán giám sát <b>%(users)s</b> làm người thực hiện bước '
+                'Hậu kiểm theo miền %(mien)s của mã Store trên biên bản: %(stores)s.'
+            ) % {
+                'users': escape(', '.join(users.mapped('name'))),
+                'mien': escape(mien_label),
+                'stores': escape(store_label),
+            }
+        else:
+            body = _(
+                'Không tìm thấy nhân viên chức danh Giám sát thuộc miền %(mien)s '
+                '(suy ra từ Store trên biên bản: %(stores)s). '
+                'Bước Hậu kiểm giữ nguyên người thực hiện hiện tại.'
+            ) % {
+                'mien': escape(mien_label),
+                'stores': escape(store_label),
+            }
+        self.message_post(
+            body=body,
+            subtype_xmlid='mail.mt_note',
+            body_is_html=True,
+        )
+        return users
+
     def _ctkm_tem_tag_line_values(self):
         """Gom kho Tem/Tag của CTKM theo (Mã vật tư, Store) cho bảng chi tiết."""
         self.ensure_one()
@@ -953,13 +1191,8 @@ class CtkmTask(models.Model):
         )
         tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
         domain = [('program_id', '=', self.program_id.id)]
-        if self.is_tem_receive_task or self.is_tem_replace_task:
-            # Bước 11 / 12: cùng dữ liệu — cửa hàng của nhân viên nhận việc
-            # + các mã trong LUG Permission "Mã bộ phận được xem (STORE)".
-            store_keys = self._ctkm_tem_tag_receive_store_keys()
-            if not store_keys:
-                return []
-            domain = domain + [('store_key', 'in', store_keys)]
+        # Bước 11 / 12: lưu TẤT CẢ cửa hàng của file tổng. Mỗi cửa hàng trưởng
+        # chỉ thấy store của mình nhờ ir.rule (không lọc theo người nhận việc đầu).
         if self.is_tem_bb_replace_task:
             # Bước 6 "Lập BB thay tem": chỉ cửa hàng trong "Cửa hàng quản lí"
             # (Nhân viên → Cấu hình) của người nhận việc.
@@ -1018,6 +1251,10 @@ class CtkmTask(models.Model):
                 ('program_id', 'in', programs.ids),
                 ('is_tem_handover_task', '=', True),
             ])._ctkm_sync_step10_lines()
+            self.sudo().search([
+                ('program_id', 'in', programs.ids),
+                ('is_tem_postcheck_task', '=', True),
+            ])._ctkm_sync_postcheck_lines()
         for task in self:
             values = task._ctkm_tem_tag_line_values()
             existing = {}
@@ -1405,6 +1642,72 @@ class CtkmTask(models.Model):
         # Bước Kiểm tra ảnh: đồng bộ bảng từ kho Tem/Tag (file tổng).
         self.filtered('is_tem_check_task').sudo()._ctkm_sync_tem_photo_lines()
 
+    def _ctkm_sync_postcheck_lines(self):
+        """Hậu kiểm: copy cửa hàng + SL tem/tag từ bước 9 In tem, Tag."""
+        Line = self.env['ctkm.task.tem.postcheck.line'].sudo().with_context(
+            ctkm_tem_tag_line_sync=True,
+        )
+        for task in self:
+            if not task.is_tem_postcheck_task:
+                continue
+            print_task = task._ctkm_source_print_task()
+            sources = print_task.sudo().print_store_ids
+            existing = {}
+            obsolete = Line.browse()
+            for line in Line.search([('task_id', '=', task.id)]):
+                key = line.store_key or ''
+                if not key:
+                    obsolete |= line
+                    continue
+                if key in existing:
+                    obsolete |= line
+                else:
+                    existing[key] = line
+            to_create = []
+            from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+                match_hr_store,
+            )
+            stores = (
+                self.env['hr.store'].sudo().search([])
+                if 'hr.store' in self.env else self.env['hr.store']
+            )
+            for source in sources.sorted(lambda line: (line.sequence, line.id)):
+                key = task._ctkm_print_line_store_key(source)
+                if not key:
+                    continue
+                store_rec = match_hr_store(stores, source.store_key, source.store)
+                store_name = source.store or source.store_code or ''
+                if store_rec:
+                    name = store_rec.name
+                    if isinstance(name, dict):
+                        name = next(iter(name.values()), '') if name else ''
+                    if name:
+                        store_name = name
+                vals = {
+                    'sequence': source.sequence or 1,
+                    'store_id': store_rec.id if store_rec else False,
+                    'store': store_name,
+                    'store_key': key,
+                    'print_line_id': source.id,
+                }
+                line = existing.pop(key, None)
+                if not line:
+                    to_create.append(dict(vals, task_id=task.id))
+                    continue
+                changes = {
+                    field: value
+                    for field, value in vals.items()
+                    if line[field] != value
+                }
+                if changes:
+                    line.write(changes)
+            leftover = Line.browse([line.id for line in existing.values()])
+            obsolete |= leftover
+            if to_create:
+                Line.create(to_create)
+            if obsolete:
+                obsolete.unlink()
+
     def _ctkm_tem_photo_line_values(self):
         """Gom kho Tem/Tag (file tổng) theo (Cửa hàng, Mã vật tư) cho bước Kiểm tra ảnh.
 
@@ -1693,6 +1996,383 @@ class CtkmTask(models.Model):
         wb.save(stream)
         return stream.getvalue()
 
+    # Biên bản in và bàn giao tem (bước 10) — khớp mẫu giấy in.
+    HANDOVER_BB_MIN_ROWS = 15
+    HANDOVER_BB_LAST_COL = 8
+    HANDOVER_BB_NOTES = (
+        '* Lưu ý: Sau khi thay tem theo biên bản này:\n'
+        '- Tem cũ sau khi thay phải giữ lại đầy đủ, nộp về theo đúng số lượng trên biên bản.\n'
+        '- Kiểm tra ngay tem thiếu / tem sai thông tin; báo về công ty nếu có sai lệch.\n'
+        '- Nhân viên bán hàng nào làm mất tem sẽ bị phạt 50.000đ/1 con tem.\n'
+        '- Cửa hàng trưởng chịu trách nhiệm kiểm tra số lượng tem giao nhận trước khi ký.\n'
+        '- Kiểm tra kỹ thông tin trên tem (mã, giá) trước khi dán.\n'
+        '- Chụp ảnh tem đã thay xong gửi về công ty.'
+    )
+    _HANDOVER_BB_INVALID_SHEET = (':', '\\', '/', '?', '*', '[', ']')
+
+    def action_export_handover_bb_file(self):
+        """Xuất biên bản in và bàn giao tem theo mẫu giấy, mỗi cửa hàng một sheet."""
+        self.ensure_one()
+        if not self.is_tem_handover_task:
+            raise UserError(_(
+                'Chỉ công việc bước "Bàn giao Tem Tag / Thu hồi tem tag cũ" '
+                'mới được xuất biên bản bàn giao.'
+            ))
+        if Workbook is None:
+            raise UserError(_('Thiếu thư viện openpyxl để xuất file Excel.'))
+        if not self.handover_store_ids:
+            raise UserError(_(
+                'Chưa có cửa hàng trên bảng Bàn giao tem/tag. '
+                'Bấm Làm mới danh sách trước khi xuất biên bản.'
+            ))
+        data = self._build_handover_bb_xlsx()
+        date_str = fields.Date.context_today(self).strftime('%d_%m_%Y')
+        filename = 'Bien_ban_ban_giao_tem_%s_%s.xlsx' % (
+            self.program_id.notify_code or self.program_id.id or 'CTKM',
+            date_str,
+        )
+        attachment = self.env['ir.attachment'].sudo().create({
+            'name': filename,
+            'datas': base64.b64encode(data),
+            'res_model': 'ctkm.task',
+            'res_id': self.id,
+            'type': 'binary',
+            'public': True,
+        })
+        return {
+            'type': 'ir.actions.act_url',
+            'url': '/web/content/%s?download=true' % attachment.id,
+            'target': 'self',
+        }
+
+    def _handover_bb_sheet_title(self, store_code):
+        title = (store_code or 'CH').strip()
+        for ch in self._HANDOVER_BB_INVALID_SHEET:
+            title = title.replace(ch, '_')
+        return title[:31] or 'CH'
+
+    def _handover_bb_norm_keys(self, store_key):
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            normalize_store_key,
+        )
+        key = normalize_store_key(store_key) or ''
+        keys = set()
+        if key:
+            keys.add(key)
+            stripped = key
+            if stripped.startswith('LUG_'):
+                stripped = stripped[4:]
+            elif stripped.startswith('LUG'):
+                stripped = stripped[3:]
+            if stripped:
+                keys.add(stripped)
+                keys.add('LUG' + stripped)
+                keys.add('LUG_' + stripped)
+        return keys
+
+    def _handover_bb_keys_overlap(self, key_a, key_b):
+        keys_a = self._handover_bb_norm_keys(key_a)
+        keys_b = self._handover_bb_norm_keys(key_b)
+        if keys_a & keys_b:
+            return True
+        for left in keys_a:
+            for right in keys_b:
+                if len(left) >= 3 and len(right) >= 3 and (
+                    left.endswith(right) or right.endswith(left)
+                ):
+                    return True
+        return False
+
+    def _handover_bb_store_label(self, line):
+        code = line.store_id.code if line.store_id else False
+        if isinstance(code, dict):
+            code = next(iter(code.values()), '') if code else ''
+        return (code or line.store_code or line.store_key or line.store or 'CH').strip()
+
+    def _handover_bb_materials_for_store(self, store_key, inv_records):
+        """Gom mã vật tư giao mới (kho bước 4) và SL thu (bảng Thu tem/tag)."""
+        materials = {}
+        work_contents = []
+        for rec in inv_records:
+            if not self._handover_bb_keys_overlap(store_key, rec.store_key or rec.store):
+                continue
+            code = rec.material_code
+            if not code:
+                continue
+            mat = materials.setdefault(code, {
+                'promo': rec.promo_price or 0.0,
+                'qty': 0.0,
+                'collect_qty': 0.0,
+            })
+            mat['qty'] += rec.quantity or 0.0
+            if rec.promo_price and not mat['promo']:
+                mat['promo'] = rec.promo_price
+            work_content = (rec.bb_work_content or '').strip()
+            if work_content and work_content not in work_contents:
+                work_contents.append(work_content)
+        for line in self.collect_store_ids.sudo():
+            if not self._handover_bb_keys_overlap(store_key, line.store_key or line.store):
+                continue
+            code = (line.material_code or '').strip()
+            if not code:
+                continue
+            qty = (line.tem_quantity or 0.0) + (line.tag_quantity or 0.0)
+            mat = materials.setdefault(code, {
+                'promo': 0.0,
+                'qty': 0.0,
+                'collect_qty': 0.0,
+            })
+            mat['collect_qty'] += qty
+        return materials, work_contents[:1]
+
+    def _build_handover_bb_xlsx(self):
+        """Mỗi cửa hàng trên bảng Bàn giao tem/tag → một sheet biên bản."""
+        self.ensure_one()
+        program = self.program_id
+        today = fields.Date.context_today(self)
+        date_vn = 'Hôm nay, ngày %02d tháng %02d năm %s' % (
+            today.day, today.month, today.year,
+        )
+        date_str = today.strftime('%d/%m/%Y')
+        notify_code = (program.notify_code or '').strip()
+
+        store_list = []
+        seen = set()
+        for line in self.handover_store_ids.sudo().sorted(
+            lambda rec: (rec.sequence, rec.store or '', rec.id)
+        ):
+            key = line.store_key or ''
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            store_list.append((key, self._handover_bb_store_label(line)))
+        if not store_list:
+            raise UserError(_(
+                'Không có cửa hàng hợp lệ trên bảng Bàn giao tem/tag để xuất biên bản.'
+            ))
+
+        inv_records = self.env['ctkm.inventory.tem.tag']
+        if program and 'ctkm.inventory.tem.tag' in self.env:
+            inv_records = self.env['ctkm.inventory.tem.tag'].sudo().search([
+                ('program_id', '=', program.id),
+            ])
+
+        wb = Workbook()
+        used_titles = set()
+        first = True
+        for store_key, store_code in store_list:
+            materials, work_contents = self._handover_bb_materials_for_store(
+                store_key, inv_records,
+            )
+            ws = wb.active if first else wb.create_sheet()
+            first = False
+            base_title = self._handover_bb_sheet_title(store_code)
+            sheet_title = base_title
+            suffix = 1
+            while sheet_title in used_titles:
+                suffix += 1
+                extra = '_%s' % suffix
+                sheet_title = '%s%s' % (base_title[:31 - len(extra)], extra)
+            used_titles.add(sheet_title)
+            ws.title = sheet_title
+            self._build_handover_bb_sheet(
+                ws, store_code, materials, work_contents,
+                date_vn, date_str, notify_code,
+            )
+
+        stream = io.BytesIO()
+        wb.save(stream)
+        return stream.getvalue()
+
+    def _build_handover_bb_sheet(
+        self, ws, store_code, materials, work_contents,
+        date_vn, date_str, notify_code,
+    ):
+        """Vẽ một sheet biên bản in/bàn giao tem — bố cục giống mẫu giấy."""
+        last_col = self.HANDOVER_BB_LAST_COL
+        last_letter = get_column_letter(last_col)
+        thin = Side(style='thin', color='FF000000')
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        font_name = 'Times New Roman'
+        bold = Font(name=font_name, bold=True, size=11)
+        motto_font = Font(name=font_name, bold=True, size=12)
+        motto_line_font = Font(name=font_name, bold=True, size=12, underline='single')
+        title_font = Font(name=font_name, bold=True, size=16)
+        cell_font = Font(name=font_name, size=11)
+        note_font = Font(name=font_name, size=10)
+        center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        left_top = Alignment(horizontal='left', vertical='top', wrap_text=True)
+        left_center = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+        def merge_value(start, end, value, font, align, height=None):
+            ws.merge_cells('%s:%s' % (start, end))
+            cell = ws[start]
+            cell.value = value
+            cell.font = font
+            cell.alignment = align
+            if height:
+                ws.row_dimensions[cell.row].height = height
+
+        merge_value('A1', '%s1' % last_letter, 'Cộng Hòa Xã Hội Chủ Nghĩa Việt Nam', motto_font, center)
+        merge_value(
+            'A2', '%s2' % last_letter,
+            'Độc lập - Tự do - Hạnh phúc', motto_line_font, center,
+        )
+        merge_value(
+            'A3', '%s3' % last_letter,
+            'BIÊN BẢN IN VÀ BÀN GIAO TEM', title_font, center, 24,
+        )
+        merge_value('A4', '%s4' % last_letter, 'Số: ..............', bold, center)
+        ws['A5'] = date_vn
+        ws['A5'].font = cell_font
+        ws['A6'] = 'TẠI CH: %s' % store_code
+        ws['A6'].font = cell_font
+        work_content = work_contents[0] if work_contents else ''
+        if not work_content:
+            work_content = 'IN DÁN BÀN GIAO TEM THEO TB %s NGÀY %s' % (
+                notify_code or '........', date_str,
+            )
+        merge_value(
+            'A7', '%s7' % last_letter,
+            'Nội dung công việc: %s' % work_content,
+            cell_font, left_center, 28,
+        )
+
+        group_row = 8
+        header_row = 9
+        merge_value('A8', 'D8', 'GIAO TEM MỚI', bold, center)
+        merge_value('E8', 'H8', 'TEM THU HỒI', bold, center)
+        for col_idx in range(1, last_col + 1):
+            cell = ws.cell(row=group_row, column=col_idx)
+            cell.font = bold
+            cell.border = border
+            cell.alignment = center
+        ws.row_dimensions[group_row].height = 22
+
+        headers = [
+            'STT', 'MÃ VẬT TƯ', 'GIÁ', 'SỐ LƯỢNG',
+            'MÃ VẬT TƯ', 'SL THU', 'SL MẤT', 'GHI CHÚ',
+        ]
+        for col_idx, header in enumerate(headers, start=1):
+            cell = ws.cell(row=header_row, column=col_idx, value=header)
+            cell.font = bold
+            cell.border = border
+            cell.alignment = center
+        ws.row_dimensions[header_row].height = 24
+
+        codes = sorted(
+            code for code, mat in materials.items()
+            if (mat.get('qty') or 0) > 0 or (mat.get('collect_qty') or 0) > 0
+        )
+        data_rows = max(len(codes), self.HANDOVER_BB_MIN_ROWS)
+        first_data = header_row + 1
+        last_data = first_data + data_rows - 1
+
+        def qty_value(value):
+            if not value:
+                return None
+            if abs(value - round(value)) < 0.0001:
+                return int(round(value))
+            return value
+
+        for offset in range(data_rows):
+            row = first_data + offset
+            code = codes[offset] if offset < len(codes) else ''
+            mat = materials.get(code) or {}
+            ws.cell(row=row, column=1, value=offset + 1)
+            ws.cell(row=row, column=2, value=code or None)
+            price = mat.get('promo') or None
+            price_cell = ws.cell(row=row, column=3, value=price or None)
+            price_cell.number_format = '#,##0'
+            qty_cell = ws.cell(row=row, column=4, value=qty_value(mat.get('qty')))
+            qty_cell.number_format = '#,##0'
+            ws.cell(row=row, column=5, value=code or None)
+            collect_cell = ws.cell(
+                row=row, column=6, value=qty_value(mat.get('collect_qty')),
+            )
+            collect_cell.number_format = '#,##0'
+            ws.cell(row=row, column=7, value=None)
+            ws.cell(row=row, column=8, value=None)
+            for col_idx in range(1, last_col + 1):
+                cell = ws.cell(row=row, column=col_idx)
+                cell.font = cell_font
+                cell.border = border
+                if col_idx in (1, 3, 4, 6, 7):
+                    cell.alignment = center
+                else:
+                    cell.alignment = left_center
+            ws.row_dimensions[row].height = 20
+
+        total_row = last_data + 1
+        ws.merge_cells('A%s:C%s' % (total_row, total_row))
+        total_label = ws['A%s' % total_row]
+        total_label.value = 'TỔNG CỘNG'
+        total_label.font = bold
+        total_label.alignment = center
+        qty_sum = ws.cell(
+            row=total_row, column=4,
+            value='=SUM(D%s:D%s)' % (first_data, last_data),
+        )
+        qty_sum.font = bold
+        qty_sum.number_format = '#,##0'
+        collect_sum = ws.cell(
+            row=total_row, column=6,
+            value='=SUM(F%s:F%s)' % (first_data, last_data),
+        )
+        collect_sum.font = bold
+        collect_sum.number_format = '#,##0'
+        for col_idx in range(1, last_col + 1):
+            cell = ws.cell(row=total_row, column=col_idx)
+            cell.font = bold
+            cell.border = border
+            cell.alignment = center
+        ws.row_dimensions[total_row].height = 22
+
+        note_row = total_row + 2
+        merge_value(
+            'A%s' % note_row, '%s%s' % (last_letter, note_row),
+            self.HANDOVER_BB_NOTES, note_font, left_top, 96,
+        )
+
+        sig_title_row = note_row + 2
+        sig_title_row2 = sig_title_row + 3
+        sig_space_row2 = sig_title_row2 + 1
+        groups = [
+            (sig_title_row, ['Người lập', 'Giám sát', 'Người in tem']),
+            (sig_title_row2, ['Người giao', 'Người nhận', 'Kiểm soát']),
+        ]
+        spans = [('A', 'C'), ('D', 'E'), ('F', 'H')]
+        for title_row, labels in groups:
+            space_row = title_row + 1
+            for (start, end), label in zip(spans, labels):
+                merge_value(
+                    '%s%s' % (start, title_row),
+                    '%s%s' % (end, title_row),
+                    label, bold, center,
+                )
+                ws.merge_cells('%s%s:%s%s' % (start, space_row, end, space_row))
+            ws.row_dimensions[title_row].height = 18
+            ws.row_dimensions[space_row].height = 48
+
+        widths = {1: 6, 2: 26, 3: 12, 4: 11, 5: 26, 6: 10, 7: 10, 8: 16}
+        for col_idx, width in widths.items():
+            ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+        ws.page_setup.orientation = 'portrait'
+        ws.page_setup.paperSize = 9
+        ws.page_setup.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 1
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.print_options.horizontalCentered = True
+        ws.sheet_view.showGridLines = False
+        ws.print_area = 'A1:%s%s' % (last_letter, sig_space_row2)
+        if PageMargins is not None:
+            ws.page_margins = PageMargins(
+                left=0.4, right=0.4, top=0.5, bottom=0.5,
+                header=0.2, footer=0.2,
+            )
+
     @api.model
     def _ctkm_sync_tem_tag_lines_for_programs(self, program_ids):
         """Cập nhật bảng chi tiết của mọi công việc bước 4 / 6 / 9–12 của CTKM."""
@@ -1701,7 +2381,7 @@ class CtkmTask(models.Model):
             return self.browse()
         tasks = self.sudo().search([
             ('program_id', 'in', program_ids),
-            '|', '|', '|', '|', '|', '|',
+            '|', '|', '|', '|', '|', '|', '|',
             ('is_tem_tag_import_task', '=', True),
             ('is_tem_bb_replace_task', '=', True),
             ('is_tem_print_task', '=', True),
@@ -1709,9 +2389,11 @@ class CtkmTask(models.Model):
             ('is_tem_receive_task', '=', True),
             ('is_tem_replace_task', '=', True),
             ('is_tem_check_task', '=', True),
+            ('is_tem_postcheck_task', '=', True),
         ])
         tasks._ctkm_sync_tem_tag_lines()
         tasks.filtered('is_tem_check_task')._ctkm_sync_tem_photo_lines()
+        tasks.filtered('is_tem_postcheck_task')._ctkm_sync_postcheck_lines()
         return tasks
 
     def _ctkm_clear_program_tem_tag_inventory(self):
@@ -1743,6 +2425,11 @@ class CtkmTask(models.Model):
                 _('Đã gom số lượng tem/tag theo cửa hàng từ file tổng.'),
             )
         if task.is_tem_handover_task:
+            return self._ctkm_notify_reload(
+                _('Đã làm mới'),
+                _('Đã lấy danh sách cửa hàng từ bước In tem, Tag.'),
+            )
+        if task.is_tem_postcheck_task:
             return self._ctkm_notify_reload(
                 _('Đã làm mới'),
                 _('Đã lấy danh sách cửa hàng từ bước In tem, Tag.'),
@@ -1791,6 +2478,13 @@ class CtkmTask(models.Model):
                 handover.sudo().with_context(
                     ctkm_skip_step10_autosync=True,
                 )._ctkm_sync_step10_lines()
+        # Mở form bước Hậu kiểm: copy cửa hàng + SL từ bước 9.
+        if self.ids and not self.env.context.get('ctkm_skip_postcheck_autosync'):
+            postcheck = self.filtered('is_tem_postcheck_task')
+            if postcheck:
+                postcheck.sudo().with_context(
+                    ctkm_skip_postcheck_autosync=True,
+                )._ctkm_sync_postcheck_lines()
         # Mở form bước 7: dựng bảng thiết kế mẫu tem/tag từ "Chi tiết tem/tag".
         if self.ids and not self.env.context.get('ctkm_skip_tem_design_sync'):
             design_tasks = self.filtered('is_tem_design_task')
@@ -1809,6 +2503,14 @@ class CtkmTask(models.Model):
             self.sudo().with_context(
                 ctkm_skip_time_line_ensure=True,
             )._ctkm_ensure_time_lines()
+        # Mở form bước 11/12: đủ store từ file tổng, ir.rule lọc theo cửa hàng user.
+        if self.ids and not self.env.context.get('ctkm_skip_receive_resync'):
+            receive_tasks = self.filtered(
+                lambda t: t.is_tem_receive_task or t.is_tem_replace_task
+            )
+            if receive_tasks:
+                receive_tasks._ctkm_ensure_receive_lines_synced()
+                receive_tasks.invalidate_recordset(['tem_tag_replace_ids'])
         return super().web_read(specification)
 
     def _ctkm_ensure_time_lines(self):
@@ -2088,6 +2790,12 @@ class CtkmTask(models.Model):
             domain.append(('store', 'ilike', search))
         return {'domain': {'collect_store_ids': domain}}
 
+    @api.onchange('postcheck_store_search')
+    def _onchange_postcheck_store_search(self):
+        search = (self.postcheck_store_search or '').strip()
+        domain = [('store', 'ilike', search)] if search else []
+        return {'domain': {'postcheck_store_ids': domain}}
+
     @api.onchange('state')
     def _onchange_state(self):
         if self.state in ('waiting_confirm', 'done') and not self.done_date:
@@ -2277,10 +2985,10 @@ class CtkmTask(models.Model):
                 if already_completed:
                     already_done |= task
                 continue
-            # Bước 4 đổ BB: gán cửa hàng trưởng (theo Store / mã bộ phận)
-            # vào người thực hiện bước 11–14.
+            # Bước 4 đổ BB: gán cửa hàng trưởng (bước 11–14) và giám sát (hậu kiểm).
             if task.is_tem_tag_import_task:
                 task._ctkm_assign_store_managers_after_bb_import()
+                task._ctkm_assign_supervisors_after_bb_import()
             # Tất cả đã hoàn thành → tiếp tục luồng xác nhận như cũ.
             checklist = task.checklist_line_id
             need_confirm = task._ctkm_task_needs_manager_confirm()

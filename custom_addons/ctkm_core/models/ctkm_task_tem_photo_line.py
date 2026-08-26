@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 
@@ -50,4 +50,12 @@ class CtkmTaskTemPhotoLine(models.Model):
             if not is_manager and self.env.user not in task.user_ids:
                 raise UserError(_(
                     'Chỉ người nhận việc mới được cập nhật Xác nhận thay.'
+                ))
+            if (
+                not is_manager
+                and task.is_tem_check_task
+                and not task._ctkm_store_visible_to_user(line.store)
+            ):
+                raise UserError(_(
+                    'Bạn chỉ được xác nhận hình ảnh tem/tag của cửa hàng mình.'
                 ))

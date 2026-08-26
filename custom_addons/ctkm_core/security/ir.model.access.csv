@@ -32,6 +32,9 @@ access_ctkm_task_tem_print_line_manager,ctkm.task.tem.print.line.manager,model_c
 access_ctkm_task_tem_step10_line_employee,ctkm.task.tem.step10.line.employee,model_ctkm_task_tem_step10_line,base.group_user,1,1,1,1
 access_ctkm_task_tem_step10_line_user,ctkm.task.tem.step10.line.user,model_ctkm_task_tem_step10_line,ctkm_core.group_ctkm_user,1,1,1,1
 access_ctkm_task_tem_step10_line_manager,ctkm.task.tem.step10.line.manager,model_ctkm_task_tem_step10_line,ctkm_core.group_ctkm_manager,1,1,1,1
+access_ctkm_task_tem_postcheck_line_employee,ctkm.task.tem.postcheck.line.employee,model_ctkm_task_tem_postcheck_line,base.group_user,1,1,1,1
+access_ctkm_task_tem_postcheck_line_user,ctkm.task.tem.postcheck.line.user,model_ctkm_task_tem_postcheck_line,ctkm_core.group_ctkm_user,1,1,1,1
+access_ctkm_task_tem_postcheck_line_manager,ctkm.task.tem.postcheck.line.manager,model_ctkm_task_tem_postcheck_line,ctkm_core.group_ctkm_manager,1,1,1,1
 access_ctkm_task_time_line_employee,ctkm.task.time.line.employee,model_ctkm_task_time_line,base.group_user,1,1,1,1
 access_ctkm_task_time_line_user,ctkm.task.time.line.user,model_ctkm_task_time_line,ctkm_core.group_ctkm_user,1,1,1,1
 access_ctkm_task_time_line_manager,ctkm.task.time.line.manager,model_ctkm_task_time_line,ctkm_core.group_ctkm_manager,1,1,1,1

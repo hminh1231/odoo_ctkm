@@ -3,6 +3,8 @@
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
+from odoo.addons.ctkm_core.models.ctkm_task import _ctkm_normalize_store_key
+
 # Sai số cho phép khi so sánh số lượng (float).
 QUANTITY_EPSILON = 0.000001
 
@@ -37,6 +39,13 @@ class CtkmTaskTemTagReplaceLine(models.Model):
     )
     material_code = fields.Char(string='Mã vật tư', readonly=True, index=True)
     store = fields.Char(string='Store', readonly=True)
+    store_key = fields.Char(
+        string='Store Key',
+        compute='_compute_store_key',
+        store=True,
+        index=True,
+        readonly=True,
+    )
     date = fields.Date(string='Ngày', readonly=True)
     ctkm_name = fields.Char(
         string='GHI CHÚ',
@@ -70,6 +79,11 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         string='Đã thay',
         help='Đã thay xong tem/tag tại cửa hàng này (bước Thay tem Tag).',
     )
+
+    @api.depends('store')
+    def _compute_store_key(self):
+        for line in self:
+            line.store_key = _ctkm_normalize_store_key(line.store)
 
     @api.depends('total_quantity', 'replaced_quantity')
     def _compute_remaining_quantity(self):
@@ -128,6 +142,10 @@ class CtkmTaskTemTagReplaceLine(models.Model):
                 raise UserError(_(
                     'Chỉ người nhận việc mới được cập nhật Đã nhận.'
                 ))
+            if not is_ctkm_manager and not task._ctkm_store_visible_to_user(line.store):
+                raise UserError(_(
+                    'Bạn chỉ được cập nhật tem/tag của cửa hàng mình.'
+                ))
         return True
 
     def _check_can_update_replaced(self):
@@ -142,6 +160,10 @@ class CtkmTaskTemTagReplaceLine(models.Model):
             if not is_ctkm_manager and self.env.user not in task.user_ids:
                 raise UserError(_(
                     'Chỉ người nhận việc mới được cập nhật Tổng SL đã thay.'
+                ))
+            if not is_ctkm_manager and not task._ctkm_store_visible_to_user(line.store):
+                raise UserError(_(
+                    'Bạn chỉ được cập nhật tem/tag của cửa hàng mình.'
                 ))
 
     def _tem_tag_domain(self):

@@ -315,21 +315,31 @@ class CtkmTaskTemPrintLine(models.Model):
         programs = self.mapped('task_id.program_id')
         res = super().unlink()
         if not internal and programs:
-            self.env['ctkm.task'].sudo().search([
+            Task = self.env['ctkm.task'].sudo()
+            Task.search([
                 ('program_id', 'in', programs.ids),
                 ('is_tem_handover_task', '=', True),
             ])._ctkm_sync_step10_lines()
+            Task.search([
+                ('program_id', 'in', programs.ids),
+                ('is_tem_postcheck_task', '=', True),
+            ])._ctkm_sync_postcheck_lines()
         return res
 
     def _push_to_step10(self):
-        """Đẩy danh sách cửa hàng bước 9 sang bảng bước 10 cùng CTKM."""
+        """Đẩy danh sách cửa hàng bước 9 sang bảng bước 10 và hậu kiểm cùng CTKM."""
         programs = self.mapped('task_id.program_id')
         if not programs:
             return
-        self.env['ctkm.task'].sudo().search([
+        Task = self.env['ctkm.task'].sudo()
+        Task.search([
             ('program_id', 'in', programs.ids),
             ('is_tem_handover_task', '=', True),
         ])._ctkm_sync_step10_lines()
+        Task.search([
+            ('program_id', 'in', programs.ids),
+            ('is_tem_postcheck_task', '=', True),
+        ])._ctkm_sync_postcheck_lines()
 
     def _check_can_edit_print_lines(self):
         is_ctkm_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')
