@@ -83,6 +83,14 @@ class CtkmProgramChecklistLine(models.Model):
         help='Đã gửi thông báo "Thông báo" (Cấu hình → Thông báo) khi bước này '
              'hoàn thành. Reset khi bước bị mở lại để có thể gửi lại.',
     )
+    ctkm_supervisor_note_sent = fields.Boolean(
+        string='Đã gửi ghi chú Giám sát',
+        default=False,
+        copy=False,
+        help='Đã gửi tin "Giám sát đã hoàn thành kiểm tra..." tới toàn bộ '
+             'Phạm vi thông báo khi bước Hậu kiểm hoàn thành. '
+             'Reset khi bước bị mở lại để có thể gửi lại.',
+    )
 
     @api.depends('state')
     def _compute_is_done(self):
@@ -126,9 +134,13 @@ class CtkmProgramChecklistLine(models.Model):
                 new = line.state
                 if new == 'done' and old != 'done':
                     line._ctkm_send_stage_notify()
-                elif old == 'done' and new != 'done' and line.ctkm_notify_sent:
+                    line._ctkm_send_supervisor_check_notify()
+                elif old == 'done' and new != 'done':
                     # Bước bị mở lại → cho phép gửi lại lần sau.
-                    line.sudo().write({'ctkm_notify_sent': False})
+                    if line.ctkm_notify_sent:
+                        line.sudo().write({'ctkm_notify_sent': False})
+                    if line.ctkm_supervisor_note_sent:
+                        line.sudo().write({'ctkm_supervisor_note_sent': False})
         if any(f in vals for f in ('state', 'done_date', 'user_ids', 'name', 'need_manager_confirm', 'verifier_ids')) and not self.env.context.get('ctkm_task_sync'):
             Task = self.env['ctkm.task']
             for line in self:
@@ -197,6 +209,99 @@ class CtkmProgramChecklistLine(models.Model):
         content = stage.notify_content or ''
         if content:
             parts.append(Markup(content))
+        return Markup('<br/>').join(parts)
+
+    _CTKM_SUPERVISOR_CHECK_KEYWORDS = ('hậu kiểm', 'hau kiem')
+
+    def _ctkm_is_supervisor_check_step(self):
+        """Bước 'Hậu kiểm CTKM Giám sát đi kiểm tra thay tem' (khớp theo tên)."""
+        self.ensure_one()
+        name = (self.name or '').lower()
+        return any(kw in name for kw in self._CTKM_SUPERVISOR_CHECK_KEYWORDS)
+
+    def _ctkm_send_supervisor_check_notify(self):
+        """Sau bước Hậu kiểm hoàn thành: gửi OdooBot CTKM tới TOÀN BỘ Phạm vi thông báo.
+
+        Tin: "Giám sát đã hoàn thành kiểm tra với ghi chú là: <Ghi chú bước>".
+        Ghi chú lấy từ tab "Ghi chú & Tài liệu" (work_note) của công việc bước này,
+        fallback về Ghi chú của chính dòng bước. Chỉ gửi 1 lần mỗi lần hoàn thành
+        (cờ ``ctkm_supervisor_note_sent``), bỏ qua nếu chưa cấu hình người nhận.
+        """
+        self.ensure_one()
+        if self.ctkm_supervisor_note_sent:
+            return
+        if not self._ctkm_is_supervisor_check_step():
+            return
+        program = self.program_id
+        if not program:
+            return
+
+        # Ghi chú của bước: ưu tiên work_note (tab "Ghi chú & Tài liệu") của công việc,
+        # fallback về Ghi chú trên dòng bước. Luôn sudo: hoàn thành có thể chạy từ
+        # form CTKM (người khác) → không bị chặn ACL đọc công việc của Giám sát.
+        task = self.env['ctkm.task'].sudo().search([
+            ('program_id', '=', program.id),
+            ('checklist_line_id', '=', self.id),
+        ], limit=1)
+        note_html = task.work_note if task else False
+        if not note_html:
+            note_html = self.note or False
+        note_text = program._ctkm_notify_plain_text(note_html) if note_html else ''
+
+        users, skipped = program._ctkm_notify_recipient_users()
+        if not users:
+            # Không có người nhận hợp lệ → vẫn đánh dấu để không lặp, ghi log.
+            self.sudo().write({'ctkm_supervisor_note_sent': True})
+            program.message_post(
+                body=_(
+                    'Bước "%(step)s" đã hoàn thành nhưng Phạm vi thông báo '
+                    'chưa có người nhận hợp lệ (%s nhân viên).'
+                ) % {
+                    'step': escape(self.name or ''),
+                    'skipped': len(skipped),
+                },
+                subtype_xmlid='mail.mt_note',
+                body_is_html=True,
+            )
+            return
+
+        body = self._ctkm_supervisor_check_body(program, note_text)
+        sent_users = self.env['res.users']
+        for user in users:
+            try:
+                message = program._post_ctkm_bot_discuss_message(user, body)
+            except Exception:
+                message = self.env['mail.message']
+            if message:
+                sent_users |= user
+        self.sudo().write({'ctkm_supervisor_note_sent': True})
+        if sent_users:
+            program.message_post(
+                body=_(
+                    'Đã gửi ghi chú "Giám sát đã hoàn thành kiểm tra" của bước '
+                    '<b>%(step)s</b> tới %(users)s qua OdooBot CTKM.'
+                ) % {
+                    'step': escape(self.name or ''),
+                    'users': escape(', '.join(sent_users.mapped('name'))),
+                },
+                subtype_xmlid='mail.mt_note',
+                body_is_html=True,
+            )
+
+    def _ctkm_supervisor_check_body(self, program, note_text):
+        """Nội dung tin gửi Phạm vi thông báo khi Giám sát hoàn thành kiểm tra."""
+        parts = []
+        if program.name:
+            parts.append(Markup('<b>%s</b>') % escape(program.name))
+        parts.append(Markup('Bước: %s') % escape(self.name or ''))
+        if note_text:
+            parts.append(
+                Markup('Giám sát đã hoàn thành kiểm tra với ghi chú là: %s')
+                % escape(note_text)
+            )
+        else:
+            parts.append(Markup('Giám sát đã hoàn thành kiểm tra.'))
+        parts.append(program._ctkm_notify_detail_button_markup())
         return Markup('<br/>').join(parts)
 
     def _ctkm_ensure_task(self):
