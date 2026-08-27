@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<odoo noupdate="0">
+
+    <record model="ir.ui.view" id="view_ctkm_violation_report_list">
+        <field name="name">ctkm.task.tem.postcheck.line.violation.list</field>
+        <field name="model">ctkm.task.tem.postcheck.line</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <list string="Tổng hợp vi phạm"
+                create="0" delete="0" edit="0"
+                default_order="notify_code, store, id">
+                <field name="notify_code" string="Số TB"/>
+                <field name="name" string="Tên CTKM"/>
+                <field name="store_id" string="Tên cửa hàng"
+                    options="{'no_create': True, 'no_open': True}"/>
+                <field name="store" column_invisible="1"/>
+                <field name="store_code" string="Mã cửa hàng"/>
+                <field name="store_mien" string="Miền" optional="show"/>
+                <field name="tem_quantity" string="SL tem" sum="Tổng SL tem"/>
+                <field name="tag_quantity" string="SL tag" sum="Tổng SL tag"/>
+                <field name="not_replaced" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_violation_report_form">
+        <field name="name">ctkm.task.tem.postcheck.line.violation.form</field>
+        <field name="model">ctkm.task.tem.postcheck.line</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Tổng hợp vi phạm" create="0" delete="0" duplicate="0" edit="0">
+                <sheet>
+                    <div class="oe_title mb-3">
+                        <label for="notify_code" string="Số TB"/>
+                        <h1><field name="notify_code" readonly="1" placeholder=" "/></h1>
+                        <label for="name" string="Tên CTKM"/>
+                        <h2><field name="name" readonly="1"/></h2>
+                    </div>
+                    <group>
+                        <group string="Cửa hàng vi phạm">
+                            <field name="store_id" string="Tên cửa hàng"
+                                options="{'no_create': True, 'no_open': True}"/>
+                            <field name="store_code" string="Mã cửa hàng"/>
+                            <field name="store_mien" string="Miền"/>
+                        </group>
+                        <group string="Số lượng">
+                            <field name="tem_quantity" string="SL tem"/>
+                            <field name="tag_quantity" string="SL tag"/>
+                            <field name="not_replaced" string="Chưa thay/thay thiếu"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_violation_report_search">
+        <field name="name">ctkm.task.tem.postcheck.line.violation.search</field>
+        <field name="model">ctkm.task.tem.postcheck.line</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <search string="Tổng hợp vi phạm">
+                <field name="notify_code" string="Số TB"/>
+                <field name="name" string="Tên CTKM"/>
+                <field name="store" string="Cửa hàng"/>
+                <field name="store_code" string="Mã cửa hàng"/>
+                <field name="store_mien" string="Miền"/>
+                <group>
+                    <filter string="Số TB" name="groupby_notify_code" context="{'group_by': 'notify_code'}"/>
+                    <filter string="Tên CTKM" name="groupby_name" context="{'group_by': 'name'}"/>
+                    <filter string="Cửa hàng" name="groupby_store" context="{'group_by': 'store'}"/>
+                    <filter string="Miền" name="groupby_store_mien" context="{'group_by': 'store_mien'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_ctkm_violation_report">
+        <field name="name">Tổng hợp vi phạm</field>
+        <field name="path">ctkm-violations</field>
+        <field name="res_model">ctkm.task.tem.postcheck.line</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('not_replaced', '=', True)]</field>
+        <field name="context">{'create': False, 'edit': False, 'delete': False, 'duplicate': False}</field>
+        <field name="search_view_id" ref="view_ctkm_violation_report_search"/>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_ctkm_violation_report_list')}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_ctkm_violation_report_form')})]"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Chưa có cửa hàng nào bị ghi nhận vi phạm.
+            </p>
+            <p>
+                Báo cáo lấy các cửa hàng giám sát tick <b>Chưa thay/thay thiếu</b>
+                ở bước Hậu kiểm CTKM.
+            </p>
+        </field>
+    </record>
+
+    <record id="menu_ctkm_report_violations" model="ir.ui.menu">
+        <field name="name">Tổng hợp vi phạm</field>
+        <field name="sequence">3</field>
+        <field name="parent_id" ref="ctkm_core.menu_ctkm_report"/>
+        <field name="action" ref="action_ctkm_violation_report"/>
+        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+    </record>
+
+</odoo>

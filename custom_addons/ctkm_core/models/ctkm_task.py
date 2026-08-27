@@ -65,6 +65,10 @@ STORE_MANAGER_JOB_TITLE = 'cửa hàng trưởng'
 SUPERVISOR_JOB_TITLE = 'giám sát'
 # Bước 16 "Hậu kiểm CTKM Giám sát đi kiểm tra thay tem".
 TEM_POSTCHECK_TASK_MARKERS = ('haukiem',)
+TEM_PRICE_STAGE_XMLID = 'ctkm_core.ctkm_stage_15'
+# Bước 15 "Kế toán áp giá CTKM lên PM Link Q ... Lập báo cáo cửa hàng đã áp giá".
+# Không dùng "apgia" chung vì bước 5 / 8 cũng chứa "áp giá".
+TEM_PRICE_TASK_MARKERS = ('ketoanapgia', 'lapbaocaocuahang',)
 
 
 def normalize_step_key(value):
@@ -212,10 +216,16 @@ class CtkmTask(models.Model):
         store=True,
         help='Công việc thuộc bước "Hậu kiểm CTKM Giám sát đi kiểm tra thay tem".',
     )
+    is_tem_price_task = fields.Boolean(
+        string='Bước kế toán áp giá',
+        compute='_compute_task_step_flags',
+        store=True,
+        help='Công việc thuộc bước "Kế toán áp giá CTKM lên PM Link Q".',
+    )
     show_work_processing_tab = fields.Boolean(
         string='Hiện tab Xử lý công việc',
         compute='_compute_show_work_processing_tab',
-        help='Tab "Xử lý công việc" cho bước 9–11 và bước Hậu kiểm.',
+        help='Tab "Xử lý công việc" cho bước 9–11, bước 15 (Kế toán áp giá) và Hậu kiểm.',
     )
     handover_quantity = fields.Float(string='Số lượng bàn giao')
     recovery_quantity = fields.Float(string='Số lượng thu hồi')
@@ -274,6 +284,13 @@ class CtkmTask(models.Model):
         'ctkm.task.tem.postcheck.line',
         'task_id',
         string='Hậu kiểm thay tem',
+        help='Cửa hàng và SL tem/tag lấy từ bước 9 In tem, Tag.',
+    )
+    price_store_search = fields.Char(string='Tìm cửa hàng kế toán áp giá')
+    price_store_ids = fields.One2many(
+        'ctkm.task.tem.price.line',
+        'task_id',
+        string='Báo cáo thay tem/tag và áp giá',
         help='Cửa hàng và SL tem/tag lấy từ bước 9 In tem, Tag.',
     )
     time_line_ids = fields.One2many(
@@ -673,7 +690,7 @@ class CtkmTask(models.Model):
 
     @api.depends(
         'is_tem_print_task', 'is_tem_handover_task', 'is_tem_receive_task',
-        'is_tem_postcheck_task',
+        'is_tem_postcheck_task', 'is_tem_price_task',
     )
     def _compute_show_work_processing_tab(self):
         for task in self:
@@ -682,6 +699,7 @@ class CtkmTask(models.Model):
                 or task.is_tem_handover_task
                 or task.is_tem_receive_task
                 or task.is_tem_postcheck_task
+                or task.is_tem_price_task
             )
 
     @api.depends('name', 'checklist_line_id.name', 'checklist_line_id.stage_id')
@@ -699,6 +717,7 @@ class CtkmTask(models.Model):
                 ('check', TEM_CHECK_STAGE_XMLID),
                 ('design', TEM_DESIGN_STAGE_XMLID),
                 ('postcheck', TEM_POSTCHECK_STAGE_XMLID),
+                ('price', TEM_PRICE_STAGE_XMLID),
             )
         }
         for task in self:
@@ -753,6 +772,10 @@ class CtkmTask(models.Model):
                 (stage_id and stage_id == stage_ids['postcheck'])
                 or any(marker in key for key in keys for marker in TEM_POSTCHECK_TASK_MARKERS)
             )
+            is_price = (
+                (stage_id and stage_id == stage_ids['price'])
+                or any(marker in key for key in keys for marker in TEM_PRICE_TASK_MARKERS)
+            )
             # Bước 6 "Lập BB thay tem": nhận diện riêng (không trùng bước 4 / 12 / 15).
             is_bb_replace = (
                 (stage_id and stage_id == stage_ids['bb_replace'])
@@ -761,7 +784,9 @@ class CtkmTask(models.Model):
             task.is_tem_tag_import_task = bool(is_import)
             task.is_tem_photo_task = bool(is_photo)
             task.is_tem_check_task = bool(is_check)
-            task.is_tem_replace_task = bool(is_replace and not is_import and not is_bb_replace)
+            task.is_tem_replace_task = bool(
+                is_replace and not is_import and not is_bb_replace and not is_price
+            )
             task.is_tem_bb_replace_task = bool(is_bb_replace and not is_import and not is_replace)
             task.is_tem_print_task = bool(is_print and not is_handover and not is_receive)
             task.is_tem_handover_task = bool(is_handover)
@@ -773,6 +798,16 @@ class CtkmTask(models.Model):
                 and not is_handover
                 and not is_receive
                 and not is_replace
+                and not is_price
+            )
+            task.is_tem_price_task = bool(
+                is_price
+                and not is_import
+                and not is_print
+                and not is_handover
+                and not is_receive
+                and not is_replace
+                and not is_postcheck
             )
             task.is_tem_design_task = bool(
                 is_design
@@ -784,6 +819,7 @@ class CtkmTask(models.Model):
                 and not is_replace
                 and not is_photo
                 and not is_postcheck
+                and not is_price
             )
 
     @api.model
@@ -1558,6 +1594,10 @@ class CtkmTask(models.Model):
                 ('program_id', 'in', programs.ids),
                 ('is_tem_postcheck_task', '=', True),
             ])._ctkm_sync_postcheck_lines()
+            self.sudo().search([
+                ('program_id', 'in', programs.ids),
+                ('is_tem_price_task', '=', True),
+            ])._ctkm_sync_price_lines()
         for task in self:
             values = task._ctkm_tem_tag_line_values()
             existing = {}
@@ -1952,6 +1992,72 @@ class CtkmTask(models.Model):
         )
         for task in self:
             if not task.is_tem_postcheck_task:
+                continue
+            print_task = task._ctkm_source_print_task()
+            sources = print_task.sudo().print_store_ids
+            existing = {}
+            obsolete = Line.browse()
+            for line in Line.search([('task_id', '=', task.id)]):
+                key = line.store_key or ''
+                if not key:
+                    obsolete |= line
+                    continue
+                if key in existing:
+                    obsolete |= line
+                else:
+                    existing[key] = line
+            to_create = []
+            from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+                match_hr_store,
+            )
+            stores = (
+                self.env['hr.store'].sudo().search([])
+                if 'hr.store' in self.env else self.env['hr.store']
+            )
+            for source in sources.sorted(lambda line: (line.sequence, line.id)):
+                key = task._ctkm_print_line_store_key(source)
+                if not key:
+                    continue
+                store_rec = match_hr_store(stores, source.store_key, source.store)
+                store_name = source.store or source.store_code or ''
+                if store_rec:
+                    name = store_rec.name
+                    if isinstance(name, dict):
+                        name = next(iter(name.values()), '') if name else ''
+                    if name:
+                        store_name = name
+                vals = {
+                    'sequence': source.sequence or 1,
+                    'store_id': store_rec.id if store_rec else False,
+                    'store': store_name,
+                    'store_key': key,
+                    'print_line_id': source.id,
+                }
+                line = existing.pop(key, None)
+                if not line:
+                    to_create.append(dict(vals, task_id=task.id))
+                    continue
+                changes = {
+                    field: value
+                    for field, value in vals.items()
+                    if line[field] != value
+                }
+                if changes:
+                    line.write(changes)
+            leftover = Line.browse([line.id for line in existing.values()])
+            obsolete |= leftover
+            if to_create:
+                Line.create(to_create)
+            if obsolete:
+                obsolete.unlink()
+
+    def _ctkm_sync_price_lines(self):
+        """Kế toán áp giá: copy cửa hàng + SL tem/tag từ bước 9 In tem, Tag."""
+        Line = self.env['ctkm.task.tem.price.line'].sudo().with_context(
+            ctkm_tem_tag_line_sync=True,
+        )
+        for task in self:
+            if not task.is_tem_price_task:
                 continue
             print_task = task._ctkm_source_print_task()
             sources = print_task.sudo().print_store_ids
@@ -2684,7 +2790,7 @@ class CtkmTask(models.Model):
             return self.browse()
         tasks = self.sudo().search([
             ('program_id', 'in', program_ids),
-            '|', '|', '|', '|', '|', '|', '|',
+            '|', '|', '|', '|', '|', '|', '|', '|',
             ('is_tem_tag_import_task', '=', True),
             ('is_tem_bb_replace_task', '=', True),
             ('is_tem_print_task', '=', True),
@@ -2693,10 +2799,12 @@ class CtkmTask(models.Model):
             ('is_tem_replace_task', '=', True),
             ('is_tem_check_task', '=', True),
             ('is_tem_postcheck_task', '=', True),
+            ('is_tem_price_task', '=', True),
         ])
         tasks._ctkm_sync_tem_tag_lines()
         tasks.filtered('is_tem_check_task')._ctkm_sync_tem_photo_lines()
         tasks.filtered('is_tem_postcheck_task')._ctkm_sync_postcheck_lines()
+        tasks.filtered('is_tem_price_task')._ctkm_sync_price_lines()
         return tasks
 
     def _ctkm_clear_program_tem_tag_inventory(self):
@@ -2736,6 +2844,11 @@ class CtkmTask(models.Model):
             return self._ctkm_notify_reload(
                 _('Đã làm mới'),
                 _('Đã lấy danh sách cửa hàng từ bước In tem, Tag.'),
+            )
+        if task.is_tem_price_task:
+            return self._ctkm_notify_reload(
+                _('Đã làm mới'),
+                _('Đã lấy danh sách cửa hàng và SL tem/tag từ bước In tem, Tag.'),
             )
         return self._ctkm_notify_reload(
             _('Đã làm mới'),
@@ -2788,6 +2901,13 @@ class CtkmTask(models.Model):
                 postcheck.sudo().with_context(
                     ctkm_skip_postcheck_autosync=True,
                 )._ctkm_sync_postcheck_lines()
+        # Mở form bước 15 Kế toán áp giá: copy cửa hàng + SL từ bước 9.
+        if self.ids and not self.env.context.get('ctkm_skip_price_autosync'):
+            price_tasks = self.filtered('is_tem_price_task')
+            if price_tasks:
+                price_tasks.sudo().with_context(
+                    ctkm_skip_price_autosync=True,
+                )._ctkm_sync_price_lines()
         # Mở form bước 7: dựng bảng thiết kế mẫu tem/tag từ "Chi tiết tem/tag".
         if self.ids and not self.env.context.get('ctkm_skip_tem_design_sync'):
             design_tasks = self.filtered('is_tem_design_task')
@@ -3136,6 +3256,12 @@ class CtkmTask(models.Model):
         search = (self.postcheck_store_search or '').strip()
         domain = [('store', 'ilike', search)] if search else []
         return {'domain': {'postcheck_store_ids': domain}}
+
+    @api.onchange('price_store_search')
+    def _onchange_price_store_search(self):
+        search = (self.price_store_search or '').strip()
+        domain = [('store', 'ilike', search)] if search else []
+        return {'domain': {'price_store_ids': domain}}
 
     @api.onchange('state')
     def _onchange_state(self):

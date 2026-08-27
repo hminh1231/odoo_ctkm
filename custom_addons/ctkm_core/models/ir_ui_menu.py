@@ -5,6 +5,7 @@ from odoo import models
 _CTKM_REPORT_MENUS = (
     'ctkm_core.menu_ctkm_progress_report',
     'ctkm_core.menu_ctkm_report_printed_stores',
+    'ctkm_core.menu_ctkm_report_violations',
 )
 
 

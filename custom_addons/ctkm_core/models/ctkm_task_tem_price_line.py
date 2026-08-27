@@ -4,15 +4,15 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 
-class CtkmTaskTemPostcheckLine(models.Model):
-    """Dòng cửa hàng của bước 16 (Hậu kiểm CTKM).
+class CtkmTaskTemPriceLine(models.Model):
+    """Dòng cửa hàng của bước 15 (Kế toán áp giá / báo cáo thay tem).
 
     Tên cửa hàng, SL tem, SL tag lấy từ bước 9 In tem, Tag.
-    Giám sát tick Đã thay đủ tem / Đã thay đủ tag hoặc Chưa thay/thay thiếu.
+    Kế toán tick xác nhận đã thay / chưa thay tem-tag và đã áp giá.
     """
 
-    _name = 'ctkm.task.tem.postcheck.line'
-    _description = 'Cửa hàng hậu kiểm thay tem'
+    _name = 'ctkm.task.tem.price.line'
+    _description = 'Cửa hàng kế toán áp giá'
     _rec_name = 'store'
     _order = 'sequence, store, id'
 
@@ -46,28 +46,28 @@ class CtkmTaskTemPostcheckLine(models.Model):
         help='Dòng bước 9 tương ứng; SL tem/tag lấy từ đây.',
     )
     tem_quantity = fields.Float(
-        string='Số lượng tem',
+        string='SL tem',
         compute='_compute_quantities',
         store=True,
-        help='Luôn lấy SL tem từ bước In tem, Tag.',
+        help='Tổng SL tem lấy từ bước In tem, Tag.',
     )
     tag_quantity = fields.Float(
-        string='Số lượng tag',
+        string='SL tag',
         compute='_compute_quantities',
         store=True,
-        help='Luôn lấy SL tag từ bước In tem, Tag.',
+        help='Tổng SL tag lấy từ bước In tem, Tag.',
     )
     replaced = fields.Boolean(
-        string='Đã thay đủ tem',
-        help='Giám sát xác nhận cửa hàng đã thay đủ tem.',
-    )
-    tag_replaced = fields.Boolean(
-        string='Đã thay đủ tag',
-        help='Giám sát xác nhận cửa hàng đã thay đủ tag.',
+        string='Xác nhận thay tem/tag',
+        help='Kế toán xác nhận cửa hàng đã thay tem/tag.',
     )
     not_replaced = fields.Boolean(
-        string='Chưa thay/thay thiếu',
-        help='Giám sát xác nhận cửa hàng chưa thay hoặc thay thiếu tem/tag.',
+        string='Xác nhận chưa thay tem/tag',
+        help='Kế toán xác nhận cửa hàng chưa thay tem/tag.',
+    )
+    price_applied = fields.Boolean(
+        string='Xác nhận đã áp giá',
+        help='Kế toán xác nhận đã áp giá CTKM trên PM Link Q cho cửa hàng này.',
     )
     program_id = fields.Many2one(
         related='task_id.program_id',
@@ -86,15 +86,10 @@ class CtkmTaskTemPostcheckLine(models.Model):
         string='Tên CTKM',
         store=True,
     )
-    store_mien = fields.Selection(
-        related='store_id.mien',
-        string='Miền',
-        store=True,
-    )
 
     _task_store_uniq = models.Constraint(
         'UNIQUE(task_id, store_key)',
-        'Mỗi cửa hàng chỉ có một dòng hậu kiểm trên công việc.',
+        'Mỗi cửa hàng chỉ có một dòng kế toán áp giá trên công việc.',
     )
 
     @api.depends('store_id.code', 'store_key')
@@ -115,25 +110,31 @@ class CtkmTaskTemPostcheckLine(models.Model):
     def write(self, vals):
         internal = self.env.context.get('ctkm_tem_tag_line_sync')
         if not internal:
-            self._check_can_edit_postcheck_lines()
+            self._check_can_edit_price_lines()
+            if vals.get('replaced') and 'not_replaced' not in vals:
+                vals = dict(vals, not_replaced=False)
+            elif vals.get('not_replaced') and 'replaced' not in vals:
+                vals = dict(vals, replaced=False)
         return super().write(vals)
 
     def unlink(self):
         if not self.env.context.get('ctkm_tem_tag_line_sync'):
-            self._check_can_edit_postcheck_lines()
+            self._check_can_edit_price_lines()
         return super().unlink()
 
-    def _check_can_edit_postcheck_lines(self):
+    def _check_can_edit_price_lines(self):
         is_ctkm_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')
         for line in self:
             task = line.task_id
-            if task and not task.is_tem_postcheck_task:
+            if task and not task.is_tem_price_task:
                 raise UserError(_(
-                    'Chỉ bước "Hậu kiểm CTKM" mới được cập nhật xác nhận thay tem.'
+                    'Chỉ bước "Kế toán áp giá" mới được cập nhật xác nhận '
+                    'thay tem/tag và áp giá.'
                 ))
             if task and not is_ctkm_manager and self.env.user not in task.user_ids:
                 raise UserError(_(
-                    'Chỉ người nhận việc mới được cập nhật xác nhận thay tem.'
+                    'Chỉ người nhận việc mới được cập nhật xác nhận '
+                    'thay tem/tag và áp giá.'
                 ))
 
     @api.constrains('task_id', 'store_key')
@@ -148,5 +149,5 @@ class CtkmTaskTemPostcheckLine(models.Model):
             ], limit=1)
             if duplicate:
                 raise ValidationError(_(
-                    'Cửa hàng "%s" đã có trong bảng hậu kiểm.'
+                    'Cửa hàng "%s" đã có trong bảng kế toán áp giá.'
                 ) % (line.store or line.store_code or line.store_key))

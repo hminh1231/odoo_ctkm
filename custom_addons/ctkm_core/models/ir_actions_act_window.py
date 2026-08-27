@@ -7,6 +7,7 @@ _RESTRICTED_REPORT_ACTIONS = (
     'ctkm_core.action_ctkm_program_report',
     'ctkm_core.action_ctkm_print_progress_report',
     'ctkm_core.action_ctkm_printed_store_report',
+    'ctkm_core.action_ctkm_violation_report',
 )
 
 

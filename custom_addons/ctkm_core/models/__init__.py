@@ -15,6 +15,7 @@ from . import ctkm_task_tem_design_line
 from . import ctkm_task_tem_print_line
 from . import ctkm_task_tem_step10_line
 from . import ctkm_task_tem_postcheck_line
+from . import ctkm_task_tem_price_line
 from . import ctkm_task_time_line
 from . import ctkm_barcode_lookup
 from . import ir_attachment

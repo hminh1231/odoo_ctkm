@@ -230,9 +230,39 @@
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="True"/>
         </record>
+        <record id="ctkm_task_tem_postcheck_rule_user" model="ir.rule">
+            <field name="name">CTKM Hậu kiểm: user xem toàn bộ (báo cáo)</field>
+            <field name="model_id" ref="model_ctkm_task_tem_postcheck_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_ctkm_user'))]"/>
+        </record>
         <record id="ctkm_task_tem_postcheck_rule_manager" model="ir.rule">
             <field name="name">CTKM Hậu kiểm: manager xem toàn bộ</field>
             <field name="model_id" ref="model_ctkm_task_tem_postcheck_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_ctkm_manager'))]"/>
+        </record>
+        <record id="ctkm_task_tem_price_rule_employee" model="ir.rule">
+            <field name="name">CTKM Kế toán áp giá: dòng của công việc mình phụ trách</field>
+            <field name="model_id" ref="model_ctkm_task_tem_price_line"/>
+            <field name="domain_force">['|',
+                ('task_id.user_ids', '=', user.id),
+                ('task_id.user_ids', 'in', user.employee_ids.child_ids.user_id.ids)]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+        <record id="ctkm_task_tem_price_rule_user" model="ir.rule">
+            <field name="name">CTKM Kế toán áp giá: user xem toàn bộ (báo cáo)</field>
+            <field name="model_id" ref="model_ctkm_task_tem_price_line"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_ctkm_user'))]"/>
+        </record>
+        <record id="ctkm_task_tem_price_rule_manager" model="ir.rule">
+            <field name="name">CTKM Kế toán áp giá: manager xem toàn bộ</field>
+            <field name="model_id" ref="model_ctkm_task_tem_price_line"/>
             <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[(4, ref('group_ctkm_manager'))]"/>
         </record>
