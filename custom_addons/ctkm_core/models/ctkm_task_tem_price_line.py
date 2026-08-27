@@ -69,6 +69,27 @@ class CtkmTaskTemPriceLine(models.Model):
         string='Xác nhận đã áp giá',
         help='Kế toán xác nhận đã áp giá CTKM trên PM Link Q cho cửa hàng này.',
     )
+    replaced_user_id = fields.Many2one(
+        'res.users',
+        string='Người xác nhận thay tem',
+        readonly=True,
+        index=True,
+    )
+    replaced_date = fields.Date(string='Ngày xác nhận thay tem', readonly=True)
+    not_replaced_user_id = fields.Many2one(
+        'res.users',
+        string='Người xác nhận chưa thay',
+        readonly=True,
+        index=True,
+    )
+    not_replaced_date = fields.Date(string='Ngày xác nhận chưa thay', readonly=True)
+    price_applied_user_id = fields.Many2one(
+        'res.users',
+        string='Người xác nhận áp giá',
+        readonly=True,
+        index=True,
+    )
+    price_applied_date = fields.Date(string='Ngày xác nhận áp giá', readonly=True)
     program_id = fields.Many2one(
         related='task_id.program_id',
         string='Chương trình KM',
@@ -111,11 +132,44 @@ class CtkmTaskTemPriceLine(models.Model):
         internal = self.env.context.get('ctkm_tem_tag_line_sync')
         if not internal:
             self._check_can_edit_price_lines()
-            if vals.get('replaced') and 'not_replaced' not in vals:
-                vals = dict(vals, not_replaced=False)
-            elif vals.get('not_replaced') and 'replaced' not in vals:
-                vals = dict(vals, replaced=False)
+            vals = self._vals_with_confirm_tracking(vals)
         return super().write(vals)
+
+    def _vals_with_confirm_tracking(self, vals):
+        """Tick xác nhận: ghi người + ngày; bỏ tick thì xóa. Thay / chưa thay loại trừ nhau."""
+        vals = dict(vals)
+        today = fields.Date.context_today(self)
+        uid = self.env.uid
+        if vals.get('replaced') and 'not_replaced' not in vals:
+            vals['not_replaced'] = False
+        elif vals.get('not_replaced') and 'replaced' not in vals:
+            vals['replaced'] = False
+        if 'replaced' in vals:
+            if vals.get('replaced'):
+                vals.setdefault('replaced_user_id', uid)
+                vals.setdefault('replaced_date', today)
+                vals['not_replaced_user_id'] = False
+                vals['not_replaced_date'] = False
+            else:
+                vals.setdefault('replaced_user_id', False)
+                vals.setdefault('replaced_date', False)
+        if 'not_replaced' in vals:
+            if vals.get('not_replaced'):
+                vals.setdefault('not_replaced_user_id', uid)
+                vals.setdefault('not_replaced_date', today)
+                vals['replaced_user_id'] = False
+                vals['replaced_date'] = False
+            else:
+                vals.setdefault('not_replaced_user_id', False)
+                vals.setdefault('not_replaced_date', False)
+        if 'price_applied' in vals:
+            if vals.get('price_applied'):
+                vals.setdefault('price_applied_user_id', uid)
+                vals.setdefault('price_applied_date', today)
+            else:
+                vals.setdefault('price_applied_user_id', False)
+                vals.setdefault('price_applied_date', False)
+        return vals
 
     def unlink(self):
         if not self.env.context.get('ctkm_tem_tag_line_sync'):

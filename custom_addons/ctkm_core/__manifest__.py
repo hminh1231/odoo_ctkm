@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Chương trình khuyến mãi',
-    'version': '4.14',
+    'version': '4.15',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý chương trình khuyến mãi',
     'description': """
@@ -21,6 +21,7 @@ Module cung cấp quản lý các chương trình khuyến mãi.
         'views/ctkm_program_views.xml',
         'views/ctkm_notify_report_views.xml',
         'views/ctkm_progress_report_views.xml',
+        'views/ctkm_price_report_views.xml',
         'views/ctkm_violation_report_views.xml',
         'views/ctkm_task_views.xml',
         'data/ctkm_task_hooks.xml',

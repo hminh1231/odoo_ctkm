@@ -146,6 +146,21 @@ class CtkmProgram(models.Model):
         compute='_compute_report_print_store_ids',
         string='Cửa hàng đã hoàn thành in tem/tag',
     )
+    report_price_replaced_ids = fields.Many2many(
+        'ctkm.task.tem.price.line',
+        compute='_compute_report_price_store_ids',
+        string='Cửa hàng đã xác nhận thay tem',
+    )
+    report_price_not_replaced_ids = fields.Many2many(
+        'ctkm.task.tem.price.line',
+        compute='_compute_report_price_store_ids',
+        string='Cửa hàng đã xác nhận chưa thay tem',
+    )
+    report_price_applied_ids = fields.Many2many(
+        'ctkm.task.tem.price.line',
+        compute='_compute_report_price_store_ids',
+        string='Cửa hàng đã xác nhận áp giá',
+    )
 
     @api.depends(
         'create_date', 'date_begin', 'notify_document_ids.name',
@@ -184,6 +199,20 @@ class CtkmProgram(models.Model):
             lines = Line.search([('program_id', '=', program.id)])
             program.report_print_pending_ids = lines.filtered(lambda line: not line.done)
             program.report_print_done_ids = lines.filtered(lambda line: line.done)
+
+    @api.depends(
+        'task_ids.is_tem_price_task',
+        'task_ids.price_store_ids.replaced',
+        'task_ids.price_store_ids.not_replaced',
+        'task_ids.price_store_ids.price_applied',
+    )
+    def _compute_report_price_store_ids(self):
+        Line = self.env['ctkm.task.tem.price.line']
+        for program in self:
+            lines = Line.search([('program_id', '=', program.id)])
+            program.report_price_replaced_ids = lines.filtered('replaced')
+            program.report_price_not_replaced_ids = lines.filtered('not_replaced')
+            program.report_price_applied_ids = lines.filtered('price_applied')
 
     @api.depends(
         'checklist_line_ids.state',

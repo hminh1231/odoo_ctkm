@@ -99,7 +99,7 @@
 
     <record id="menu_ctkm_report_violations" model="ir.ui.menu">
         <field name="name">Tổng hợp vi phạm</field>
-        <field name="sequence">3</field>
+        <field name="sequence">4</field>
         <field name="parent_id" ref="ctkm_core.menu_ctkm_report"/>
         <field name="action" ref="action_ctkm_violation_report"/>
         <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>

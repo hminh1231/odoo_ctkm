@@ -1,0 +1,153 @@
+<?xml version="1.0"?>
+<odoo noupdate="0">
+
+    <record model="ir.ui.view" id="view_ctkm_price_store_report_list">
+        <field name="name">ctkm.task.tem.price.line.report.list</field>
+        <field name="model">ctkm.task.tem.price.line</field>
+        <field name="priority">32</field>
+        <field name="arch" type="xml">
+            <list string="Cửa hàng thay tem/áp giá"
+                create="0" delete="0" edit="0"
+                default_order="sequence, store, id">
+                <field name="sequence" string="STT"/>
+                <field name="store_id" string="Tên cửa hàng"
+                    options="{'no_create': True, 'no_open': True}"/>
+                <field name="store_code" string="Mã cửa hàng"/>
+                <field name="store" column_invisible="1"/>
+                <field name="replaced" string="Đã xác nhận"/>
+                <field name="replaced_user_id" string="Người xác nhận"
+                    widget="many2one_avatar_user"/>
+                <field name="replaced_date" string="Ngày xác nhận"/>
+                <field name="notify_code" string="Số TB" optional="hide"/>
+                <field name="name" string="Tên CTKM" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_price_progress_report_list">
+        <field name="name">ctkm.program.price.progress.report.list</field>
+        <field name="model">ctkm.program</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <list string="Danh sách cửa hàng đã thay tem/áp giá"
+                create="0" delete="0" edit="0"
+                default_order="notify_code, name, id">
+                <field name="notify_code" string="Số TB"/>
+                <field name="name" string="Tên CTKM"/>
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_price_progress_report_form">
+        <field name="name">ctkm.program.price.progress.report.form</field>
+        <field name="model">ctkm.program</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Danh sách cửa hàng đã thay tem/áp giá" create="0" delete="0" duplicate="0" edit="0">
+                <sheet>
+                    <div class="oe_title mb-3">
+                        <label for="notify_code" string="Số TB"/>
+                        <h1><field name="notify_code" readonly="1" placeholder=" "/></h1>
+                        <label for="name" string="Tên CTKM"/>
+                        <h2><field name="name" readonly="1"/></h2>
+                    </div>
+
+                    <separator string="Bảng danh sách cửa hàng đã được Kế toán xác nhận thay tem"/>
+                    <field name="report_price_replaced_ids" nolabel="1" readonly="1"
+                        mode="list"
+                        options="{'no_open': True}">
+                        <list create="0" delete="0" edit="0"
+                            default_order="sequence, store, id">
+                            <field name="sequence" string="STT" width="50px"/>
+                            <field name="store_code" string="Mã cửa hàng" width="130px"/>
+                            <field name="store" column_invisible="1"/>
+                            <field name="replaced" string="Đã xác nhận" width="110px"/>
+                            <field name="replaced_user_id" string="Người xác nhận"
+                                widget="many2one_avatar_user"/>
+                            <field name="replaced_date" string="Ngày xác nhận" width="130px"/>
+                        </list>
+                    </field>
+
+                    <separator string="Bảng danh sách cửa hàng đã được Kế toán xác nhận chưa thay tem"/>
+                    <field name="report_price_not_replaced_ids" nolabel="1" readonly="1"
+                        mode="list"
+                        options="{'no_open': True}">
+                        <list create="0" delete="0" edit="0"
+                            default_order="sequence, store, id">
+                            <field name="sequence" string="STT" width="50px"/>
+                            <field name="store_code" string="Mã cửa hàng" width="130px"/>
+                            <field name="store" column_invisible="1"/>
+                            <field name="not_replaced" string="Đã xác nhận" width="110px"/>
+                            <field name="not_replaced_user_id" string="Người xác nhận"
+                                widget="many2one_avatar_user"/>
+                            <field name="not_replaced_date" string="Ngày xác nhận" width="130px"/>
+                        </list>
+                    </field>
+
+                    <separator string="Bảng danh sách cửa hàng đã được Kế toán xác nhận đã áp giá"/>
+                    <field name="report_price_applied_ids" nolabel="1" readonly="1"
+                        mode="list"
+                        options="{'no_open': True}">
+                        <list create="0" delete="0" edit="0"
+                            default_order="sequence, store, id">
+                            <field name="sequence" string="STT" width="50px"/>
+                            <field name="store_code" string="Mã cửa hàng" width="130px"/>
+                            <field name="store" column_invisible="1"/>
+                            <field name="price_applied" string="Đã xác nhận" width="110px"/>
+                            <field name="price_applied_user_id" string="Người xác nhận"
+                                widget="many2one_avatar_user"/>
+                            <field name="price_applied_date" string="Ngày xác nhận" width="130px"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_price_progress_report_search">
+        <field name="name">ctkm.program.price.progress.report.search</field>
+        <field name="model">ctkm.program</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <search string="Danh sách cửa hàng đã thay tem/áp giá">
+                <field name="notify_code" string="Số TB"/>
+                <field name="name" string="Tên CTKM"/>
+                <group>
+                    <filter string="Số TB" name="groupby_notify_code" context="{'group_by': 'notify_code'}"/>
+                    <filter string="Tên CTKM" name="groupby_name" context="{'group_by': 'name'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_ctkm_price_store_report">
+        <field name="name">Danh sách cửa hàng đã thay tem/áp giá</field>
+        <field name="path">ctkm-price-stores</field>
+        <field name="res_model">ctkm.program</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('task_ids.is_tem_price_task', '=', True)]</field>
+        <field name="context">{'create': False, 'edit': False, 'delete': False, 'duplicate': False}</field>
+        <field name="search_view_id" ref="view_ctkm_price_progress_report_search"/>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_ctkm_price_progress_report_list')}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_ctkm_price_progress_report_form')})]"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Chưa có chương trình nào có bước Kế toán áp giá.
+            </p>
+            <p>
+                Bấm Số TB hoặc Tên CTKM để xem cửa hàng Kế toán đã xác nhận thay tem,
+                chưa thay tem và đã áp giá.
+            </p>
+        </field>
+    </record>
+
+    <record id="menu_ctkm_report_price_stores" model="ir.ui.menu">
+        <field name="name">Danh sách cửa hàng đã thay tem/áp giá</field>
+        <field name="sequence">3</field>
+        <field name="parent_id" ref="ctkm_core.menu_ctkm_report"/>
+        <field name="action" ref="action_ctkm_price_store_report"/>
+        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_user'))]"/>
+    </record>
+
+</odoo>
