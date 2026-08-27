@@ -36,6 +36,21 @@ class CtkmStage(models.Model):
     )
     pipe_end = fields.Boolean(string='Kết thúc')
     fold = fields.Boolean(string='Gộp')
+    notify_user_ids = fields.Many2many(
+        'hr.employee',
+        'ctkm_stage_notify_employee_rel',
+        'stage_id',
+        'employee_id',
+        string='Người thông báo',
+        domain="[('active', '=', True)]",
+        help='Nhân viên nhận thông báo (qua OdooBot CTKM) khi bước này hoàn thành.',
+    )
+    notify_content = fields.Html(
+        string='Nội dung thông báo',
+        sanitize=True,
+        help='Nội dung gửi qua OdooBot CTKM khi bước này hoàn thành. '
+             'Hỗ trợ định dạng HTML của Odoo (in đậm, danh sách, xuống dòng...).',
+    )
 
     @api.constrains('verifier_ids', 'need_manager_confirm')
     def _check_verifier_needs_confirm(self):

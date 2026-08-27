@@ -351,7 +351,11 @@ class CtkmProgram(models.Model):
             if vals_list:
                 lines = Checklist.create(vals_list)
                 for line in lines.sorted('sequence')[:3]:
-                    line.write({'state': 'done', 'done_date': today})
+                    # 3 bước đầu tự động xong khi tạo CTKM → không gửi thông báo giai đoạn.
+                    line.with_context(ctkm_skip_stage_notify=True).write({
+                        'state': 'done',
+                        'done_date': today,
+                    })
         return True
 
     def ctkm_ensure_checklist_tasks(self):

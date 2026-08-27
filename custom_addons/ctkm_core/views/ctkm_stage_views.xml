@@ -53,4 +53,68 @@
         <field name="action" ref="action_ctkm_stage_view"/>
     </record>
 
+    <!-- Cấu hình -> Thông báo: cấu hình người nhận + nội dung thông báo theo giai đoạn.
+         STT / Tên giai đoạn lấy trực tiếp từ "Giai đoạn" (cùng bản ghi ctkm.stage). -->
+    <record model="ir.ui.view" id="view_ctkm_stage_notify_tree">
+        <field name="name">ctkm.stage.notify.list</field>
+        <field name="model">ctkm.stage</field>
+        <field name="arch" type="xml">
+            <list string="Thông báo" editable="bottom">
+                <field name="sequence" string="STT" readonly="1"/>
+                <field name="name" string="Tên giai đoạn" readonly="1"/>
+                <field name="notify_user_ids" string="Người thông báo"
+                    widget="many2many_tags"/>
+                <field name="notify_content" string="Nội dung thông báo"
+                    widget="html"/>
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_ctkm_stage_notify_form">
+        <field name="name">ctkm.stage.notify.form</field>
+        <field name="model">ctkm.stage</field>
+        <field name="arch" type="xml">
+            <form string="Thông báo giai đoạn">
+                <sheet>
+                    <group>
+                        <field name="sequence" string="STT" readonly="1"/>
+                        <field name="name" string="Tên giai đoạn" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="notify_user_ids" string="Người thông báo"
+                            widget="many2many_tags"/>
+                    </group>
+                    <group>
+                        <field name="notify_content" string="Nội dung thông báo"
+                            widget="html"
+                            help="Nội dung gửi qua OdooBot CTKM khi bước này hoàn thành. Hỗ trợ định dạng HTML của Odoo: in đậm, danh sách, xuống dòng..."/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_ctkm_stage_notify_view">
+       <field name="name">Thông báo</field>
+       <field name="res_model">ctkm.stage</field>
+       <field name="view_mode">list,form</field>
+       <field name="view_ids"
+           eval="[(5, 0, 0),
+                  (0, 0, {'view_mode': 'list', 'view_id': ref('view_ctkm_stage_notify_tree')}),
+                  (0, 0, {'view_mode': 'form', 'view_id': ref('view_ctkm_stage_notify_form')})]"/>
+       <field name="help" type="html">
+          <p class="o_view_nocontent_smiling_face">
+            Cấu hình thông báo cho từng giai đoạn
+          </p>
+       </field>
+    </record>
+
+    <record id="menu_ctkm_stage_notify" model="ir.ui.menu">
+        <field name="name">Thông báo</field>
+        <field name="sequence">2</field>
+        <field name="parent_id" ref="ctkm_core.menu_ctkm_configuration"/>
+        <field name="action" ref="action_ctkm_stage_notify_view"/>
+        <field name="group_ids" eval="[(4, ref('ctkm_core.group_ctkm_manager'))]"/>
+    </record>
+
 </odoo>

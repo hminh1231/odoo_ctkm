@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
-from odoo import api, fields, models
+from markupsafe import Markup, escape
+
+from odoo import _, api, fields, models
 
 
 class CtkmProgramChecklistLine(models.Model):
@@ -74,6 +76,13 @@ class CtkmProgramChecklistLine(models.Model):
         copy=False,
         readonly=True,
     )
+    ctkm_notify_sent = fields.Boolean(
+        string='Đã gửi thông báo giai đoạn',
+        default=False,
+        copy=False,
+        help='Đã gửi thông báo "Thông báo" (Cấu hình → Thông báo) khi bước này '
+             'hoàn thành. Reset khi bước bị mở lại để có thể gửi lại.',
+    )
 
     @api.depends('state')
     def _compute_is_done(self):
@@ -109,7 +118,17 @@ class CtkmProgramChecklistLine(models.Model):
         return True
 
     def write(self, vals):
+        old_states = {line.id: line.state for line in self}
         res = super().write(vals)
+        if 'state' in vals and not self.env.context.get('ctkm_skip_stage_notify'):
+            for line in self:
+                old = old_states.get(line.id)
+                new = line.state
+                if new == 'done' and old != 'done':
+                    line._ctkm_send_stage_notify()
+                elif old == 'done' and new != 'done' and line.ctkm_notify_sent:
+                    # Bước bị mở lại → cho phép gửi lại lần sau.
+                    line.sudo().write({'ctkm_notify_sent': False})
         if any(f in vals for f in ('state', 'done_date', 'user_ids', 'name', 'need_manager_confirm', 'verifier_ids')) and not self.env.context.get('ctkm_task_sync'):
             Task = self.env['ctkm.task']
             for line in self:
@@ -123,6 +142,62 @@ class CtkmProgramChecklistLine(models.Model):
                     line._ctkm_ensure_task()
                     Task._ctkm_sync_task_from_checklist(line)
         return res
+
+    def _ctkm_send_stage_notify(self):
+        """Gửi thông báo (Cấu hình → Thông báo) qua OdooBot CTKM khi bước xong.
+
+        Gửi ``Nội dung thông báo`` của giai đoạn tới mọi nhân viên trong
+        ``Người thông báo``. Chỉ gửi 1 lần mỗi lần hoàn thành (cờ
+        ``ctkm_notify_sent``), bỏ qua nếu chưa cấu hình hoặc đang đồng bộ.
+        """
+        self.ensure_one()
+        if self.ctkm_notify_sent:
+            return
+        stage = self.stage_id
+        if not stage or not stage.notify_user_ids or not (stage.notify_content or '').strip():
+            return
+        program = self.program_id
+        if not program:
+            return
+        users = stage.notify_user_ids.mapped('user_id').filtered(
+            lambda u: u and u.active and not u.share and u.partner_id
+        )
+        if not users:
+            return
+        body = self._ctkm_stage_notify_body(stage, program)
+        sent_users = self.env['res.users']
+        for user in users:
+            try:
+                message = program._post_ctkm_bot_discuss_message(user, body)
+            except Exception:
+                message = self.env['mail.message']
+            if message:
+                sent_users |= user
+        self.sudo().write({'ctkm_notify_sent': True})
+        if sent_users:
+            program.message_post(
+                body=_(
+                    'Đã gửi thông báo giai đoạn <b>%(stage)s</b> tới %(users)s '
+                    'qua OdooBot CTKM.'
+                ) % {
+                    'stage': escape(stage.name or ''),
+                    'users': escape(', '.join(sent_users.mapped('name'))),
+                },
+                subtype_xmlid='mail.mt_note',
+                body_is_html=True,
+            )
+
+    def _ctkm_stage_notify_body(self, stage, program):
+        """Nội dung tin: tên CTKM + giai đoạn (để biết ngữ cảnh) + Nội dung thông báo."""
+        parts = []
+        if program.name:
+            parts.append(Markup('<b>%s</b>') % escape(program.name))
+        if stage.name:
+            parts.append(Markup('Giai đoạn: %s') % escape(stage.name))
+        content = stage.notify_content or ''
+        if content:
+            parts.append(Markup(content))
+        return Markup('<br/>').join(parts)
 
     def _ctkm_ensure_task(self):
         """Một bước checklist = một công việc (theo checklist_line_id)."""
