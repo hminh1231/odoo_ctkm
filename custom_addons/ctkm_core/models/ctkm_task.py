@@ -2934,7 +2934,25 @@ class CtkmTask(models.Model):
             if receive_tasks:
                 receive_tasks._ctkm_ensure_receive_lines_synced()
                 receive_tasks.invalidate_recordset(['tem_tag_replace_ids'])
-        return super().web_read(specification)
+        try:
+            return super().web_read(specification)
+        except KeyError:
+            # Odoo framework bug (web/models.py:153-154): trong web_read, bản ghi
+            # many2one được đọc bởi user (line 149) bị lọc bởi ir.rule, nhưng vòng
+            # lặp sau đó chạy dưới .sudo() (line 153) lại gồm cả bản ghi đó →
+            # KeyError. Bước 11/12 (Nhận tem / Thay tem) mang store_verifier_ids
+            # chứa Nhân viên / Quản lý cửa hàng của CÁC cửa hàng khác mà người đọc
+            # không có quyền xem (record rule hr.employee/res.users) → lỗi này.
+            # Đọc lại dưới sudo để display_name được phân giải (không lộ dữ liệu:
+            # self đã là công việc người dùng có quyền mở, chỉ nới quyền đọc liên
+            # kết nhân viên/người dùng nội bộ cùng CTKM).
+            if any(t.is_tem_receive_task or t.is_tem_replace_task for t in self):
+                _logger.warning(
+                    'ctkm_core: web_read KeyError, retry as sudo (task_ids=%s)',
+                    self.ids,
+                )
+                return models.Model.web_read(self.sudo(), specification)
+            raise
 
     def _ctkm_ensure_time_lines(self):
         """Tạo dòng thời gian đầu tiên từ nội dung / ngày của công việc."""
