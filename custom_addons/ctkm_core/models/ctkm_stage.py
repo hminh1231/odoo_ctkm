@@ -24,20 +24,23 @@ class CtkmStage(models.Model):
         string='Cần quản lý xác nhận',
         default=True,
     )
-    verifier_id = fields.Many2one(
+    verifier_ids = fields.Many2many(
         'hr.employee',
+        'ctkm_stage_verifier_rel',
+        'stage_id',
+        'employee_id',
         string='Người kiểm soát',
         domain="[('user_id.share', '=', False)]",
-        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng người này kiểm soát '
-             'thay vì quản lý theo organization chart.',
+        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng những người này '
+             'kiểm soát thay vì quản lý theo organization chart.',
     )
     pipe_end = fields.Boolean(string='Kết thúc')
     fold = fields.Boolean(string='Gộp')
 
-    @api.constrains('verifier_id', 'need_manager_confirm')
+    @api.constrains('verifier_ids', 'need_manager_confirm')
     def _check_verifier_needs_confirm(self):
         for stage in self:
-            if stage.verifier_id and not stage.need_manager_confirm:
+            if stage.verifier_ids and not stage.need_manager_confirm:
                 raise ValidationError(_(
                     'Chỉ được chọn "Người kiểm soát" khi bật "Cần quản lý xác nhận".'
                 ))
@@ -46,7 +49,7 @@ class CtkmStage(models.Model):
         res = super().write(vals)
         if any(
             f in vals
-            for f in ('name', 'sequence', 'user_ids', 'need_manager_confirm', 'verifier_id')
+            for f in ('name', 'sequence', 'user_ids', 'need_manager_confirm', 'verifier_ids')
         ):
             self.env['ctkm.program'].sudo().search([])._ctkm_sync_checklist_from_stages()
         return res

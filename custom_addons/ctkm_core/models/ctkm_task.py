@@ -282,11 +282,21 @@ class CtkmTask(models.Model):
         string='Thời gian',
         help='Nội dung, ngày bắt đầu, ngày hoàn thành và tổng số ngày của công việc.',
     )
-    verifier_id = fields.Many2one(
+    verifier_ids = fields.Many2many(
         'hr.employee',
+        'ctkm_task_verifier_rel',
+        'task_id',
+        'employee_id',
         string='Người kiểm soát',
-        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng người này kiểm soát '
-             'thay vì quản lý theo organization chart.',
+        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng những người này '
+             'kiểm soát thay vì quản lý theo organization chart.',
+    )
+    store_verifier_ids = fields.One2many(
+        'ctkm.task.store.verifier', 'task_id',
+        string='Xác nhận theo cửa hàng', copy=False,
+        help='Quan hệ 1 Phụ trách (Cửa hàng trưởng) – 1 Người kiểm soát '
+             '(Quản lý cửa hàng) theo từng cửa hàng. Chỉ Quản lý cửa hàng '
+             'ĐÚNG cửa hàng mới xác nhận được phần của Cửa hàng trưởng cửa hàng đó.',
     )
     is_verifier = fields.Boolean(
         string='Là người kiểm soát',
@@ -602,14 +612,13 @@ class CtkmTask(models.Model):
                 lambda u: u.id not in done_user_ids
             )
 
-    @api.depends('verifier_id', 'verifier_id.user_id')
+    @api.depends('verifier_ids', 'verifier_ids.user_id')
     @api.depends_context('uid')
     def _compute_is_verifier(self):
         uid = self.env.user.id
         for task in self:
             task.is_verifier = bool(
-                task.verifier_id and task.verifier_id.user_id
-                and task.verifier_id.user_id.id == uid
+                uid in task.verifier_ids.mapped('user_id.id')
             )
 
     @api.depends(
@@ -950,15 +959,20 @@ class CtkmTask(models.Model):
         )
 
     def _ctkm_checklist_line_is_store_manager_step(self, line):
-        """Bước 11–14: Nhận tem, Thay tem, Chụp ảnh, Kiểm tra hình ảnh."""
+        """Bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag': Phụ trách là
+        Cửa hàng trưởng (theo chức danh trên hồ sơ).
+
+        Bước 13 'Chụp team...' và 14 'Kiểm tra hình ảnh' KHÔNG dùng cơ chế này:
+        bước 13 lấy Quản lý cửa hàng làm Phụ trách (xem
+        _ctkm_assign_photo_store_managers_after_bb_import), bước 14 giữ Phụ trách
+        cấu hình sẵn trong Giai đoạn.
+        """
         if not line:
             return False
         stage_id = line.stage_id.id if line.stage_id else False
         target_stage_ids = {
             self._ctkm_step_stage_id(TEM_RECEIVE_STAGE_XMLID),
             self._ctkm_step_stage_id(TEM_REPLACE_STAGE_XMLID),
-            self._ctkm_step_stage_id(TEM_PHOTO_STAGE_XMLID),
-            self._ctkm_step_stage_id(TEM_CHECK_STAGE_XMLID),
         }
         target_stage_ids.discard(False)
         if stage_id and stage_id in target_stage_ids:
@@ -970,14 +984,25 @@ class CtkmTask(models.Model):
             return True
         if key in TEM_REPLACE_TASK_KEYS:
             return True
-        if any(marker in key for marker in TEM_PHOTO_TASK_MARKERS):
-            return True
-        if any(marker in key for marker in TEM_CHECK_TASK_MARKERS):
-            return True
         return False
 
+    def _ctkm_checklist_line_is_photo_step(self, line):
+        """Bước 13 'Chụp team gửi lên group / chụp từng con tem'."""
+        if not line:
+            return False
+        stage_id = line.stage_id.id if line.stage_id else False
+        photo_id = self._ctkm_step_stage_id(TEM_PHOTO_STAGE_XMLID)
+        if stage_id and photo_id and stage_id == photo_id:
+            return True
+        key = normalize_step_key(line.name)
+        return bool(key and any(marker in key for marker in TEM_PHOTO_TASK_MARKERS))
+
     def _ctkm_assign_store_managers_after_bb_import(self):
-        """Khi hoàn thành bước 4: gán Cửa hàng trưởng vào người thực hiện bước 11–14.
+        """Khi hoàn thành bước 4: gán Cửa hàng trưởng vào người thực hiện bước 11–12.
+
+        Chỉ áp dụng cho 'Nhận tem tag mới' (11) và 'Thay tem Tag' (12). Bước 13
+        (Chụp ảnh) và 14 (Kiểm tra ảnh) không dùng cơ chế này — xem
+        _ctkm_assign_photo_store_managers_after_bb_import.
 
         Khớp khi mã bộ phận trên hồ sơ *chứa* mã Store trên biên bản
         (ví dụ AEBD → AEBD_DDL) và chức danh là Cửa hàng trưởng.
@@ -1005,11 +1030,9 @@ class CtkmTask(models.Model):
             flag_tasks = self.env['ctkm.task'].sudo().search([
                 ('program_id', '=', self.program_id.id),
                 ('state', '!=', 'done'),
-                '|', '|', '|',
+                '|',
                 ('is_tem_receive_task', '=', True),
                 ('is_tem_replace_task', '=', True),
-                ('is_tem_photo_task', '=', True),
-                ('is_tem_check_task', '=', True),
             ])
             for other in flag_tasks:
                 line = other.checklist_line_id
@@ -1027,8 +1050,8 @@ class CtkmTask(models.Model):
         if users:
             body = _(
                 'Đã gán cửa hàng trưởng <b>%(users)s</b> làm người thực hiện '
-                'bước 11–14 (Nhận tem tag mới, Thay tem Tag, Chụp ảnh, '
-                'Kiểm tra hình ảnh) theo mã Store trên biên bản: %(stores)s.'
+                'bước 11–12 (Nhận tem tag mới, Thay tem Tag) theo mã Store trên '
+                'biên bản: %(stores)s.'
             ) % {
                 'users': escape(', '.join(users.mapped('name'))),
                 'stores': escape(store_label),
@@ -1037,10 +1060,88 @@ class CtkmTask(models.Model):
             body = _(
                 'Không tìm thấy nhân viên chức danh Cửa hàng trưởng có '
                 'mã bộ phận chứa mã Store trên biên bản thay tem/tag (%s). '
-                'Bước 11–14 giữ nguyên người thực hiện hiện tại.'
+                'Bước 11–12 giữ nguyên người thực hiện hiện tại.'
             ) % escape(store_label)
         self.message_post(
             body=body,
+            subtype_xmlid='mail.mt_note',
+            body_is_html=True,
+        )
+        return users
+
+    def _ctkm_assign_photo_store_managers_after_bb_import(self):
+        """Khi hoàn thành bước 4: gán Quản lý cửa hàng (hr.store.manager_id) của
+        từng Store trên biên bản làm Phụ trách bước 13 'Chụp team gửi lên group /
+        chụp từng con tem'.
+
+        Khác với bước 11–12 (Phụ trách = Cửa hàng trưởng theo chức danh), bước 13
+        lấy Quản lý cửa hàng được cấu hình tại từng Cửa hàng
+        (Employee → Cấu hình → Cửa hàng) của mọi mã Store có trên biên bản tổng.
+        Người kiểm soát (verifier_ids) của bước 13 giữ nguyên theo cấu hình.
+        """
+        self.ensure_one()
+        if not self.is_tem_tag_import_task or not self.program_id:
+            return self.env['res.users']
+        store_keys = self._ctkm_bb_store_keys()
+        if not store_keys:
+            return self.env['res.users']
+        # Quản lý cửa hàng của từng Store trên biên bản (hr.store.manager_id).
+        managers = self._ctkm_store_manager_employees_for_bb_stores(store_keys)
+        users = managers.mapped('user_id').filtered(
+            lambda user: user and user.active and not user.share
+        )
+        store_label = ', '.join(sorted(store_keys))
+        if not users:
+            self.message_post(
+                body=_(
+                    'Không tìm thấy nhân viên Quản lý cửa hàng (Employee → '
+                    'Cấu hình → Cửa hàng) tương ứng với mã Store trên biên bản: '
+                    '%(stores)s. Bước 13 (Chụp team...) giữ nguyên người phụ '
+                    'trách hiện tại.'
+                ) % {'stores': escape(store_label)},
+                subtype_xmlid='mail.mt_note',
+                body_is_html=True,
+            )
+            return users
+        user_ids = users.ids
+        target_lines = self.program_id.checklist_line_ids.filtered(
+            lambda line: (
+                self._ctkm_checklist_line_is_photo_step(line)
+                and line.state != 'done'
+            )
+        )
+        if target_lines:
+            for line in target_lines:
+                if set(line.user_ids.ids) == set(user_ids):
+                    continue
+                line.sudo().write({'user_ids': [(6, 0, user_ids)]})
+        # Công việc đã tạo theo cờ bước (checklist đổi tên / chưa gắn stage).
+        photo_tasks = self.env['ctkm.task'].sudo().search([
+            ('program_id', '=', self.program_id.id),
+            ('state', '!=', 'done'),
+            ('is_tem_photo_task', '=', True),
+        ])
+        for other in photo_tasks:
+            line = other.checklist_line_id
+            if line and line.state != 'done':
+                if set(line.user_ids.ids) != set(user_ids):
+                    line.sudo().write({'user_ids': [(6, 0, user_ids)]})
+                continue
+            if set(other.user_ids.ids) == set(user_ids):
+                continue
+            other.with_context(
+                ctkm_task_sync=True,
+                ctkm_internal_state_write=True,
+            ).write({'user_ids': [(6, 0, user_ids)]})
+        self.message_post(
+            body=_(
+                'Đã gán Quản lý cửa hàng <b>%(users)s</b> làm người phụ trách '
+                'bước 13 (Chụp team gửi lên group / chụp từng con tem) theo mã '
+                'Store trên biên bản: %(stores)s.'
+            ) % {
+                'users': escape(', '.join(users.mapped('name'))),
+                'stores': escape(store_label),
+            },
             subtype_xmlid='mail.mt_note',
             body_is_html=True,
         )
@@ -1170,6 +1271,208 @@ class CtkmTask(models.Model):
             body_is_html=True,
         )
         return users
+
+    def _ctkm_checklist_line_is_receive_or_replace_step(self, line):
+        """Bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag'."""
+        if not line:
+            return False
+        stage_id = line.stage_id.id if line.stage_id else False
+        target_stage_ids = {
+            self._ctkm_step_stage_id(TEM_RECEIVE_STAGE_XMLID),
+            self._ctkm_step_stage_id(TEM_REPLACE_STAGE_XMLID),
+        }
+        target_stage_ids.discard(False)
+        if stage_id and stage_id in target_stage_ids:
+            return True
+        key = normalize_step_key(line.name)
+        if not key:
+            return False
+        if any(marker in key for marker in TEM_RECEIVE_TASK_MARKERS):
+            return True
+        if key in TEM_REPLACE_TASK_KEYS:
+            return True
+        return False
+
+    def _ctkm_store_manager_employees_for_bb_stores(self, store_keys):
+        """Quản lý cửa hàng (hr.store.manager_id) của từng Store trên biên bản.
+
+        'Quản lý cửa hàng' được cấu hình tại Employee → Cấu hình → Cửa hàng
+        (model hr.store, trường manager_id), định nghĩa trong module hr_store.
+
+        Mỗi mã Store trên biên bản chỉ lấy ĐÚNG 1 Quản lý cửa hàng (cửa hàng
+        khớp mã) để đảm bảo quan hệ 1 Phụ trách (Cửa hàng trưởng) – 1 Người kiểm
+        soát (Quản lý cửa hàng) theo CÙNG một cửa hàng: chief của store X chỉ
+        được xác nhận bởi Quản lý cửa hàng của store X.
+        """
+        if not store_keys or 'hr.store' not in self.env:
+            return self.env['hr.employee']
+        return self.env['hr.employee'].sudo().browse({
+            mgr.id for mgr in self._ctkm_store_manager_map(store_keys).values()
+        })
+
+    def _ctkm_store_manager_map(self, store_keys):
+        """Map mã Store (trên biên bản) → Quản lý cửa hàng (hr.store.manager_id).
+
+        Mỗi mã Store chỉ lấy ĐÚNG 1 Quản lý cửa hàng (khớp chính xác mã/năm cửa
+        hàng, fallback khớp chứa) để đảm bảo chief của store X chỉ được xác nhận
+        bởi Quản lý cửa hàng của store X.
+        """
+        if not store_keys or 'hr.store' not in self.env:
+            return {}
+        Store = self.env['hr.store'].sudo()
+        stores = Store.search([('code', '!=', False)])
+        by_exact = {}
+        by_contains = {}
+        for store in stores:
+            if not store.manager_id:
+                continue
+            code = _ctkm_normalize_store_key(store.code)
+            name = _ctkm_normalize_store_key(store.name)
+            for key in store_keys:
+                if key == code or (name and key == name):
+                    by_exact.setdefault(key, store.manager_id)
+                elif self._ctkm_department_contains_store(code, key) or (
+                    name and self._ctkm_department_contains_store(name, key)
+                ):
+                    by_contains.setdefault(key, store.manager_id)
+        result = {}
+        for key in store_keys:
+            if key in by_exact:
+                result[key] = by_exact[key]
+            elif key in by_contains:
+                result[key] = by_contains[key]
+        return result
+
+    def _ctkm_users_for_store_key(self, store_key):
+        """Các người nhận việc (user_ids) thuộc cửa hàng có mã = store_key."""
+        self.ensure_one()
+        result = self.env['res.users']
+        for user in self.user_ids:
+            emp_keys = self._ctkm_user_department_store_keys(user)
+            if any(
+                dk == store_key
+                or self._ctkm_department_contains_store(dk, store_key)
+                for dk in emp_keys
+            ):
+                result |= user
+        return result
+
+    def _ctkm_assign_store_managers_verifier_after_bb_import(self):
+        """Khi hoàn thành bước 4: gán Quản lý cửa hàng (hr.store.manager_id)
+        làm Người kiểm soát bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag'
+        theo từng cửa hàng trên biên bản tổng.
+
+        Khác với 'Phụ trách' (Cửa hàng trưởng - chức danh trên hồ sơ),
+        'Người kiểm soát' ở đây lấy từ cấu hình Cửa hàng (Quản lý cửa hàng).
+        """
+        self.ensure_one()
+        if not self.is_tem_tag_import_task or not self.program_id:
+            return self.env['hr.employee']
+        store_keys = self._ctkm_bb_store_keys()
+        if not store_keys:
+            return self.env['hr.employee']
+        store_manager_map = self._ctkm_store_manager_map(store_keys)
+        managers = self.env['hr.employee'].sudo().browse({
+            m.id for m in store_manager_map.values()
+        })
+        store_label = ', '.join(sorted(store_keys))
+        if not managers:
+            self.message_post(
+                body=_(
+                    'Không tìm thấy nhân viên Quản lý cửa hàng (Employee → '
+                    'Cấu hình → Cửa hàng) tương ứng với mã Store trên biên bản: '
+                    '%(stores)s. Bước 11–12 giữ nguyên Người kiểm soát hiện tại.'
+                ) % {'stores': escape(store_label)},
+                subtype_xmlid='mail.mt_note',
+                body_is_html=True,
+            )
+            return managers
+        manager_ids = managers.ids
+        target_lines = self.program_id.checklist_line_ids.filtered(
+            lambda line: (
+                self._ctkm_checklist_line_is_receive_or_replace_step(line)
+                and line.state != 'done'
+            )
+        )
+        if target_lines:
+            for line in target_lines:
+                if set(line.verifier_ids.ids) == set(manager_ids):
+                    continue
+                line.sudo().write({'verifier_ids': [(6, 0, manager_ids)]})
+        flag_tasks = self.env['ctkm.task'].sudo().search([
+            ('program_id', '=', self.program_id.id),
+            ('state', '!=', 'done'),
+            '|',
+            ('is_tem_receive_task', '=', True),
+            ('is_tem_replace_task', '=', True),
+        ])
+        for other in flag_tasks:
+            line = other.checklist_line_id
+            if line and line.state != 'done':
+                if set(line.verifier_ids.ids) != set(manager_ids):
+                    line.sudo().write({'verifier_ids': [(6, 0, manager_ids)]})
+            elif set(other.verifier_ids.ids) != set(manager_ids):
+                other.with_context(
+                    ctkm_task_sync=True,
+                    ctkm_internal_state_write=True,
+                ).write({'verifier_ids': [(6, 0, manager_ids)]})
+            # Quan hệ 1 Phụ trách – 1 Người kiểm soát theo TỪNG cửa hàng.
+            other.sudo()._ctkm_build_store_verifier_lines(store_keys, store_manager_map)
+        uncovered = self.env['res.users']
+        for other in flag_tasks:
+            covered = other.store_verifier_ids.mapped('assignee_user_id')
+            uncovered |= (other.user_ids - covered)
+        if uncovered:
+            self.message_post(
+                body=_(
+                    'Lưu ý: một số Phụ trách không có Quản lý cửa hàng tương ứng '
+                    '(thiếu cấu hình Cửa hàng) nên không được xác nhận riêng: '
+                    '%(users)s. CTKM Admin có thể xác nhận thay.'
+                ) % {'users': escape(', '.join(uncovered.mapped('name')))},
+                subtype_xmlid='mail.mt_note',
+                body_is_html=True,
+            )
+        self.message_post(
+            body=_(
+                'Đã gán <b>%(users)s</b> (Quản lý cửa hàng) làm Người kiểm soát '
+                'bước 11–12 (Nhận tem tag mới, Thay tem Tag) theo mã Store trên '
+                'biên bản: %(stores)s. Mỗi Cửa hàng trưởng chỉ được xác nhận bởi '
+                'Quản lý cửa hàng đúng cửa hàng đó.'
+            ) % {
+                'users': escape(', '.join(managers.mapped('display_name'))),
+                'stores': escape(store_label),
+            },
+            subtype_xmlid='mail.mt_note',
+            body_is_html=True,
+        )
+        return managers
+
+    def _ctkm_build_store_verifier_lines(self, store_keys, store_manager_map):
+        """(Tái) tạo ctkm.task.store.verifier: mỗi chief gắn với Quản lý cửa hàng
+        ĐÚNG cửa hàng của mình, để xác nhận diễn ra theo từng cửa hàng."""
+        self.ensure_one()
+        if not store_keys or not store_manager_map:
+            return
+        StoreVerifier = self.env['ctkm.task.store.verifier'].sudo()
+        self.store_verifier_ids.sudo().unlink()
+        lines = []
+        for key in store_keys:
+            manager = store_manager_map.get(key)
+            if not manager:
+                continue
+            chiefs = self._ctkm_users_for_store_key(key)
+            if not chiefs:
+                continue
+            for chief in chiefs:
+                lines.append({
+                    'task_id': self.id,
+                    'store_key': key,
+                    'store_label': key,
+                    'assignee_user_id': chief.id,
+                    'verifier_id': manager.id,
+                })
+        if lines:
+            StoreVerifier.create(lines)
 
     def _ctkm_tem_tag_line_values(self):
         """Gom kho Tem/Tag của CTKM theo (Mã vật tư, Store) cho bảng chi tiết."""
@@ -2574,25 +2877,33 @@ class CtkmTask(models.Model):
         return self.env['res.users']
 
     def _get_verifier_user(self):
-        """User của Người kiểm soát (nếu bước có cấu hình)."""
+        """User của Người kiểm soát đầu tiên (nếu bước có cấu hình)."""
         self.ensure_one()
-        if not self.verifier_id or not self.verifier_id.user_id:
-            return self.env['res.users']
-        user = self.verifier_id.user_id
-        if user.active and not user.share and user.partner_id:
-            return user
+        for verifier in self.verifier_ids:
+            user = verifier.user_id
+            if user and user.active and not user.share and user.partner_id:
+                return user
         return self.env['res.users']
 
     def _user_can_confirm_as_manager(self, user):
-        """Người kiểm soát của bước (nếu có), quản lý org-chart, hoặc CTKM Admin."""
+        """Người kiểm soát của bước (nếu có), quản lý org-chart, hoặc CTKM Admin.
+
+        Với xác nhận theo cửa hàng (bước 11–12): chỉ Quản lý cửa hàng ĐÚNG
+        cửa hàng của một Phụ trách (đã hoàn thành, chưa xác nhận) mới được.
+        """
         self.ensure_one()
         if not user or user.share:
             return False
         if user.has_group('ctkm_core.group_ctkm_manager'):
             return True
-        if self.verifier_id:
-            verifier_user = self._get_verifier_user()
-            return bool(verifier_user and verifier_user.id == user.id)
+        if self.store_verifier_ids:
+            return bool(self.store_verifier_ids.filtered(
+                lambda l: l.verifier_user_id == user
+                and l.assignee_completed and not l.verified
+            ))
+        if self.verifier_ids:
+            verifier_user_ids = set(self.verifier_ids.mapped('user_id.id'))
+            return user.id in verifier_user_ids
         manager_user = self._get_org_chart_manager_user()
         return bool(manager_user and manager_user.id == user.id)
 
@@ -2728,6 +3039,36 @@ class CtkmTask(models.Model):
             body_is_html=True,
         )
         return manager_user
+
+    def _notify_store_verifiers(self):
+        """Gửi tin OdooBot CTKM tới từng Quản lý cửa hàng (theo cửa hàng)."""
+        self.ensure_one()
+        if not self.store_verifier_ids:
+            return self.env['res.users']
+        recipients = self.store_verifier_ids.filtered(
+            lambda l: not l.verified and l.verifier_user_id
+        ).mapped('verifier_user_id').filtered(
+            lambda u: u.active and not u.share
+        )
+        notified_names = []
+        for user in recipients:
+            try:
+                self._post_ctkm_bot_dm(
+                    user, self._ctkm_manager_confirm_message_body()
+                )
+                notified_names.append(user.name)
+            except UserError:
+                continue
+        if notified_names:
+            self.message_post(
+                body=_(
+                    'Đã gửi yêu cầu xác nhận theo cửa hàng tới Quản lý cửa hàng: '
+                    '%(users)s.'
+                ) % {'users': escape(', '.join(notified_names))},
+                subtype_xmlid='mail.mt_note',
+                body_is_html=True,
+            )
+        return recipients
 
     def _notify_worker_manager_confirmed(self, manager_user=None):
         """Gửi tin OdooBot CTKM cho người nhận việc khi quản lý đã xác nhận."""
@@ -2985,10 +3326,14 @@ class CtkmTask(models.Model):
                 if already_completed:
                     already_done |= task
                 continue
-            # Bước 4 đổ BB: gán cửa hàng trưởng (bước 11–14) và giám sát (hậu kiểm).
+            # Bước 4 đổ BB: gán cửa hàng trưởng (bước 11–12), quản lý cửa hàng
+            # làm Phụ trách bước 13 (chụp ảnh), giám sát (hậu kiểm) và Quản lý
+            # cửa hàng làm Người kiểm soát bước 11–12.
             if task.is_tem_tag_import_task:
                 task._ctkm_assign_store_managers_after_bb_import()
+                task._ctkm_assign_photo_store_managers_after_bb_import()
                 task._ctkm_assign_supervisors_after_bb_import()
+                task._ctkm_assign_store_managers_verifier_after_bb_import()
             # Tất cả đã hoàn thành → tiếp tục luồng xác nhận như cũ.
             checklist = task.checklist_line_id
             need_confirm = task._ctkm_task_needs_manager_confirm()
@@ -3013,6 +3358,19 @@ class CtkmTask(models.Model):
                     directly_done |= task
                     continue
                 already_done |= task
+                continue
+            # Xác nhận theo cửa hàng (bước 11–12): mỗi Quản lý cửa hàng xác nhận
+            # phần cửa hàng của mình. Gửi yêu cầu cho từng Quản lý cửa hàng.
+            if task.store_verifier_ids:
+                vals = {
+                    'state': 'waiting_confirm',
+                    'manager_confirmed': False,
+                }
+                if not task.done_date:
+                    vals['done_date'] = today
+                task.with_context(ctkm_internal_state_write=True).write(vals)
+                task._notify_store_verifiers()
+                notified |= task
                 continue
             manager_user = task._get_org_chart_manager_user()
             if not manager_user:
@@ -3072,9 +3430,54 @@ class CtkmTask(models.Model):
         return True
 
     def action_manager_confirm(self):
-        """Quản lý xác nhận hoàn thành → thông báo cho người nhận việc."""
+        """Quản lý xác nhận hoàn thành → thông báo cho người nhận việc.
+
+        Với xác nhận theo cửa hàng (bước 11–12): mỗi Quản lý cửa hàng chỉ xác
+        nhận được phần của Cửa hàng trưởng ĐÚNG cửa hàng mình quản lí. Công việc
+        chỉ chuyển Hoàn thành khi TẤT CẢ cửa hàng đã được xác nhận.
+        """
+        user = self.env.user
         for task in self:
-            if not task._user_can_confirm_as_manager(self.env.user):
+            if task.store_verifier_ids:
+                if task.state not in ('waiting_confirm', 'done'):
+                    raise UserError(_(
+                        'Chỉ xác nhận được sau khi nhân viên đã bấm Hoàn thành.'
+                    ))
+                pending = task.store_verifier_ids.filtered(
+                    lambda l: l.assignee_completed and not l.verified
+                )
+                if not user.has_group('ctkm_core.group_ctkm_manager'):
+                    pending = pending.filtered(
+                        lambda l: l.verifier_user_id == user
+                    )
+                if not pending:
+                    if all(l.verified for l in task.store_verifier_ids):
+                        # Đã xong hết, không còn gì để xác nhận.
+                        continue
+                    raise UserError(_(
+                        'Bạn không phải Quản lý cửa hàng của cửa hàng có công '
+                        'việc đang chờ xác nhận, hoặc cửa hàng đó đã xác nhận.'
+                    ))
+                pending._ctkm_verify(user)
+                if all(l.verified for l in task.store_verifier_ids):
+                    task.with_context(ctkm_internal_state_write=True).write({
+                        'manager_confirmed': True,
+                        'state': 'done',
+                    })
+                else:
+                    remaining = task.store_verifier_ids.filtered(
+                        lambda l: not l.verified
+                    ).mapped('store_label')
+                    task.message_post(
+                        body=_(
+                            'Đã xác nhận phần cửa hàng của bạn. Còn chờ Quản lý '
+                            'cửa hàng xác nhận các cửa hàng: %s.'
+                        ) % escape(', '.join(remaining)),
+                        subtype_xmlid='mail.mt_note',
+                        body_is_html=True,
+                    )
+                continue
+            if not task._user_can_confirm_as_manager(user):
                 raise UserError(_(
                     'Chỉ quản lý trực tiếp (theo organization chart) '
                     'mới được xác nhận hoàn thành.'
@@ -3089,7 +3492,8 @@ class CtkmTask(models.Model):
                 'manager_confirmed': True,
                 'state': 'done',
             })
-        return (self[:1])._ctkm_notify_reload(
+        target = self[:1]
+        return target._ctkm_notify_reload(
             _('Đã xác nhận'),
             _(
                 'Đã xác nhận quản lý. OdooBot CTKM đã thông báo '
@@ -3518,9 +3922,9 @@ class CtkmTask(models.Model):
             vals['done_date'] = checklist.done_date
         if checklist.name and task.name != checklist.name:
             vals['name'] = checklist.name
-        verifier = checklist.verifier_id
-        if (verifier or task.verifier_id) and task.verifier_id != verifier:
-            vals['verifier_id'] = verifier.id if verifier else False
+        verifier_ids = checklist.verifier_ids
+        if (verifier_ids or task.verifier_ids) and task.verifier_ids != verifier_ids:
+            vals['verifier_ids'] = [(6, 0, verifier_ids.ids)]
         if vals and not task.env.context.get('ctkm_task_sync'):
             task.with_context(
                 ctkm_task_sync=True,

@@ -533,11 +533,27 @@
                                 </group>
                             </group>
                         </page>
+                        <page string="Xác nhận theo cửa hàng" name="task_store_confirm"
+                                invisible="not store_verifier_ids">
+                            <field name="store_verifier_ids" nolabel="1">
+                                <list editable="false" default_order="store_key">
+                                    <field name="store_label" string="Cửa hàng"/>
+                                    <field name="assignee_user_id" string="Phụ trách (Cửa hàng trưởng)"/>
+                                    <field name="verifier_id" string="Người kiểm soát (Quản lý cửa hàng)"
+                                        widget="many2one_avatar_employee"/>
+                                    <field name="assignee_completed" string="Phụ trách xong"/>
+                                    <field name="verified" string="Đã xác nhận"/>
+                                    <field name="verified_user_id" string="Người xác nhận"/>
+                                    <field name="verified_date" string="Ngày xác nhận"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Xác nhận quản lý" name="task_manager_confirm" invisible="not checklist_need_manager_confirm">
                                 <group>
                                     <group>
-                                        <field name="verifier_id" readonly="1"
-                                            invisible="not verifier_id"/>
+                                        <field name="verifier_ids" readonly="1"
+                                            widget="many2many_tags"
+                                            invisible="not verifier_ids"/>
                                         <field name="manager_confirmed"
                                             readonly="state != 'waiting_confirm' or not can_confirm_as_manager"/>
                                     <div colspan="2" class="text-muted"
@@ -545,11 +561,11 @@
                                         Chỉ xác nhận được sau khi công việc đã bấm Hoàn thành.
                                     </div>
                                         <div colspan="2" class="text-muted"
-                                            invisible="state != 'waiting_confirm' or can_confirm_as_manager or not verifier_id">
-                                            Chỉ <b>Người kiểm soát</b> (<field name="verifier_id" readonly="1" nolabel="1"/>) mới được tick xác nhận.
+                                            invisible="state != 'waiting_confirm' or can_confirm_as_manager or not verifier_ids">
+                                            Chỉ <b>Người kiểm soát</b> (<field name="verifier_ids" readonly="1" widget="many2many_tags" nolabel="1"/>) mới được tick xác nhận.
                                         </div>
                                         <div colspan="2" class="text-muted"
-                                            invisible="state != 'waiting_confirm' or can_confirm_as_manager or verifier_id">
+                                            invisible="state != 'waiting_confirm' or can_confirm_as_manager or verifier_ids">
                                             Chỉ quản lý trực tiếp (theo organization chart) mới được tick xác nhận.
                                         </div>
                                     <div colspan="2" class="text-muted"

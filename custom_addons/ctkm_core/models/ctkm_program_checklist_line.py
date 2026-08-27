@@ -52,12 +52,15 @@ class CtkmProgramChecklistLine(models.Model):
         string='Cần quản lý xác nhận',
         default=True,
     )
-    verifier_id = fields.Many2one(
+    verifier_ids = fields.Many2many(
         'hr.employee',
+        'ctkm_checklist_line_verifier_rel',
+        'line_id',
+        'employee_id',
         string='Người kiểm soát',
         domain="[('user_id.share', '=', False)]",
-        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng người này kiểm soát '
-             'thay vì quản lý theo organization chart.',
+        help='Nhân viên xác nhận bước này. Khi đặt, bước dùng những người này '
+             'kiểm soát thay vì quản lý theo organization chart.',
     )
     note = fields.Char(string='Ghi chú')
     notified = fields.Boolean(
@@ -107,7 +110,7 @@ class CtkmProgramChecklistLine(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        if any(f in vals for f in ('state', 'done_date', 'user_ids', 'name', 'need_manager_confirm', 'verifier_id')) and not self.env.context.get('ctkm_task_sync'):
+        if any(f in vals for f in ('state', 'done_date', 'user_ids', 'name', 'need_manager_confirm', 'verifier_ids')) and not self.env.context.get('ctkm_task_sync'):
             Task = self.env['ctkm.task']
             for line in self:
                 existing = Task.search([
@@ -148,7 +151,7 @@ class CtkmProgramChecklistLine(models.Model):
         vals = {
             'program_id': self.program_id.id,
             'user_ids': [(6, 0, self.user_ids.ids)],
-            'verifier_id': self.verifier_id.id if self.verifier_id else False,
+            'verifier_ids': [(6, 0, self.verifier_ids.ids)],
             'process_date': fields.Date.context_today(self),
             'name': self.name,
             'state': initial_state,

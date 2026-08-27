@@ -112,8 +112,8 @@
                                     <field name="name" string="Công việc"/>
                                     <field name="user_ids" string="Phụ trách" widget="many2many_avatar_user"
                                         options="{'no_create': True}"/>
-                                    <field name="verifier_id" string="Người kiểm soát"
-                                        widget="many2one_avatar_employee"
+                                    <field name="verifier_ids" string="Người kiểm soát"
+                                        widget="many2many_tags"
                                         domain="[('user_id.share', '=', False)]"
                                         options="{'no_create': True}"/>
                                     <field name="need_manager_confirm" string="Cần quản lý xác nhận" widget="boolean_toggle"/>
