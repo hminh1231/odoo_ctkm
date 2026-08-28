@@ -3329,22 +3329,60 @@ class CtkmTask(models.Model):
         )
         return recipients
 
+    def _ctkm_store_verifier_message_body(self, line):
+        """Nội dung tin OdooBot CTKM gửi Quản lý cửa hàng của MỘT cửa hàng.
+
+        Chỉ ghi đúng Phụ trách (Cửa hàng trưởng) của cửa hàng đó, theo đúng
+        chuỗi: Cửa hàng A (CHT A) → Quản lý cửa hàng A. Bước 10 (Bàn giao Tem
+        Tag) không có Phụ trách riêng nên không ghi tên nhân viên.
+        """
+        self.ensure_one()
+        store_label = line.store_label or ''
+        program_name = self.program_name or self.program_id.name or self.name or ''
+        if line.no_assignee:
+            store_line = Markup(
+                'Cửa hàng <b>%s</b> đã bấm Hoàn thành.'
+            ) % escape(store_label)
+        else:
+            worker = line.assignee_user_id
+            worker_name = worker.name or ''
+            store_line = Markup(
+                'Cửa hàng <b>%s</b>: Nhân viên <b>%s</b> (Phụ trách) '
+                'đã bấm Hoàn thành.'
+            ) % (escape(store_label), escape(worker_name))
+        lines = [
+            Markup('<b>Yêu cầu xác nhận hoàn thành công việc CTKM</b>'),
+            store_line,
+            Markup('Công việc: <b>%s</b>') % escape(program_name),
+            Markup(
+                'Vui lòng vào form và tick <b>Xác nhận theo cửa hàng</b> '
+                'để hoàn tất trạng thái.'
+            ),
+            self._ctkm_manager_confirm_button_markup(),
+        ]
+        return Markup('<br/>').join(lines)
+
     def _notify_store_verifiers(self):
-        """Gửi tin OdooBot CTKM tới từng Quản lý cửa hàng (theo cửa hàng)."""
+        """Gửi tin OdooBot CTKM tới từng Quản lý cửa hàng (theo cửa hàng).
+
+        Mỗi Quản lý cửa hàng chỉ nhận thông báo của cửa hàng mình, ghi rõ
+        đúng Phụ trách (Cửa hàng trưởng) của cửa hàng đó đã bấm Hoàn thành
+        (không lấy nhân viên đầu tiên của toàn công việc).
+        """
         self.ensure_one()
         if not self.store_verifier_ids:
             return self.env['res.users']
-        recipients = self.store_verifier_ids.filtered(
-            lambda l: not l.verified and l.verifier_user_id
-        ).mapped('verifier_user_id').filtered(
-            lambda u: u.active and not u.share
-        )
+        recipients = self.env['res.users']
         notified_names = []
-        for user in recipients:
+        for line in self.store_verifier_ids:
+            user = line.verifier_user_id
+            if not user or line.verified or user.share or not user.active:
+                continue
             try:
                 self._post_ctkm_bot_dm(
-                    user, self._ctkm_manager_confirm_message_body()
+                    user, self._ctkm_store_verifier_message_body(line)
                 )
+                recipients |= user
                 notified_names.append(user.name)
             except UserError:
                 continue
