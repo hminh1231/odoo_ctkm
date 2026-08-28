@@ -634,8 +634,9 @@ class CtkmTask(models.Model):
     def _compute_is_verifier(self):
         uid = self.env.user.id
         for task in self:
+            # sudo: nhân viên thường không đọc được user_id của employee khác.
             task.is_verifier = bool(
-                uid in task.verifier_ids.mapped('user_id.id')
+                uid in task.sudo().verifier_ids.mapped('user_id.id')
             )
 
     @api.depends(
@@ -656,7 +657,19 @@ class CtkmTask(models.Model):
             first_pending[program.id] = lines.filtered(
                 lambda line: line.state != 'done'
             )[:1]
+        user = self.env.user
+        is_admin = user.has_group('ctkm_core.group_ctkm_manager')
         for task in self:
+            # Người kiểm soát / quản lý: việc đang chờ mình xác nhận là bước hiện tại.
+            if (
+                not is_admin
+                and task.state == 'waiting_confirm'
+                and not task.manager_confirmed
+                and user not in task.user_ids
+                and task._user_can_confirm_as_manager(user)
+            ):
+                task.is_current_stage_task = True
+                continue
             if task.state == 'done' and not task.forwarded:
                 task.is_current_stage_task = True
                 continue
@@ -669,15 +682,93 @@ class CtkmTask(models.Model):
                 continue
             task.is_current_stage_task = False
 
+    @api.model
+    def _ctkm_my_tasks_domain(self, uid=None):
+        """Việc của tôi: được giao, hoặc đang chờ tôi xác nhận (Người kiểm soát /
+        quản lý org-chart / Quản lý cửa hàng).
+        """
+        uid = uid or self.env.uid
+        return ['|', '|', '|',
+            ('user_ids', 'in', [uid]),
+            '&',
+                ('state', '=', 'waiting_confirm'),
+                ('user_ids.employee_ids.parent_id.user_id', 'in', [uid]),
+            '&',
+                ('state', '=', 'waiting_confirm'),
+                ('verifier_ids.user_id', 'in', [uid]),
+            '&',
+                ('state', '=', 'waiting_confirm'),
+                ('store_verifier_ids.verifier_user_id', 'in', [uid]),
+        ]
+
     def _search_is_current_stage_task(self, operator, value):
-        want_true = (operator in ('=', '==') and value) or (
-            operator in ('!=', '<>') and not value
-        )
-        candidates = self.search([('user_ids', 'in', [self.env.uid])])
-        matching = candidates.filtered(lambda t: t.is_current_stage_task)
+        """Không gọi self.search() ở đây: Odoo 19 re-enter method này khi list
+        view lọc 'Bước hiện tại', khiến việc chờ Người kiểm soát bị loại.
+
+        Odoo 19 tối ưu boolean thành operator 'in' (không phải '=').
+        """
+        if operator in ('=', '=='):
+            want_true = bool(value)
+        elif operator in ('!=', '<>'):
+            want_true = not value
+        elif operator == 'in':
+            try:
+                want_true = True in value or 1 in value
+            except TypeError:
+                want_true = bool(value)
+        elif operator == 'not in':
+            try:
+                want_true = True not in value and 1 not in value
+            except TypeError:
+                want_true = not value
+        else:
+            want_true = bool(value)
+        uid = self.env.uid
+        uid = self.env.uid
+        cr = self.env.cr
+        cr.execute("""
+            SELECT t.id FROM ctkm_task t
+            WHERE EXISTS (
+                SELECT 1 FROM ctkm_task_user_rel r
+                WHERE r.task_id = t.id AND r.user_id = %s
+            )
+            UNION
+            SELECT t.id FROM ctkm_task t
+            WHERE t.state = 'waiting_confirm'
+              AND EXISTS (
+                SELECT 1 FROM ctkm_task_verifier_rel r
+                JOIN hr_employee e ON e.id = r.employee_id
+                WHERE r.task_id = t.id AND e.user_id = %s
+              )
+            UNION
+            SELECT t.id FROM ctkm_task t
+            JOIN ctkm_task_store_verifier sv ON sv.task_id = t.id
+            JOIN hr_employee e ON e.id = sv.verifier_id
+            WHERE t.state = 'waiting_confirm' AND e.user_id = %s
+            UNION
+            SELECT t.id FROM ctkm_task t
+            JOIN ctkm_task_user_rel r ON r.task_id = t.id
+            JOIN hr_employee worker ON worker.user_id = r.user_id
+            JOIN hr_employee mgr ON mgr.id = worker.parent_id
+            WHERE t.state = 'waiting_confirm' AND mgr.user_id = %s
+        """, (uid, uid, uid, uid))
+        candidate_ids = [row[0] for row in cr.fetchall()]
+        tasks = self.browse(candidate_ids)
+        matching_ids = []
+        user = self.env.user
+        for task in tasks:
+            if task.is_current_stage_task:
+                matching_ids.append(task.id)
+                continue
+            if (
+                task.state == 'waiting_confirm'
+                and not task.manager_confirmed
+                and task._user_can_confirm_as_manager(user)
+            ):
+                matching_ids.append(task.id)
         if want_true:
-            return [('id', 'in', matching.ids)]
-        return [('id', 'not in', matching.ids)]
+            return [('id', 'in', matching_ids)]
+        return [('id', 'not in', matching_ids)]
 
     @api.depends('checklist_line_id', 'checklist_line_id.need_manager_confirm')
     def _compute_checklist_need_manager_confirm(self):
@@ -2998,15 +3089,14 @@ class CtkmTask(models.Model):
         )
 
     def _get_org_chart_manager_user(self):
-        """Quản lý trực tiếp theo org chart (parent_id), hoặc Người kiểm soát bước.
+        """Người nhận yêu cầu xác nhận: Người kiểm soát bước, hoặc quản lý org-chart.
 
-        Khi bước có 'Người kiểm soát' (verifier), ưu tiên dùng người đó thay vì
-        quản lý theo organization chart.
+        Khi bước đã cấu hình 'Người kiểm soát', KHÔNG fallback sang quản lý
+        organization chart — người đó không được tick xác nhận trên form.
         """
         self.ensure_one()
-        verifier_user = self._get_verifier_user()
-        if verifier_user:
-            return verifier_user
+        if self.sudo().verifier_ids:
+            return self._get_verifier_user()
         employee = self._get_worker_employee()
         manager = employee.parent_id.sudo() if employee else self.env['hr.employee']
         user = manager.user_id
@@ -3014,14 +3104,21 @@ class CtkmTask(models.Model):
             return user
         return self.env['res.users']
 
+    def _get_verifier_users(self):
+        """Tài khoản Odoo của các Người kiểm soát (sudo: nhân viên thường
+        không đọc được user_id / employee của người khác).
+        """
+        self.ensure_one()
+        users = self.env['res.users']
+        for verifier in self.sudo().verifier_ids:
+            user = verifier.sudo().user_id
+            if user and user.active and not user.share and user.partner_id:
+                users |= user
+        return users
+
     def _get_verifier_user(self):
         """User của Người kiểm soát đầu tiên (nếu bước có cấu hình)."""
-        self.ensure_one()
-        for verifier in self.verifier_ids:
-            user = verifier.user_id
-            if user and user.active and not user.share and user.partner_id:
-                return user
-        return self.env['res.users']
+        return self._get_verifier_users()[:1]
 
     def _user_can_confirm_as_manager(self, user):
         """Người kiểm soát của bước (nếu có), quản lý org-chart, hoặc CTKM Admin.
@@ -3039,8 +3136,8 @@ class CtkmTask(models.Model):
                 lambda l: l.verifier_user_id == user
                 and l.assignee_completed and not l.verified
             ))
-        if self.verifier_ids:
-            verifier_user_ids = set(self.verifier_ids.mapped('user_id.id'))
+        if self.sudo().verifier_ids:
+            verifier_user_ids = set(self._get_verifier_users().ids)
             return user.id in verifier_user_ids
         manager_user = self._get_org_chart_manager_user()
         return bool(manager_user and manager_user.id == user.id)
@@ -3119,6 +3216,7 @@ class CtkmTask(models.Model):
         """Gửi DM Discuss từ OdooBot CTKM tới một user."""
         self.ensure_one()
         Message = self.env['mail.message']
+        recipient_user = recipient_user.sudo() if recipient_user else recipient_user
         if not recipient_user or recipient_user.share or not recipient_user.partner_id:
             return Message
         bot_user = self.env.ref(
@@ -3148,35 +3246,59 @@ class CtkmTask(models.Model):
             return Message
 
     def _notify_org_manager_confirm(self):
-        """Gửi tin OdooBot CTKM tới quản lý org-chart để xác nhận."""
+        """Gửi tin OdooBot CTKM tới Người kiểm soát (hoặc quản lý org-chart)."""
         self.ensure_one()
-        manager_user = self._get_org_chart_manager_user()
-        if not manager_user:
-            raise UserError(_(
-                'Không tìm thấy quản lý trực tiếp trên organization chart '
-                '(hoặc quản lý chưa có tài khoản Odoo). '
-                'Không thể gửi yêu cầu xác nhận.'
-            ))
-        if manager_user in self.user_ids:
-            raise UserError(_(
-                'Quản lý trực tiếp trùng với người làm việc. '
-                'Vui lòng kiểm tra lại organization chart.'
-            ))
-        posted = self._post_ctkm_bot_dm(
-            manager_user, self._ctkm_manager_confirm_message_body()
-        )
-        if not posted:
-            raise UserError(_(
-                'Không gửi được thông báo Discuss tới quản lý %s.'
-            ) % manager_user.name)
+        verifier_employees = self.sudo().verifier_ids
+        if verifier_employees:
+            recipients = self._get_verifier_users().filtered(
+                lambda u: u not in self.user_ids
+            )
+            if not recipients:
+                names = ', '.join(verifier_employees.mapped('display_name'))
+                if self._get_verifier_users():
+                    raise UserError(_(
+                        'Người kiểm soát trùng với người làm việc. '
+                        'Vui lòng kiểm tra lại cấu hình Người kiểm soát.'
+                    ))
+                raise UserError(_(
+                    'Người kiểm soát (%s) chưa có tài khoản Odoo '
+                    'hoặc tài khoản không hoạt động. '
+                    'Không thể gửi yêu cầu xác nhận.'
+                ) % names)
+            role_label = _('Người kiểm soát')
+        else:
+            manager_user = self._get_org_chart_manager_user()
+            if not manager_user:
+                raise UserError(_(
+                    'Không tìm thấy quản lý trực tiếp trên organization chart '
+                    '(hoặc quản lý chưa có tài khoản Odoo). '
+                    'Không thể gửi yêu cầu xác nhận.'
+                ))
+            if manager_user in self.user_ids:
+                raise UserError(_(
+                    'Quản lý trực tiếp trùng với người làm việc. '
+                    'Vui lòng kiểm tra lại organization chart.'
+                ))
+            recipients = manager_user
+            role_label = _('quản lý')
+        notified_names = []
+        for recipient in recipients:
+            posted = self._post_ctkm_bot_dm(
+                recipient, self._ctkm_manager_confirm_message_body()
+            )
+            if not posted:
+                raise UserError(_(
+                    'Không gửi được thông báo Discuss tới %s %s.'
+                ) % (role_label, recipient.name))
+            notified_names.append(recipient.name)
         self.message_post(
             body=_(
-                'Đã gửi yêu cầu xác nhận tới quản lý <b>%s</b> qua OdooBot CTKM.'
-            ) % manager_user.name,
+                'Đã gửi yêu cầu xác nhận tới %s <b>%s</b> qua OdooBot CTKM.'
+            ) % (role_label, escape(', '.join(notified_names))),
             subtype_xmlid='mail.mt_note',
             body_is_html=True,
         )
-        return manager_user
+        return recipients
 
     def _notify_store_verifiers(self):
         """Gửi tin OdooBot CTKM tới từng Quản lý cửa hàng (theo cửa hàng)."""
@@ -3518,6 +3640,11 @@ class CtkmTask(models.Model):
                 continue
             manager_user = task._get_org_chart_manager_user()
             if not manager_user:
+                if task.sudo().verifier_ids:
+                    raise UserError(_(
+                        'Người kiểm soát (%s) chưa có tài khoản Odoo '
+                        'hoặc tài khoản không hoạt động.'
+                    ) % ', '.join(task.sudo().verifier_ids.mapped('display_name')))
                 raise UserError(_(
                     'Không tìm thấy quản lý trực tiếp trên organization chart '
                     '(hoặc quản lý chưa có tài khoản Odoo).'
@@ -3549,12 +3676,23 @@ class CtkmTask(models.Model):
                 ),
             )
         if notified:
+            confirm_msg = _(
+                'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
+                'tới quản lý trực tiếp.'
+            )
+            if target.sudo().verifier_ids:
+                confirm_msg = _(
+                    'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
+                    'tới Người kiểm soát.'
+                )
+            elif target.store_verifier_ids:
+                confirm_msg = _(
+                    'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
+                    'tới Quản lý cửa hàng.'
+                )
             return target._ctkm_notify_reload(
                 _('Đã gửi hoàn thành'),
-                _(
-                    'Đã bấm Hoàn thành. OdooBot CTKM đã gửi yêu cầu xác nhận '
-                    'tới quản lý trực tiếp.'
-                ),
+                confirm_msg,
             )
         if already_done:
             pending_forward = already_done.filtered(
@@ -3622,6 +3760,10 @@ class CtkmTask(models.Model):
                     )
                 continue
             if not task._user_can_confirm_as_manager(user):
+                if task.sudo().verifier_ids:
+                    raise UserError(_(
+                        'Chỉ Người kiểm soát (%s) mới được xác nhận hoàn thành.'
+                    ) % ', '.join(task.sudo().verifier_ids.mapped('display_name')))
                 raise UserError(_(
                     'Chỉ quản lý trực tiếp (theo organization chart) '
                     'mới được xác nhận hoàn thành.'

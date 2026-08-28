@@ -51,6 +51,19 @@
             <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
+        <!-- Người kiểm soát: xem CTKM của công việc mình phải xác nhận -->
+        <record id="ctkm_program_rule_verifier" model="ir.rule">
+            <field name="name">CTKM: Người kiểm soát xem CTKM cần xác nhận</field>
+            <field name="model_id" ref="model_ctkm_program"/>
+            <field name="domain_force">['|',
+                ('task_ids.verifier_ids.user_id', 'in', [user.id]),
+                ('task_ids.store_verifier_ids.verifier_user_id', 'in', [user.id])]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
         <!-- Quản lý org-chart: xem CTKM của cấp dưới (để xác nhận hoàn thành + xem tài liệu) -->
         <record id="ctkm_program_rule_org_manager" model="ir.rule">
             <field name="name">CTKM: quản lý org-chart xem CTKM cấp dưới</field>
@@ -85,6 +98,19 @@
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- Người kiểm soát xem/xác nhận công việc được gán kiểm soát -->
+        <record id="ctkm_task_rule_verifier" model="ir.rule">
+            <field name="name">CTKM Task: Người kiểm soát xác nhận</field>
+            <field name="model_id" ref="model_ctkm_task"/>
+            <field name="domain_force">['|',
+                ('verifier_ids.user_id', 'in', [user.id]),
+                ('store_verifier_ids.verifier_user_id', 'in', [user.id])]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
         <!-- Quản lý trực tiếp (org chart) xem/xác nhận công việc cấp dưới -->
@@ -277,6 +303,18 @@
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="True"/>
+        </record>
+        <record id="ctkm_task_time_line_rule_verifier" model="ir.rule">
+            <field name="name">CTKM Thời gian: Người kiểm soát xem dòng công việc xác nhận</field>
+            <field name="model_id" ref="model_ctkm_task_time_line"/>
+            <field name="domain_force">['|',
+                ('task_id.verifier_ids.user_id', 'in', [user.id]),
+                ('task_id.store_verifier_ids.verifier_user_id', 'in', [user.id])]</field>
+            <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
         </record>
         <record id="ctkm_task_time_line_rule_manager" model="ir.rule">
             <field name="name">CTKM Thời gian: manager xem toàn bộ</field>

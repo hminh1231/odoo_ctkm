@@ -644,7 +644,13 @@
                 <filter string="Của tôi" name="my_tasks"
                     domain="[('user_ids', 'in', [uid])]"/>
                 <filter string="Chờ tôi xác nhận" name="waiting_my_confirm"
-                    domain="[('state', '=', 'waiting_confirm'), ('user_ids.employee_ids.parent_id.user_id', 'in', [uid])]"/>
+                    domain="['|', '|',
+                        '&amp;', ('state', '=', 'waiting_confirm'),
+                            ('user_ids.employee_ids.parent_id.user_id', 'in', [uid]),
+                        '&amp;', ('state', '=', 'waiting_confirm'),
+                            ('verifier_ids.user_id', 'in', [uid]),
+                        '&amp;', ('state', '=', 'waiting_confirm'),
+                            ('store_verifier_ids.verifier_user_id', 'in', [uid])]"/>
                 <separator/>
                 <filter string="Chưa bắt đầu" name="state_todo"
                     domain="[('state', '=', 'todo')]"/>
@@ -675,12 +681,19 @@
         <field name="res_model">ctkm.task</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="view_ctkm_task_search"/>
-        <!-- Chỉ việc của tôi + việc cấp dưới chờ mình xác nhận (không hiện chung cả hệ thống). -->
-        <field name="domain">['|',
+        <!-- Việc được giao + việc đang chờ mình xác nhận (Người kiểm soát /
+             quản lý org-chart / Quản lý cửa hàng). -->
+        <field name="domain">['|', '|', '|',
             ('user_ids', 'in', [uid]),
             '&amp;',
                 ('state', '=', 'waiting_confirm'),
-                ('user_ids.employee_ids.parent_id.user_id', 'in', [uid])]</field>
+                ('user_ids.employee_ids.parent_id.user_id', 'in', [uid]),
+            '&amp;',
+                ('state', '=', 'waiting_confirm'),
+                ('verifier_ids.user_id', 'in', [uid]),
+            '&amp;',
+                ('state', '=', 'waiting_confirm'),
+                ('store_verifier_ids.verifier_user_id', 'in', [uid])]</field>
         <field name="context">{'search_default_is_current_stage_task': 1,
             'search_default_group_program_id': 1}</field>
         <field name="help" type="html">
