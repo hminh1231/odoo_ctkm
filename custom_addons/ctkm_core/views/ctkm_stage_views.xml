@@ -9,7 +9,7 @@
                 <field name="sequence" string="STT" widget="handle"/>
                 <field name="name" string="Tên giai đoạn"/>
                 <field name="user_ids" string="Phụ trách" widget="many2many_avatar_user"/>
-                <field name="need_manager_confirm" string="Cần quản lý xác nhận" widget="boolean_toggle"/>
+                <field name="need_manager_confirm" string="Cần QL xác nhận" widget="boolean_toggle"/>
                 <field name="verifier_ids" string="Người kiểm soát"
                     widget="many2many_tags"
                     invisible="not need_manager_confirm"/>
@@ -27,7 +27,7 @@
                         <field name="sequence" string="STT"/>
                         <field name="name" string="Tên giai đoạn"/>
                         <field name="user_ids" string="Phụ trách"/>
-                        <field name="need_manager_confirm" string="Cần quản lý xác nhận"/>
+                        <field name="need_manager_confirm" string="Cần QL xác nhận"/>
                         <field name="verifier_ids" string="Người kiểm soát"
                             widget="many2many_tags"
                             invisible="not need_manager_confirm"

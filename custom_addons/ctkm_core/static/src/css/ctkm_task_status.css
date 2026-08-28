@@ -130,3 +130,16 @@ th .o_ctkm_tick_all .form-check-input {
     min-width: 130px !important;
     white-space: nowrap;
 }
+
+/* Border around the one2many list tables in the CTKM task form */
+.o_ctkm_task_form .o_list_table {
+    border: 1px solid #ced4da;
+    border-collapse: collapse;
+}
+.o_ctkm_task_form .o_list_table > thead > tr > th,
+.o_ctkm_task_form .o_list_table > tbody > tr > td {
+    border: 1px solid #ced4da;
+}
+.o_ctkm_task_form .o_list_table > thead > tr > th {
+    background-color: #f2f4f6;
+}

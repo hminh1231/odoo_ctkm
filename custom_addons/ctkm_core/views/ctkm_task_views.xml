@@ -29,7 +29,7 @@
         <field name="name">ctkm.task.form</field>
         <field name="model">ctkm.task</field>
         <field name="arch" type="xml">
-            <form string="Công việc của tôi" create="0" delete="0">
+            <form string="Công việc của tôi" create="0" delete="0" class="o_ctkm_task_form">
                 <header>
                     <field name="is_task_assignee" invisible="1"/>
                     <field name="can_confirm_as_manager" invisible="1"/>
@@ -508,7 +508,7 @@
                                         <field name="tag_replaced" string="Đã thay đủ tag"
                                             widget="ctkm_tick"
                                             options="{'tick_all': True}"/>
-                                        <field name="not_replaced" string="Chưa thay/thay thiếu"
+                                        <field name="not_replaced" string="Chưa thay/thiếu"
                                             widget="ctkm_tick"
                                             options="{'tick_all': True}"/>
                                     </list>
@@ -518,8 +518,8 @@
                                 invisible="not is_tem_price_task">
                                 <div colspan="2" class="text-muted mb-2">
                                     Cửa hàng và tổng số lượng tem/tag lấy từ bước <b>In tem, Tag</b>.
-                                    Tick <b>Xác nhận thay tem/tag</b>, <b>Xác nhận chưa thay tem/tag</b>
-                                    hoặc <b>Xác nhận đã áp giá</b> cho từng cửa hàng.
+                                    Tick <b>Xác nhận thay</b>, <b>Chưa thay tem/tag</b>
+                                    hoặc <b>Đã áp giá</b> cho từng cửa hàng.
                                 </div>
                                 <field name="price_store_search" placeholder="Tìm cửa hàng..."
                                     nolabel="1" colspan="2"/>
@@ -549,13 +549,13 @@
                                         <field name="tag_quantity" readonly="1" width="90px"
                                             string="SL tag"
                                             sum="Tổng SL tag"/>
-                                        <field name="replaced" string="Xác nhận thay tem/tag"
+                                        <field name="replaced" string="Xác nhận thay"
                                             widget="ctkm_tick"
                                             options="{'tick_all': True}"/>
-                                        <field name="not_replaced" string="Xác nhận chưa thay tem/tag"
+                                        <field name="not_replaced" string="Chưa thay tem/tag"
                                             widget="ctkm_tick"
                                             options="{'tick_all': True}"/>
-                                        <field name="price_applied" string="Xác nhận đã áp giá"
+                                        <field name="price_applied" string="Đã áp giá"
                                             widget="ctkm_tick"
                                             options="{'tick_all': True}"/>
                                     </list>
@@ -567,10 +567,10 @@
                             <field name="store_verifier_ids" nolabel="1">
                                 <list default_order="store_key">
                                     <field name="store_label" string="Cửa hàng"/>
-                                    <field name="assignee_user_id" string="Phụ trách (Cửa hàng trưởng)"
-                                        column_invisible="parent.is_tem_handover_task"/>
-                                    <field name="verifier_id" string="Người kiểm soát (Quản lý cửa hàng)"
-                                        widget="many2one_avatar_employee"/>
+                            <field name="assignee_user_id" string="Phụ trách"
+                                column_invisible="parent.is_tem_handover_task"/>
+                            <field name="verifier_id" string="Người kiểm soát"
+                                widget="many2one_avatar_employee"/>
                                     <field name="assignee_completed" string="Phụ trách xong"
                                         column_invisible="parent.is_tem_handover_task"/>
                                     <field name="verified" string="Đã xác nhận"/>

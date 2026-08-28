@@ -116,7 +116,7 @@
                                         widget="many2many_tags"
                                         domain="[('user_id.share', '=', False)]"
                                         options="{'no_create': True}"/>
-                                    <field name="need_manager_confirm" string="Cần quản lý xác nhận" widget="boolean_toggle"/>
+                                    <field name="need_manager_confirm" string="Cần QL xác nhận" widget="boolean_toggle"/>
                                     <field name="state" string="Trạng thái" widget="badge"
                                         decoration-info="state == 'todo'"
                                         decoration-warning="state == 'progress'"
