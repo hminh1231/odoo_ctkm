@@ -3390,6 +3390,78 @@ class CtkmTask(models.Model):
         )
         return worker
 
+    def _ctkm_receive_notice_body(self, store, lines):
+        """Nội dung tin OdooBot CTKM báo Quản lý cửa hàng về tem/tag đã nhận."""
+        self.ensure_one()
+        program_name = self.program_name or self.program_id.name or self.name or ''
+        items = []
+        for idx, line in enumerate(
+            lines.filtered(lambda l: l.received).sorted(
+                key=lambda l: (l.material_code or '', not l.is_tag)
+            ),
+            start=1,
+        ):
+            kind = _('Tag') if line.is_tag else _('Tem')
+            qty = line.total_quantity or 0.0
+            items.append(Markup(
+                '%(n)s. %(code)s (%(kind)s) với số lượng %(qty)s'
+            ) % {
+                'n': idx,
+                'code': escape(line.material_code or ''),
+                'kind': kind,
+                'qty': '{:,}'.format(qty),
+            })
+        body_lines = [
+            Markup('<b>Thông báo nhận tem/tag mới</b>'),
+            Markup('Chương trình khuyến mãi: <b>%s</b>') % escape(program_name),
+            Markup('Cửa hàng: <b>%s</b>') % escape(store or ''),
+            Markup('đã nhận số tem/tag là:'),
+        ]
+        if items:
+            body_lines.append(Markup('<br/>').join(items))
+        else:
+            body_lines.append(Markup('(chưa có hạng mục nào được tick Đã nhận).'))
+        body_lines.append(self._ctkm_worker_confirmed_button_markup())
+        return Markup('<br/>').join(body_lines)
+
+    def _ctkm_notify_store_received(self, store, lines):
+        """Báo Quản lý cửa hàng (Người kiểm soát) của cửa hàng khi Cửa hàng
+        trưởng đã tick Đã nhận toàn bộ tem/tag của cửa hàng đó (bước 11).
+
+        Chỉ gửi 1 lần mỗi cửa hàng (cờ received_notified trên dòng store_verifier).
+        """
+        self.ensure_one()
+        if not self.is_tem_receive_task:
+            return self.env['res.users']
+        store_key = _ctkm_normalize_store_key(store)
+        sv = self.sudo().store_verifier_ids.filtered(
+            lambda l: l.store_key == store_key
+        )[:1]
+        if not sv or sv.received_notified:
+            return self.env['res.users']
+        verifier_user = sv.verifier_user_id
+        if not verifier_user or verifier_user.share or not verifier_user.active:
+            return self.env['res.users']
+        body = self._ctkm_receive_notice_body(store, lines)
+        try:
+            posted = self._post_ctkm_bot_dm(verifier_user, body)
+        except UserError:
+            posted = self.env['mail.message']
+        if posted:
+            sv.sudo().write({'received_notified': True})
+            self.message_post(
+                body=_(
+                    'Đã gửi thông báo cửa hàng <b>%(store)s</b> đã nhận tem/tag '
+                    'tới Quản lý cửa hàng <b>%(user)s</b> (OdooBot CTKM).'
+                ) % {
+                    'store': escape(store or ''),
+                    'user': escape(verifier_user.name),
+                },
+                subtype_xmlid='mail.mt_note',
+                body_is_html=True,
+            )
+        return verifier_user
+
     @api.onchange('print_store_search')
     def _onchange_print_store_search(self):
         search = (self.print_store_search or '').strip()

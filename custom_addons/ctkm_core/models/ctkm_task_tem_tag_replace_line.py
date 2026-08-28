@@ -121,11 +121,22 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         return res
 
     def action_toggle_received(self):
-        """Tick Đã nhận: đánh dấu cửa hàng đã nhận tem/tag mới."""
+        """Tick Đã nhận: đánh dấu cửa hàng đã nhận tem/tag mới.
+
+        Khi Cửa hàng trưởng tick Đã nhận cho TOÀN BỘ tem/tag của một cửa hàng,
+        báo Quản lý cửa hàng (Người kiểm soát) của cửa hàng đó qua OdooBot CTKM.
+        """
         self._check_can_update_received()
         for line in self:
             received = not line.received
             line.with_context(ctkm_tem_tag_line_sync=True).write({'received': received})
+            task = line.task_id
+            if received and task and task.is_tem_receive_task:
+                store_lines = task.tem_tag_replace_ids.filtered(
+                    lambda l: (l.store or '') == (line.store or '')
+                )
+                if store_lines and all(store_lines.mapped('received')):
+                    task._ctkm_notify_store_received(line.store, store_lines)
         return False
 
     def _check_can_update_received(self):

@@ -39,6 +39,11 @@ class CtkmTaskStoreVerifier(models.Model):
     verified = fields.Boolean(string='Đã xác nhận', default=False)
     verified_date = fields.Date(string='Ngày xác nhận')
     verified_user_id = fields.Many2one('res.users', string='Người xác nhận')
+    received_notified = fields.Boolean(
+        string='Đã báo nhận tem/tag',
+        help='Đã gửi thông báo cửa hàng đã nhận tem/tag mới tới Quản lý '
+             'cửa hàng (tránh gửi lặp khi Cửa hàng trưởng tick nhiều dòng).',
+    )
 
     @api.depends('task_id.state', 'task_id.completion_ids',
                  'task_id.completion_ids.done', 'assignee_user_id', 'no_assignee')
