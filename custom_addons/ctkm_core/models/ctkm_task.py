@@ -3071,7 +3071,7 @@ class CtkmTask(models.Model):
                     'ctkm_core: web_read KeyError, retry as sudo (task_ids=%s)',
                     self.ids,
                 )
-                return models.Model.web_read(self.sudo(), specification)
+                return self.sudo().web_read(specification)
             raise
 
     def _ctkm_ensure_time_lines(self):
