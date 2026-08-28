@@ -26,6 +26,12 @@ class CtkmTaskStoreVerifier(models.Model):
         'res.users', related='verifier_id.user_id',
         string='Tài khoản Người kiểm soát',
     )
+    no_assignee = fields.Boolean(
+        string='Xác nhận trực tiếp (không có Phụ trách)',
+        help='Bước không có Phụ trách theo cửa hàng (vd. Bàn giao Tem Tag - '
+             'bước 10): Quản lý cửa hàng xác nhận trực tiếp phần cửa hàng của '
+             'mình sau khi công việc đã hoàn thành.',
+    )
     assignee_completed = fields.Boolean(
         string='Phụ trách đã hoàn thành',
         compute='_compute_assignee_completed',
@@ -34,10 +40,18 @@ class CtkmTaskStoreVerifier(models.Model):
     verified_date = fields.Date(string='Ngày xác nhận')
     verified_user_id = fields.Many2one('res.users', string='Người xác nhận')
 
-    @api.depends('task_id.completion_ids', 'task_id.completion_ids.done',
-                 'assignee_user_id')
+    @api.depends('task_id.state', 'task_id.completion_ids',
+                 'task_id.completion_ids.done', 'assignee_user_id', 'no_assignee')
     def _compute_assignee_completed(self):
         for line in self:
+            if line.no_assignee:
+                # Không có Phụ trách riêng: xem công việc đã bấm Hoàn thành
+                # (chờ xác nhận / đã xong) là đủ điều kiện để Quản lý cửa hàng
+                # xác nhận phần cửa hàng của mình.
+                line.assignee_completed = bool(
+                    line.task_id.state in ('waiting_confirm', 'done')
+                )
+                continue
             if not line.task_id or not line.assignee_user_id:
                 line.assignee_completed = False
                 continue

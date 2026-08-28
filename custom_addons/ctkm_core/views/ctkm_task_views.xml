@@ -562,6 +562,23 @@
                                 </field>
                             </group>
                         </page>
+                        <page string="Xác nhận theo cửa hàng" name="task_store_confirm"
+                                invisible="not store_verifier_ids">
+                            <field name="store_verifier_ids" nolabel="1">
+                                <list default_order="store_key">
+                                    <field name="store_label" string="Cửa hàng"/>
+                                    <field name="assignee_user_id" string="Phụ trách (Cửa hàng trưởng)"
+                                        column_invisible="parent.is_tem_handover_task"/>
+                                    <field name="verifier_id" string="Người kiểm soát (Quản lý cửa hàng)"
+                                        widget="many2one_avatar_employee"/>
+                                    <field name="assignee_completed" string="Phụ trách xong"
+                                        column_invisible="parent.is_tem_handover_task"/>
+                                    <field name="verified" string="Đã xác nhận"/>
+                                    <field name="verified_user_id" string="Người xác nhận"/>
+                                    <field name="verified_date" string="Ngày xác nhận"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Yêu cầu hỗ trợ" name="task_support">
                             <group>
                                 <group>
@@ -580,21 +597,6 @@
                                     </div>
                                 </group>
                             </group>
-                        </page>
-                        <page string="Xác nhận theo cửa hàng" name="task_store_confirm"
-                                invisible="not store_verifier_ids">
-                            <field name="store_verifier_ids" nolabel="1">
-                                <list default_order="store_key">
-                                    <field name="store_label" string="Cửa hàng"/>
-                                    <field name="assignee_user_id" string="Phụ trách (Cửa hàng trưởng)"/>
-                                    <field name="verifier_id" string="Người kiểm soát (Quản lý cửa hàng)"
-                                        widget="many2one_avatar_employee"/>
-                                    <field name="assignee_completed" string="Phụ trách xong"/>
-                                    <field name="verified" string="Đã xác nhận"/>
-                                    <field name="verified_user_id" string="Người xác nhận"/>
-                                    <field name="verified_date" string="Ngày xác nhận"/>
-                                </list>
-                            </field>
                         </page>
                         <page string="Xác nhận quản lý" name="task_manager_confirm" invisible="not checklist_need_manager_confirm">
                                 <group>

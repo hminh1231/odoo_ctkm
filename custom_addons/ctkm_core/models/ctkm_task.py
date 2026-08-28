@@ -1400,11 +1400,14 @@ class CtkmTask(models.Model):
         return users
 
     def _ctkm_checklist_line_is_receive_or_replace_step(self, line):
-        """Bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag'."""
+        """Bước 11 'Nhận tem tag mới', bước 12 'Thay tem Tag' và bước 10
+        'Bàn giao Tem Tag / Thu hồi tem tag cũ' (các bước dùng Quản lý cửa
+        hàng làm Người kiểm soát theo từng cửa hàng)."""
         if not line:
             return False
         stage_id = line.stage_id.id if line.stage_id else False
         target_stage_ids = {
+            self._ctkm_step_stage_id(TEM_HANDOVER_STAGE_XMLID),
             self._ctkm_step_stage_id(TEM_RECEIVE_STAGE_XMLID),
             self._ctkm_step_stage_id(TEM_REPLACE_STAGE_XMLID),
         }
@@ -1414,6 +1417,8 @@ class CtkmTask(models.Model):
         key = normalize_step_key(line.name)
         if not key:
             return False
+        if any(marker in key for marker in TEM_HANDOVER_TASK_MARKERS):
+            return True
         if any(marker in key for marker in TEM_RECEIVE_TASK_MARKERS):
             return True
         if key in TEM_REPLACE_TASK_KEYS:
@@ -1486,8 +1491,9 @@ class CtkmTask(models.Model):
 
     def _ctkm_assign_store_managers_verifier_after_bb_import(self):
         """Khi hoàn thành bước 4: gán Quản lý cửa hàng (hr.store.manager_id)
-        làm Người kiểm soát bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag'
-        theo từng cửa hàng trên biên bản tổng.
+        làm Người kiểm soát bước 10 'Bàn giao Tem Tag / Thu hồi tem tag cũ',
+        bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag' theo từng cửa
+        hàng trên biên bản tổng.
 
         Khác với 'Phụ trách' (Cửa hàng trưởng - chức danh trên hồ sơ),
         'Người kiểm soát' ở đây lấy từ cấu hình Cửa hàng (Quản lý cửa hàng).
@@ -1508,7 +1514,7 @@ class CtkmTask(models.Model):
                 body=_(
                     'Không tìm thấy nhân viên Quản lý cửa hàng (Employee → '
                     'Cấu hình → Cửa hàng) tương ứng với mã Store trên biên bản: '
-                    '%(stores)s. Bước 11–12 giữ nguyên Người kiểm soát hiện tại.'
+                    '%(stores)s. Bước 10–12 giữ nguyên Người kiểm soát hiện tại.'
                 ) % {'stores': escape(store_label)},
                 subtype_xmlid='mail.mt_note',
                 body_is_html=True,
@@ -1529,7 +1535,8 @@ class CtkmTask(models.Model):
         flag_tasks = self.env['ctkm.task'].sudo().search([
             ('program_id', '=', self.program_id.id),
             ('state', '!=', 'done'),
-            '|',
+            '|', '|',
+            ('is_tem_handover_task', '=', True),
             ('is_tem_receive_task', '=', True),
             ('is_tem_replace_task', '=', True),
         ])
@@ -1544,9 +1551,14 @@ class CtkmTask(models.Model):
                     ctkm_internal_state_write=True,
                 ).write({'verifier_ids': [(6, 0, manager_ids)]})
             # Quan hệ 1 Phụ trách – 1 Người kiểm soát theo TỪNG cửa hàng.
+            # Bước 10 (Bàn giao Tem Tag) không có Phụ trách riêng → mỗi cửa
+            # hàng một dòng, Quản lý cửa hàng xác nhận trực tiếp (no_assignee).
             other.sudo()._ctkm_build_store_verifier_lines(store_keys, store_manager_map)
         uncovered = self.env['res.users']
         for other in flag_tasks:
+            if other.is_tem_handover_task:
+                # Bước 10 không có Phụ trách riêng nên bỏ qua cảnh báo thiếu.
+                continue
             covered = other.store_verifier_ids.mapped('assignee_user_id')
             uncovered |= (other.user_ids - covered)
         if uncovered:
@@ -1562,9 +1574,10 @@ class CtkmTask(models.Model):
         self.message_post(
             body=_(
                 'Đã gán <b>%(users)s</b> (Quản lý cửa hàng) làm Người kiểm soát '
-                'bước 11–12 (Nhận tem tag mới, Thay tem Tag) theo mã Store trên '
-                'biên bản: %(stores)s. Mỗi Cửa hàng trưởng chỉ được xác nhận bởi '
-                'Quản lý cửa hàng đúng cửa hàng đó.'
+                'bước 10–12 (Bàn giao Tem Tag, Nhận tem tag mới, Thay tem Tag) '
+                'theo mã Store trên biên bản: %(stores)s. Mỗi Cửa hàng trưởng / '
+                'bước bàn giao chỉ được xác nhận bởi Quản lý cửa hàng đúng cửa '
+                'hàng đó.'
             ) % {
                 'users': escape(', '.join(managers.mapped('display_name'))),
                 'stores': escape(store_label),
@@ -1575,17 +1588,33 @@ class CtkmTask(models.Model):
         return managers
 
     def _ctkm_build_store_verifier_lines(self, store_keys, store_manager_map):
-        """(Tái) tạo ctkm.task.store.verifier: mỗi chief gắn với Quản lý cửa hàng
-        ĐÚNG cửa hàng của mình, để xác nhận diễn ra theo từng cửa hàng."""
+        """(Tái) tạo ctkm.task.store.verifier.
+
+        - Bước có Phụ trách (Cửa hàng trưởng) theo cửa hàng (bước 11/12): mỗi
+          chief gắn với Quản lý cửa hàng ĐÚNG cửa hàng của mình.
+        - Bước không có Phụ trách riêng (Bàn giao Tem Tag - bước 10): mỗi cửa
+          hàng một dòng, Quản lý cửa hàng xác nhận trực tiếp phần cửa hàng đó
+          (no_assignee = True).
+        """
         self.ensure_one()
         if not store_keys or not store_manager_map:
             return
         StoreVerifier = self.env['ctkm.task.store.verifier'].sudo()
         self.store_verifier_ids.sudo().unlink()
+        no_assignee = bool(self.is_tem_handover_task)
         lines = []
         for key in store_keys:
             manager = store_manager_map.get(key)
             if not manager:
+                continue
+            if no_assignee:
+                lines.append({
+                    'task_id': self.id,
+                    'store_key': key,
+                    'store_label': key,
+                    'verifier_id': manager.id,
+                    'no_assignee': True,
+                })
                 continue
             chiefs = self._ctkm_users_for_store_key(key)
             if not chiefs:
@@ -3517,8 +3546,15 @@ class CtkmTask(models.Model):
         return res
 
     def _ctkm_task_needs_manager_confirm(self):
-        """Nguồn đúng: toggle 'Cần quản lý xác nhận' trên bước checklist."""
+        """Nguồn đúng: toggle 'Cần quản lý xác nhận' trên bước checklist.
+
+        Nếu công việc có Xác nhận theo cửa hàng (store_verifier_ids), bắt buộc
+        phải có xác nhận từ Quản lý cửa hàng theo từng cửa hàng (vd. bước 10,
+        11, 12) dù toggle trên checklist có tắt.
+        """
         self.ensure_one()
+        if self.store_verifier_ids:
+            return True
         if self.checklist_line_id:
             return bool(self.checklist_line_id.need_manager_confirm)
         return True
@@ -3625,7 +3661,7 @@ class CtkmTask(models.Model):
                     continue
                 already_done |= task
                 continue
-            # Xác nhận theo cửa hàng (bước 11–12): mỗi Quản lý cửa hàng xác nhận
+            # Xác nhận theo cửa hàng (bước 10–12): mỗi Quản lý cửa hàng xác nhận
             # phần cửa hàng của mình. Gửi yêu cầu cho từng Quản lý cửa hàng.
             if task.store_verifier_ids:
                 vals = {
@@ -3714,9 +3750,11 @@ class CtkmTask(models.Model):
     def action_manager_confirm(self):
         """Quản lý xác nhận hoàn thành → thông báo cho người nhận việc.
 
-        Với xác nhận theo cửa hàng (bước 11–12): mỗi Quản lý cửa hàng chỉ xác
-        nhận được phần của Cửa hàng trưởng ĐÚNG cửa hàng mình quản lí. Công việc
-        chỉ chuyển Hoàn thành khi TẤT CẢ cửa hàng đã được xác nhận.
+        Với xác nhận theo cửa hàng (bước 10/11/12): mỗi Quản lý cửa hàng chỉ
+        xác nhận được phần của cửa hàng ĐÚNG mình quản lí. Bước 10 (Bàn giao Tem
+        Tag) không có Phụ trách riêng nên Quản lý cửa hàng xác nhận trực tiếp
+        phần cửa hàng của mình. Công việc chỉ chuyển Hoàn thành khi TẤT CẢ cửa
+        hàng đã được xác nhận.
         """
         user = self.env.user
         for task in self:
@@ -3746,6 +3784,10 @@ class CtkmTask(models.Model):
                         'manager_confirmed': True,
                         'state': 'done',
                     })
+                    # Bước 10 "Thu hồi tem": xóa Tem/Tag đã chọn khỏi Kho
+                    # ngay khi TẤT CẢ Quản lý cửa hàng đã xác nhận xong.
+                    if task.is_tem_handover_task and task.recover_ids:
+                        task.recover_ids._ctkm_recover_inventory()
                 else:
                     remaining = task.store_verifier_ids.filtered(
                         lambda l: not l.verified
