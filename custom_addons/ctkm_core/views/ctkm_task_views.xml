@@ -452,6 +452,8 @@
                                     invisible="not is_tem_receive_task">
                                     Tem/tag mới cần nhận cho cửa hàng của bạn
                                     (mã Store trên biên bản khớp mã bộ phận trên hồ sơ).
+                                    Cột <b>Số lượng</b> lấy từ file import bước
+                                    <b>Đổ BB thay tem/tag (file tổng)</b>.
                                 </div>
                                 <div colspan="2" class="mb-2">
                                     <button name="action_refresh_tem_tag_lines" type="object"
@@ -462,6 +464,8 @@
                                     <list editable="bottom" create="0" delete="0">
                                         <field name="store" readonly="1"/>
                                         <field name="material_code" readonly="1"/>
+                                        <field name="total_quantity" readonly="1"
+                                            string="Số lượng" sum="Tổng SL" width="100px"/>
                                         <field name="received" widget="ctkm_tick"
                                             options="{'tick_all': True}"/>
                                     </list>
