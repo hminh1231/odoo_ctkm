@@ -36,7 +36,12 @@ class CtkmTaskTemPhotoLine(models.Model):
         internal = self.env.context.get('ctkm_tem_photo_sync')
         if 'confirmed' in vals and not internal:
             self._check_can_update_confirmed()
-        return super().write(vals)
+        res = super().write(vals)
+        if 'confirmed' in vals and not internal:
+            self.env['ctkm.task'].sudo()._ctkm_sync_price_lines_for_programs(
+                self.mapped('task_id.program_id')
+            )
+        return res
 
     def _check_can_update_confirmed(self):
         is_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')

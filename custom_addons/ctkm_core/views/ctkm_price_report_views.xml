@@ -52,7 +52,7 @@
                         <h2><field name="name" readonly="1"/></h2>
                     </div>
 
-                    <separator string="Bảng danh sách cửa hàng đã được Kế toán xác nhận thay tem"/>
+                    <separator string="Bảng danh sách cửa hàng ASM xác nhận"/>
                     <field name="report_price_replaced_ids" nolabel="1" readonly="1"
                         mode="list"
                         options="{'no_open': True}">
@@ -68,7 +68,7 @@
                         </list>
                     </field>
 
-                    <separator string="Bảng danh sách cửa hàng đã được Kế toán xác nhận chưa thay tem"/>
+                    <separator string="Bảng danh sách cửa hàng KTDT xác nhận"/>
                     <field name="report_price_not_replaced_ids" nolabel="1" readonly="1"
                         mode="list"
                         options="{'no_open': True}">
@@ -84,7 +84,7 @@
                         </list>
                     </field>
 
-                    <separator string="Bảng danh sách cửa hàng đã được Kế toán xác nhận đã áp giá"/>
+                    <separator string="Bảng danh sách cửa hàng KT áp giá"/>
                     <field name="report_price_applied_ids" nolabel="1" readonly="1"
                         mode="list"
                         options="{'no_open': True}">
@@ -136,8 +136,8 @@
                 Chưa có chương trình nào có bước Kế toán áp giá.
             </p>
             <p>
-                Bấm Số TB hoặc Tên CTKM để xem cửa hàng Kế toán đã xác nhận thay tem,
-                chưa thay tem và đã áp giá.
+                Bấm Số TB hoặc Tên CTKM để xem cửa hàng ASM xác nhận,
+                KTDT xác nhận và KT áp giá.
             </p>
         </field>
     </record>

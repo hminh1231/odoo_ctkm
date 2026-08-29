@@ -1798,10 +1798,6 @@ class CtkmTask(models.Model):
                 ('program_id', 'in', programs.ids),
                 ('is_tem_postcheck_task', '=', True),
             ])._ctkm_sync_postcheck_lines()
-            self.sudo().search([
-                ('program_id', 'in', programs.ids),
-                ('is_tem_price_task', '=', True),
-            ])._ctkm_sync_price_lines()
         for task in self:
             values = task._ctkm_tem_tag_line_values()
             existing = {}
@@ -1839,6 +1835,8 @@ class CtkmTask(models.Model):
             obsolete |= Line.browse([line.id for line in existing.values()])
             if obsolete:
                 obsolete.unlink()
+        if programs:
+            self.sudo()._ctkm_sync_price_lines_for_programs(programs)
 
     def _ctkm_tem_design_line_values(self):
         """Lấy các Mã vật tư phân biệt từ bảng 'Chi tiết tem/tag' của chương trình.
@@ -2090,6 +2088,137 @@ class CtkmTask(models.Model):
             ('is_tem_print_task', '=', True),
         ], order='id desc', limit=1)
 
+    def _ctkm_source_replace_task(self):
+        """Công việc bước 12 (Thay tem Tag) cùng chương trình."""
+        self.ensure_one()
+        if not self.program_id:
+            return self.browse()
+        return self.sudo().search([
+            ('program_id', '=', self.program_id.id),
+            ('is_tem_replace_task', '=', True),
+        ], order='id desc', limit=1)
+
+    def _ctkm_source_check_task(self):
+        """Công việc bước 14 (Kiểm tra hình ảnh tem tag) cùng chương trình."""
+        self.ensure_one()
+        if not self.program_id:
+            return self.browse()
+        return self.sudo().search([
+            ('program_id', '=', self.program_id.id),
+            ('is_tem_check_task', '=', True),
+        ], order='id desc', limit=1)
+
+    def _ctkm_source_kt_apply_task(self):
+        """Công việc bước 8 (KT áp giá lên phần mềm linkq) cùng chương trình."""
+        self.ensure_one()
+        if not self.program_id:
+            return self.browse()
+        stage_id = self._ctkm_step_stage_id('ctkm_core.ctkm_stage_8')
+        domain = [('program_id', '=', self.program_id.id)]
+        if stage_id:
+            found = self.sudo().search(
+                domain + [('checklist_line_id.stage_id', '=', stage_id)],
+                order='id desc',
+                limit=1,
+            )
+            if found:
+                return found
+        tasks = self.sudo().search(domain)
+        return tasks.filtered(
+            lambda task: 'ktapgia' in (normalize_step_key(task.name) or '')
+            or 'ktapgia' in (normalize_step_key(task.checklist_step_name) or '')
+        )[:1]
+
+    def _ctkm_store_canonical_key(self, *values):
+        """Mã cửa hàng để khớp GLLA_AEBD / AEBD, không gộp nhầm LUG_AEHD với LUG_THID."""
+        for value in values:
+            key = _ctkm_normalize_store_key(value)
+            if not key:
+                continue
+            parent = self._ctkm_grouped_store_key(key)
+            if parent:
+                return parent
+            if '_' in key:
+                last = key.rsplit('_', 1)[-1]
+                if len(last) >= 3:
+                    return last
+            return key
+        return False
+
+    def _ctkm_store_key_aliases(self, *values):
+        """Tập mã cửa hàng để khớp GLLA_AEBD / LUG_AEHD / AEBD."""
+        aliases = set()
+        for value in values:
+            key = _ctkm_normalize_store_key(value)
+            if not key:
+                continue
+            aliases.add(key)
+            parent = self._ctkm_grouped_store_key(key)
+            if parent:
+                aliases.add(parent)
+            canon = self._ctkm_store_canonical_key(key)
+            if canon:
+                aliases.add(canon)
+        return aliases
+
+    def _ctkm_build_previous_confirm_index(self):
+        """ASM từ cột Đã thay bước 12; KTDT từ SL chưa thay cùng bước."""
+        self.ensure_one()
+        asm = {}
+        remaining = set()
+        remaining_info = {}
+        replace_task = self._ctkm_source_replace_task()
+        if replace_task:
+            by_store = {}
+            for line in replace_task.sudo().tem_tag_replace_ids:
+                canon = self._ctkm_store_canonical_key(line.store_key, line.store)
+                if not canon:
+                    continue
+                by_store.setdefault(canon, []).append(line)
+            for canon, lines in by_store.items():
+                if lines and all(line.replaced_done for line in lines):
+                    src = lines[-1]
+                    for line in lines:
+                        if line.write_date and (
+                            not src.write_date or line.write_date >= src.write_date
+                        ):
+                            src = line
+                    asm[canon] = (
+                        src.write_uid.id if src.write_uid else False,
+                        src.write_date.date() if src.write_date else False,
+                    )
+                remain_lines = [
+                    line for line in lines
+                    if (line.remaining_quantity or 0.0) > 0.000001
+                ]
+                if remain_lines:
+                    remaining.add(canon)
+                    src = remain_lines[-1]
+                    remaining_info[canon] = (
+                        src.write_uid.id if src.write_uid else False,
+                        src.write_date.date() if src.write_date else False,
+                    )
+        return {
+            'asm': asm,
+            'remaining': remaining,
+            'remaining_info': remaining_info,
+        }
+
+    def _ctkm_price_confirm_vals(self, index, *store_values):
+        """ASM từ Đã thay bước 12; KTDT từ SL chưa thay."""
+        canon = self._ctkm_store_canonical_key(*store_values)
+        asm_hit = index['asm'].get(canon) if canon else None
+        ktdt_hit = index.get('remaining_info', {}).get(canon) if canon else None
+        vals = {
+            'replaced': bool(canon and canon in index['asm']),
+            'not_replaced': bool(canon and canon in index['remaining']),
+            'replaced_user_id': asm_hit[0] if asm_hit else False,
+            'replaced_date': asm_hit[1] if asm_hit else False,
+            'not_replaced_user_id': ktdt_hit[0] if ktdt_hit else False,
+            'not_replaced_date': ktdt_hit[1] if ktdt_hit else False,
+        }
+        return vals
+
     def _ctkm_print_line_store_key(self, line):
         """Mã cửa hàng dùng để copy bước 9 → 10 (ưu tiên store_key, rồi hr.store)."""
         from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
@@ -2256,7 +2385,7 @@ class CtkmTask(models.Model):
                 obsolete.unlink()
 
     def _ctkm_sync_price_lines(self):
-        """Kế toán áp giá: copy cửa hàng + SL tem/tag từ bước 9 In tem, Tag."""
+        """Kế toán áp giá: copy cửa hàng + SL từ bước 9, xác nhận từ bước 8/12/14."""
         Line = self.env['ctkm.task.tem.price.line'].sudo().with_context(
             ctkm_tem_tag_line_sync=True,
         )
@@ -2265,6 +2394,7 @@ class CtkmTask(models.Model):
                 continue
             print_task = task._ctkm_source_print_task()
             sources = print_task.sudo().print_store_ids
+            confirm_index = task._ctkm_build_previous_confirm_index()
             existing = {}
             obsolete = Line.browse()
             for line in Line.search([('task_id', '=', task.id)]):
@@ -2303,15 +2433,34 @@ class CtkmTask(models.Model):
                     'store_key': key,
                     'print_line_id': source.id,
                 }
+                vals.update(task._ctkm_price_confirm_vals(
+                    confirm_index, key, source.store, source.store_code,
+                    store_rec.code if store_rec else False,
+                    store_name,
+                ))
+                can_apply = bool(vals.get('replaced') and vals.get('not_replaced'))
+                if not can_apply:
+                    vals['price_applied'] = False
+                    vals['price_applied_user_id'] = False
+                    vals['price_applied_date'] = False
                 line = existing.pop(key, None)
                 if not line:
                     to_create.append(dict(vals, task_id=task.id))
                     continue
-                changes = {
-                    field: value
-                    for field, value in vals.items()
-                    if line[field] != value
-                }
+                if can_apply:
+                    vals.pop('price_applied', None)
+                    vals.pop('price_applied_user_id', None)
+                    vals.pop('price_applied_date', None)
+                changes = {}
+                for field, value in vals.items():
+                    current = line[field]
+                    ftype = line._fields[field].type
+                    if ftype == 'many2one':
+                        current = current.id if current else False
+                        if isinstance(value, models.BaseModel):
+                            value = value.id if value else False
+                    if current != value:
+                        changes[field] = value
                 if changes:
                     line.write(changes)
             leftover = Line.browse([line.id for line in existing.values()])
@@ -2320,6 +2469,18 @@ class CtkmTask(models.Model):
                 Line.create(to_create)
             if obsolete:
                 obsolete.unlink()
+
+    @api.model
+    def _ctkm_sync_price_lines_for_programs(self, programs):
+        if self.env.context.get('ctkm_price_line_syncing'):
+            return
+        programs = programs.exists() if programs else programs
+        if not programs:
+            return
+        self.sudo().with_context(ctkm_price_line_syncing=True).search([
+            ('program_id', 'in', programs.ids),
+            ('is_tem_price_task', '=', True),
+        ])._ctkm_sync_price_lines()
 
     def _ctkm_tem_photo_line_values(self):
         """Gom kho Tem/Tag (file tổng) theo (Cửa hàng, Mã vật tư) cho bước Kiểm tra ảnh.
@@ -2375,6 +2536,7 @@ class CtkmTask(models.Model):
             removed = Line.browse([line.id for line in existing.values()])
             if removed:
                 removed.unlink()
+        self.sudo()._ctkm_sync_price_lines_for_programs(self.mapped('program_id'))
 
     def action_add_collect_store_line(self):
         """Nút Tạo dòng trên bảng Thu tem/tag."""
@@ -3052,7 +3214,8 @@ class CtkmTask(models.Model):
         if task.is_tem_price_task:
             return self._ctkm_notify_reload(
                 _('Đã làm mới'),
-                _('Đã lấy danh sách cửa hàng và SL tem/tag từ bước In tem, Tag.'),
+                _('ASM xác nhận lấy từ cột Đã thay bước Thay tem Tag. '
+                  'KT áp giá chỉ tick khi đã có đủ ASM xác nhận và KTDT xác nhận.'),
             )
         return self._ctkm_notify_reload(
             _('Đã làm mới'),
@@ -3736,6 +3899,9 @@ class CtkmTask(models.Model):
 
         if {'process_date', 'done_date'} & set(vals):
             self.sudo()._ctkm_touch_main_time_line(vals)
+
+        if 'state' in vals:
+            self.sudo()._ctkm_sync_price_lines_for_programs(self.mapped('program_id'))
 
         return res
 

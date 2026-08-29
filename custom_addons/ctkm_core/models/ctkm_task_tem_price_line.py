@@ -8,7 +8,8 @@ class CtkmTaskTemPriceLine(models.Model):
     """Dòng cửa hàng của bước 15 (Kế toán áp giá / báo cáo thay tem).
 
     Tên cửa hàng, SL tem, SL tag lấy từ bước 9 In tem, Tag.
-    Kế toán tick xác nhận đã thay / chưa thay tem-tag và đã áp giá.
+    ASM xác nhận lấy từ cột Đã thay của bước Thay tem Tag.
+    KT áp giá chỉ tick khi đã có đủ ASM xác nhận và KTDT xác nhận.
     """
 
     _name = 'ctkm.task.tem.price.line'
@@ -58,38 +59,38 @@ class CtkmTaskTemPriceLine(models.Model):
         help='Tổng SL tag lấy từ bước In tem, Tag.',
     )
     replaced = fields.Boolean(
-        string='Xác nhận thay tem/tag',
-        help='Kế toán xác nhận cửa hàng đã thay tem/tag.',
+        string='ASM xác nhận',
+        help='Lấy từ bước Thay tem Tag: mọi mã vật tư của cửa hàng đã tick Đã thay.',
     )
     not_replaced = fields.Boolean(
-        string='Xác nhận chưa thay tem/tag',
-        help='Kế toán xác nhận cửa hàng chưa thay tem/tag.',
+        string='KTDT xác nhận',
+        help='Lấy từ bước Thay tem Tag: cửa hàng còn SL chưa thay.',
     )
     price_applied = fields.Boolean(
-        string='Xác nhận đã áp giá',
-        help='Kế toán xác nhận đã áp giá CTKM trên PM Link Q cho cửa hàng này.',
+        string='KT áp giá',
+        help='Chỉ tick được khi cửa hàng đã có đủ ASM xác nhận và KTDT xác nhận.',
     )
     replaced_user_id = fields.Many2one(
         'res.users',
-        string='Người xác nhận thay tem',
+        string='Người ASM xác nhận',
         readonly=True,
         index=True,
     )
-    replaced_date = fields.Date(string='Ngày xác nhận thay tem', readonly=True)
+    replaced_date = fields.Date(string='Ngày ASM xác nhận', readonly=True)
     not_replaced_user_id = fields.Many2one(
         'res.users',
-        string='Người xác nhận chưa thay',
+        string='Người KTDT xác nhận',
         readonly=True,
         index=True,
     )
-    not_replaced_date = fields.Date(string='Ngày xác nhận chưa thay', readonly=True)
+    not_replaced_date = fields.Date(string='Ngày KTDT xác nhận', readonly=True)
     price_applied_user_id = fields.Many2one(
         'res.users',
-        string='Người xác nhận áp giá',
+        string='Người KT áp giá',
         readonly=True,
         index=True,
     )
-    price_applied_date = fields.Date(string='Ngày xác nhận áp giá', readonly=True)
+    price_applied_date = fields.Date(string='Ngày KT áp giá', readonly=True)
     program_id = fields.Many2one(
         related='task_id.program_id',
         string='Chương trình KM',
@@ -128,47 +129,40 @@ class CtkmTaskTemPriceLine(models.Model):
             line.tem_quantity = (source.tem_quantity or 0.0) if source else 0.0
             line.tag_quantity = (source.tag_quantity or 0.0) if source else 0.0
 
+    _PREVIOUS_STEP_FIELDS = frozenset({
+        'replaced', 'replaced_user_id', 'replaced_date',
+        'not_replaced', 'not_replaced_user_id', 'not_replaced_date',
+    })
+
     def write(self, vals):
         internal = self.env.context.get('ctkm_tem_tag_line_sync')
         if not internal:
-            self._check_can_edit_price_lines()
-            vals = self._vals_with_confirm_tracking(vals)
+            vals = {
+                key: value for key, value in vals.items()
+                if key not in self._PREVIOUS_STEP_FIELDS
+            }
+            if 'price_applied' in vals:
+                self._check_can_edit_price_lines()
+                if vals.get('price_applied'):
+                    self._check_price_apply_ready()
+                vals = self._vals_with_confirm_tracking(vals)
+            elif not vals:
+                return True
         return super().write(vals)
 
     def _vals_with_confirm_tracking(self, vals):
-        """Tick xác nhận: ghi người + ngày; bỏ tick thì xóa. Thay / chưa thay loại trừ nhau."""
+        """Tick KT áp giá: ghi người + ngày; bỏ tick thì xóa."""
         vals = dict(vals)
+        if 'price_applied' not in vals:
+            return vals
         today = fields.Date.context_today(self)
         uid = self.env.uid
-        if vals.get('replaced') and 'not_replaced' not in vals:
-            vals['not_replaced'] = False
-        elif vals.get('not_replaced') and 'replaced' not in vals:
-            vals['replaced'] = False
-        if 'replaced' in vals:
-            if vals.get('replaced'):
-                vals.setdefault('replaced_user_id', uid)
-                vals.setdefault('replaced_date', today)
-                vals['not_replaced_user_id'] = False
-                vals['not_replaced_date'] = False
-            else:
-                vals.setdefault('replaced_user_id', False)
-                vals.setdefault('replaced_date', False)
-        if 'not_replaced' in vals:
-            if vals.get('not_replaced'):
-                vals.setdefault('not_replaced_user_id', uid)
-                vals.setdefault('not_replaced_date', today)
-                vals['replaced_user_id'] = False
-                vals['replaced_date'] = False
-            else:
-                vals.setdefault('not_replaced_user_id', False)
-                vals.setdefault('not_replaced_date', False)
-        if 'price_applied' in vals:
-            if vals.get('price_applied'):
-                vals.setdefault('price_applied_user_id', uid)
-                vals.setdefault('price_applied_date', today)
-            else:
-                vals.setdefault('price_applied_user_id', False)
-                vals.setdefault('price_applied_date', False)
+        if vals.get('price_applied'):
+            vals.setdefault('price_applied_user_id', uid)
+            vals.setdefault('price_applied_date', today)
+        else:
+            vals.setdefault('price_applied_user_id', False)
+            vals.setdefault('price_applied_date', False)
         return vals
 
     def unlink(self):
@@ -176,19 +170,33 @@ class CtkmTaskTemPriceLine(models.Model):
             self._check_can_edit_price_lines()
         return super().unlink()
 
+    def _check_price_apply_ready(self):
+        not_ready = self.filtered(
+            lambda line: not (line.replaced and line.not_replaced)
+        )
+        if not not_ready:
+            return
+        stores = ', '.join(
+            line.store or line.store_code or line.store_key or ''
+            for line in not_ready
+        )
+        raise UserError(_(
+            'Chưa đủ điều kiện để áp giá.\n'
+            'Cần có cả ASM xác nhận và KTDT xác nhận.\n'
+            'Cửa hàng chưa đủ điều kiện: %s'
+        ) % stores)
+
     def _check_can_edit_price_lines(self):
         is_ctkm_manager = self.env.user.has_group('ctkm_core.group_ctkm_manager')
         for line in self:
             task = line.task_id
             if task and not task.is_tem_price_task:
                 raise UserError(_(
-                    'Chỉ bước "Kế toán áp giá" mới được cập nhật xác nhận '
-                    'thay tem/tag và áp giá.'
+                    'Chỉ bước "Kế toán áp giá" mới được cập nhật KT áp giá.'
                 ))
             if task and not is_ctkm_manager and self.env.user not in task.user_ids:
                 raise UserError(_(
-                    'Chỉ người nhận việc mới được cập nhật xác nhận '
-                    'thay tem/tag và áp giá.'
+                    'Chỉ người nhận việc mới được cập nhật KT áp giá.'
                 ))
 
     @api.constrains('task_id', 'store_key')

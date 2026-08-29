@@ -77,3 +77,11 @@ class CtkmTaskStoreVerifier(models.Model):
                 'verified_date': today,
                 'verified_user_id': user.id,
             })
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'verified' in vals:
+            self.env['ctkm.task'].sudo()._ctkm_sync_price_lines_for_programs(
+                self.mapped('task_id.program_id')
+            )
+        return res

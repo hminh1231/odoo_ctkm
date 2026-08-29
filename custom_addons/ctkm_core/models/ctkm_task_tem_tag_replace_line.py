@@ -120,6 +120,12 @@ class CtkmTaskTemTagReplaceLine(models.Model):
         res = super().write(vals)
         if 'replaced_quantity' in vals and not internal:
             self._distribute_replaced_quantity()
+        if not internal and (
+            'replaced_quantity' in vals or 'replaced_done' in vals
+        ):
+            self.env['ctkm.task'].sudo()._ctkm_sync_price_lines_for_programs(
+                self.mapped('task_id.program_id')
+            )
         return res
 
     def action_toggle_received(self):

@@ -523,9 +523,9 @@
                             <group string="Báo cáo thay tem/tag và áp giá"
                                 invisible="not is_tem_price_task">
                                 <div colspan="2" class="text-muted mb-2">
-                                    Cửa hàng và tổng số lượng tem/tag lấy từ bước <b>In tem, Tag</b>.
-                                    Tick <b>Xác nhận thay</b>, <b>Chưa thay tem/tag</b>
-                                    hoặc <b>Đã áp giá</b> cho từng cửa hàng.
+                                    Cửa hàng và SL tem/tag lấy từ bước <b>In tem, Tag</b>.
+                                    <b>ASM xác nhận</b> lấy từ cột <b>Đã thay</b> của bước Thay tem Tag.
+                                    Tick <b>KT áp giá</b> chỉ khi đã có đủ cả ASM xác nhận và KTDT xác nhận.
                                 </div>
                                 <field name="price_store_search" placeholder="Tìm cửa hàng..."
                                     nolabel="1" colspan="2"/>
@@ -555,13 +555,9 @@
                                         <field name="tag_quantity" readonly="1" width="90px"
                                             string="SL tag"
                                             sum="Tổng SL tag"/>
-                                        <field name="replaced" string="Xác nhận thay"
-                                            widget="ctkm_tick"
-                                            options="{'tick_all': True}"/>
-                                        <field name="not_replaced" string="Chưa thay tem/tag"
-                                            widget="ctkm_tick"
-                                            options="{'tick_all': True}"/>
-                                        <field name="price_applied" string="Đã áp giá"
+                                        <field name="replaced" string="ASM xác nhận" readonly="1"/>
+                                        <field name="not_replaced" string="KTDT xác nhận" readonly="1"/>
+                                        <field name="price_applied" string="KT áp giá"
                                             widget="ctkm_tick"
                                             options="{'tick_all': True}"/>
                                     </list>
