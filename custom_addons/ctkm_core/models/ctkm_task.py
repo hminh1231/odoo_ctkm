@@ -63,6 +63,10 @@ TEM_TAG_LINE_KEY_FIELDS = ('material_code', 'store')
 # Chức danh trên hồ sơ nhân viên (hr_job_title_vn) dùng để gán bước 11–14 / hậu kiểm.
 STORE_MANAGER_JOB_TITLE = 'cửa hàng trưởng'
 SUPERVISOR_JOB_TITLE = 'giám sát'
+# Gộp Cửa hàng trưởng vào mã ngắn trên file (AETL, AEBD) chỉ khi hồ sơ
+# có CẢ {store}_DDL và {store}_DNA, và không có mã trần {store}.
+# Nếu file đã ghi sẵn hậu tố (AETA_DNA) thì khớp chính xác, không gộp.
+STORE_DEPT_GROUP_SUFFIXES = ('_DDL', '_DNA')
 # Bước 16 "Hậu kiểm CTKM Giám sát đi kiểm tra thay tem".
 TEM_POSTCHECK_TASK_MARKERS = ('haukiem',)
 TEM_PRICE_STAGE_XMLID = 'ctkm_core.ctkm_stage_15'
@@ -957,15 +961,18 @@ class CtkmTask(models.Model):
     def _ctkm_visible_store_keys_for_user(self, user):
         """Mã Store trên biên bản mà *user* được xem (bước 11–14).
 
-        Chỉ dựa trên mã bộ phận / cửa hàng HRM (AEBD_DDL chứa AEBD).
+        Khớp chính xác mã bộ phận. Chỉ gộp ``{store}_DDL`` / ``{store}_DNA``
+        vào mã ngắn trên file (AETL) khi hồ sơ có cả hai hậu tố và không có
+        mã trần; cột file đã có hậu tố (AETA_DNA) không gộp.
         Không lấy LUG Permission — tránh lộ store của cửa hàng khác.
         """
         dept_keys = self._ctkm_user_department_store_keys(user)
         visible = set(dept_keys)
+        grouped_parents = self._ctkm_grouped_parent_store_keys()
         for dept in list(dept_keys):
-            for part in re.split(r'[^A-Z0-9]+', dept or ''):
-                if part and len(part) >= 3:
-                    visible.add(part)
+            parent = self._ctkm_grouped_store_key(dept)
+            if parent and parent in grouped_parents:
+                visible.add(parent)
         if 'ctkm.inventory.tem.tag' in self.env and dept_keys:
             tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
             groups = tem_tag._read_group(
@@ -976,7 +983,7 @@ class CtkmTask(models.Model):
             for store_key, _count in groups:
                 key = _ctkm_normalize_store_key(store_key)
                 if key and any(
-                    self._ctkm_department_contains_store(dept, key)
+                    self._ctkm_department_matches_store(dept, key)
                     for dept in dept_keys
                 ):
                     visible.add(key)
@@ -993,7 +1000,7 @@ class CtkmTask(models.Model):
             return True
         dept_keys = self._ctkm_user_department_store_keys(self.env.user)
         return any(
-            self._ctkm_department_contains_store(dept, key)
+            self._ctkm_department_matches_store(dept, key)
             for dept in dept_keys
         )
 
@@ -1042,32 +1049,106 @@ class CtkmTask(models.Model):
         return keys
 
     @api.model
-    def _ctkm_department_contains_store(self, dept_key, store_key):
-        """Mã Store trên BB nằm trong mã bộ phận (store ngắn, mã bộ phận dài hơn).
+    def _ctkm_grouped_store_key(self, store_key):
+        """Mã gốc nếu *store_key* đã có hậu tố ``_DDL`` / ``_DNA`` (AETA_DNA → AETA)."""
+        if not store_key:
+            return False
+        for suffix in STORE_DEPT_GROUP_SUFFIXES:
+            if store_key.endswith(suffix):
+                parent = store_key[:-len(suffix)]
+                if parent and len(parent) >= 3:
+                    return parent
+        return False
 
-        Ví dụ: store ``AEBD`` khớp mã bộ phận ``AEBD_DDL``.
+    @api.model
+    def _ctkm_hr_ma_bo_phan_keys(self):
+        """Mã bộ phận đang dùng trên hồ sơ nhân viên (active), đã chuẩn hóa."""
+        keys = set()
+        Employee = self.env['hr.employee'].sudo()
+        if 'ma_bo_phan_id' not in Employee._fields:
+            return keys
+        groups = Employee._read_group(
+            [('active', '=', True), ('ma_bo_phan_id', '!=', False)],
+            ['ma_bo_phan_id'],
+            ['id:count'],
+        )
+        for rec, _count in groups:
+            if not rec:
+                continue
+            rec = rec.sudo()
+            key = _ctkm_normalize_store_key(rec.code)
+            if key:
+                keys.add(key)
+        return keys
+
+    @api.model
+    def _ctkm_grouped_parent_store_keys(self):
+        """Mã ngắn trên file được gộp (AETL, AEBD).
+
+        Chỉ khi hồ sơ có cả ``{store}_DDL`` và ``{store}_DNA``, và không có
+        mã trần ``{store}``. Cache theo cursor (một lần mỗi request).
+        """
+        cached = getattr(self.env.cr, '_ctkm_grouped_parent_store_keys', None)
+        if cached is not None:
+            return cached
+        dept_keys = self._ctkm_hr_ma_bo_phan_keys()
+        parents = set()
+        candidates = set()
+        for key in dept_keys:
+            parent = self._ctkm_grouped_store_key(key)
+            if parent:
+                candidates.add(parent)
+        for parent in candidates:
+            if parent in dept_keys:
+                continue
+            if all(
+                f'{parent}{suffix}' in dept_keys
+                for suffix in STORE_DEPT_GROUP_SUFFIXES
+            ):
+                parents.add(parent)
+        cached = frozenset(parents)
+        self.env.cr._ctkm_grouped_parent_store_keys = cached
+        return cached
+
+    @api.model
+    def _ctkm_department_matches_store(self, dept_key, store_key):
+        """Khớp mã bộ phận HRM với mã Store trên biên bản / file Excel.
+
+        * Khớp chính xác luôn được (AETA_DNA = AETA_DNA).
+        * Cột file đã có ``_DDL`` / ``_DNA`` → không gộp thêm.
+        * Cột mã ngắn (AETL) chỉ gộp người ``AETL_DDL`` / ``AETL_DNA`` khi
+          hồ sơ có cả hai hậu tố và không có mã trần AETL.
         """
         if not dept_key or not store_key:
             return False
         if dept_key == store_key:
             return True
-        # Tránh khớp nhầm với 1–2 ký tự; mã store thực tế thường từ 3 ký tự.
-        if len(store_key) < 3:
+        if self._ctkm_grouped_store_key(store_key):
             return False
-        return store_key in dept_key
+        if store_key not in self._ctkm_grouped_parent_store_keys():
+            return False
+        return any(
+            dept_key == f'{store_key}{suffix}'
+            for suffix in STORE_DEPT_GROUP_SUFFIXES
+        )
 
     def _ctkm_employee_matches_bb_stores(self, employee, store_keys):
         dept_keys = self._ctkm_employee_department_store_keys(employee)
         if not dept_keys or not store_keys:
             return False
         return any(
-            self._ctkm_department_contains_store(dept_key, store_key)
+            self._ctkm_department_matches_store(dept_key, store_key)
             for dept_key in dept_keys
             for store_key in store_keys
         )
 
     def _ctkm_find_store_manager_users(self, store_keys):
-        """Cửa hàng trưởng có mã bộ phận chứa một mã Store trên biên bản."""
+        """Cửa hàng trưởng có mã bộ phận khớp Store trên biên bản.
+
+        Khớp chính xác; chỉ gộp ``{store}_DDL`` + ``{store}_DNA`` vào mã ngắn
+        khi hồ sơ có cả hai và không có mã trần (AETL). Cột file đã có hậu tố
+        (AETA_DNA) giữ khớp đúng mã.
+        """
         if not store_keys:
             return self.env['res.users']
         Employee = self.env['hr.employee'].sudo()
@@ -1131,8 +1212,10 @@ class CtkmTask(models.Model):
         (Chụp ảnh) và 14 (Kiểm tra ảnh) không dùng cơ chế này — xem
         _ctkm_assign_photo_store_managers_after_bb_import.
 
-        Khớp khi mã bộ phận trên hồ sơ *chứa* mã Store trên biên bản
-        (ví dụ AEBD → AEBD_DDL) và chức danh là Cửa hàng trưởng.
+        Khớp mã bộ phận trên hồ sơ với mã Store trên file: chính xác mặc định.
+        Chỉ gộp khi file ghi mã ngắn (AETL / AEBD) và hồ sơ có cả
+        ``{store}_DDL`` lẫn ``{store}_DNA``, không có mã trần. Cột đã có hậu tố
+        (AETA_DNA) không gộp. Chức danh phải là Cửa hàng trưởng.
         """
         self.ensure_one()
         if not self.is_tem_tag_import_task or not self.program_id:
@@ -1186,7 +1269,9 @@ class CtkmTask(models.Model):
         else:
             body = _(
                 'Không tìm thấy nhân viên chức danh Cửa hàng trưởng có '
-                'mã bộ phận chứa mã Store trên biên bản thay tem/tag (%s). '
+                'mã bộ phận khớp Store trên biên bản thay tem/tag (%s) '
+                '(khớp đúng mã, hoặc gộp _DDL+_DNA vào mã ngắn khi hồ sơ '
+                'có cả hai và không có mã trần). '
                 'Bước 11–12 giữ nguyên người thực hiện hiện tại.'
             ) % escape(store_label)
         self.message_post(
@@ -1291,8 +1376,8 @@ class CtkmTask(models.Model):
             if not store.mien:
                 continue
             if any(
-                self._ctkm_department_contains_store(code, key)
-                or (name and self._ctkm_department_contains_store(name, key))
+                self._ctkm_department_matches_store(code, key)
+                or (name and self._ctkm_department_matches_store(name, key))
                 or key == code
                 for key in store_keys
             ):
@@ -1445,9 +1530,9 @@ class CtkmTask(models.Model):
     def _ctkm_store_manager_map(self, store_keys):
         """Map mã Store (trên biên bản) → Quản lý cửa hàng (hr.store.manager_id).
 
-        Mỗi mã Store chỉ lấy ĐÚNG 1 Quản lý cửa hàng (khớp chính xác mã/năm cửa
-        hàng, fallback khớp chứa) để đảm bảo chief của store X chỉ được xác nhận
-        bởi Quản lý cửa hàng của store X.
+        Mỗi mã Store chỉ lấy ĐÚNG 1 Quản lý cửa hàng (khớp chính xác mã cửa
+        hàng, fallback ``{store}_DDL`` / ``{store}_DNA``) để đảm bảo chief của
+        store X chỉ được xác nhận bởi Quản lý cửa hàng của store X.
         """
         if not store_keys or 'hr.store' not in self.env:
             return {}
@@ -1463,8 +1548,8 @@ class CtkmTask(models.Model):
             for key in store_keys:
                 if key == code or (name and key == name):
                     by_exact.setdefault(key, store.manager_id)
-                elif self._ctkm_department_contains_store(code, key) or (
-                    name and self._ctkm_department_contains_store(name, key)
+                elif self._ctkm_department_matches_store(code, key) or (
+                    name and self._ctkm_department_matches_store(name, key)
                 ):
                     by_contains.setdefault(key, store.manager_id)
         result = {}
@@ -1482,8 +1567,7 @@ class CtkmTask(models.Model):
         for user in self.user_ids:
             emp_keys = self._ctkm_user_department_store_keys(user)
             if any(
-                dk == store_key
-                or self._ctkm_department_contains_store(dk, store_key)
+                self._ctkm_department_matches_store(dk, store_key)
                 for dk in emp_keys
             ):
                 result |= user

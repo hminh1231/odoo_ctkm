@@ -18,8 +18,10 @@ class CtkmTaskTemTagReplaceLine(models.Model):
     * Bước 4 (Đổ BB thay tem/tag): xem toàn bộ cửa hàng (cột Store hiển thị).
     * Bước 6 (Lập BB thay tem): chỉ cửa hàng trong "Cửa hàng quản lí" của người
       nhận việc; cột "GHI CHÚ" (ctkm_name) hiển thị nội dung CTKM từ file import.
-    * Bước 12 (Thay tem Tag): chỉ cửa hàng của nhân viên nhận việc (ẩn cột Store),
-      nhân viên nhập "Tổng SL đã thay" và số này được ghi ngược về kho Tem/Tag.
+    * Bước 12 (Thay tem Tag): chỉ cửa hàng khớp mã bộ phận của người đang xem
+      (đúng mã; gộp {store}_DDL + {store}_DNA vào mã ngắn khi hồ sơ có cả hai
+      và không có mã trần). Nhân viên nhập "Tổng SL đã thay" và số này được
+      ghi ngược về kho Tem/Tag.
 
     Không tham chiếu trực tiếp model ctkm.inventory.tem.tag (tránh phụ thuộc
     load-order giữa module), mà đọc/ghi qua ``self.env`` lúc chạy.

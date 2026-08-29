@@ -451,7 +451,9 @@
                                 <div colspan="2" class="text-muted mb-2"
                                     invisible="not is_tem_receive_task">
                                     Tem/tag mới cần nhận cho cửa hàng của bạn
-                                    (mã Store trên biên bản khớp mã bộ phận trên hồ sơ).
+                                    (khớp đúng mã bộ phận. Chỉ gộp _DDL+_DNA vào
+                                    mã ngắn như AETL khi hồ sơ có cả hai và không
+                                    có mã trần; cột file như AETA_DNA giữ nguyên).
                                     Cột <b>Số lượng</b> lấy từ file import bước
                                     <b>Đổ BB thay tem/tag (file tổng)</b>.
                                 </div>
