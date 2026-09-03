@@ -117,10 +117,9 @@
                                         domain="[('user_id.share', '=', False)]"
                                         options="{'no_create': True}"/>
                                     <field name="need_manager_confirm" string="Cần QL xác nhận" widget="boolean_toggle"/>
-                                    <field name="state" string="Trạng thái" widget="badge"
-                                        decoration-info="state == 'todo'"
-                                        decoration-warning="state == 'progress'"
-                                        decoration-success="state == 'done'"/>
+                                    <field name="state" column_invisible="1"/>
+                                    <field name="work_percent" string="Trạng thái"
+                                        widget="ctkm_loading_bar" width="130px"/>
                                     <field name="is_done" string="Xong" widget="boolean_toggle"/>
                                     <field name="notified" string="Đã giao việc" readonly="1" widget="boolean"/>
                                     <field name="done_date" string="Ngày xong"/>

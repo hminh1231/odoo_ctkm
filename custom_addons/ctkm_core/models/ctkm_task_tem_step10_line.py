@@ -144,6 +144,12 @@ class CtkmTaskTemStep10Line(models.Model):
                         'Số lượng bảng Bàn giao tem/tag lấy từ bước 9, không sửa tay được.'
                     ))
         res = super().write(vals)
+        if not internal and 'done' in vals:
+            programs = self.mapped('task_id.program_id')
+            if programs:
+                programs.invalidate_recordset([
+                    'stage_progress_json', 'checklist_current_stage_id',
+                ])
         if 'store_id' in vals and not internal:
             for line in self:
                 if line.store_id:

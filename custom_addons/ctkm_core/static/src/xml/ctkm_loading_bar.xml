@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="ctkm_core.CtkmLoadingBarField">
+        <div class="o_ctkm_loading_bar"
+             t-att-class="barClass"
+             t-att-style="'--ctkm-pct:' + percent"
+             t-att-title="percent + '%'">
+            <span class="o_ctkm_loading_bar_fill" t-att-style="'width:' + percent + '%'"/>
+            <span class="o_ctkm_loading_bar_label"><t t-esc="percent"/>%</span>
+        </div>
+    </t>
+</templates>

@@ -5,6 +5,30 @@ import { registry } from "@web/core/registry";
 import { useRecordObserver } from "@web/model/relational_model/utils";
 import { StatusBarField, statusBarField } from "@web/views/fields/statusbar/statusbar_field";
 
+function progressEntry(value) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+        return {
+            state: value.state || "todo",
+            percent: readPercent(value.percent),
+        };
+    }
+    if (typeof value === "string") {
+        return { state: value || "todo", percent: null };
+    }
+    return { state: "todo", percent: null };
+}
+
+function readPercent(raw) {
+    if (raw === false || raw === null || raw === undefined || raw === "") {
+        return null;
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+        return null;
+    }
+    return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 function normalizeProgressMap(raw) {
     if (!raw) {
         return {};
@@ -21,12 +45,15 @@ function normalizeProgressMap(raw) {
     }
     const mapping = {};
     for (const [key, value] of Object.entries(raw)) {
-        mapping[String(key)] = value || "todo";
+        mapping[String(key)] = progressEntry(value);
     }
     return mapping;
 }
 
 function mappingFromRecord(record) {
+    const jsonMap = normalizeProgressMap(
+        record.data.stage_progress_json || record.data.program_stage_progress_json
+    );
     const lines = record.data.checklist_line_ids;
     if (lines?.records?.length) {
         const mapping = {};
@@ -34,7 +61,12 @@ function mappingFromRecord(record) {
         for (const line of lines.records) {
             const stage = line.data.stage_id;
             if (stage?.id) {
-                mapping[String(stage.id)] = line.data.state || "todo";
+                const id = String(stage.id);
+                const jsonEntry = jsonMap[id] || progressEntry(null);
+                mapping[id] = {
+                    state: line.data.state || jsonEntry.state || "todo",
+                    percent: readPercent(line.data.work_percent) ?? jsonEntry.percent,
+                };
                 found = true;
             }
         }
@@ -42,9 +74,7 @@ function mappingFromRecord(record) {
             return mapping;
         }
     }
-    return normalizeProgressMap(
-        record.data.stage_progress_json || record.data.program_stage_progress_json
-    );
+    return jsonMap;
 }
 
 function many2oneId(value) {
@@ -86,6 +116,17 @@ function currentStageIdFromRecord(record) {
     );
 }
 
+function withPercentLabel(label, percent) {
+    if (percent === null || percent === undefined) {
+        return label;
+    }
+    const text = String(label || "");
+    if (/\d+\s*%\s*$/.test(text)) {
+        return text.replace(/\s*\d+\s*%\s*$/, ` ${percent}%`);
+    }
+    return `${text} ${percent}%`;
+}
+
 export class CtkmStageStatusBarField extends StatusBarField {
     setup() {
         super.setup();
@@ -103,6 +144,10 @@ export class CtkmStageStatusBarField extends StatusBarField {
         return this.progressState.map || {};
     }
 
+    getStageEntry(stageId) {
+        return progressEntry(this.getStageProgressMap()[String(stageId)]);
+    }
+
     getCurrentWorkStageId() {
         return this.progressState.currentId || false;
     }
@@ -110,13 +155,16 @@ export class CtkmStageStatusBarField extends StatusBarField {
     getAllItems() {
         const items = super.getAllItems();
         const currentId = this.getCurrentWorkStageId();
-        if (!currentId) {
-            return items;
-        }
-        return items.map((item) => ({
-            ...item,
-            isSelected: Number(item.value) === Number(currentId),
-        }));
+        return items.map((item) => {
+            const entry = this.getStageEntry(item.value);
+            return {
+                ...item,
+                label: withPercentLabel(item.label, entry.percent),
+                isSelected: currentId
+                    ? Number(item.value) === Number(currentId)
+                    : item.isSelected,
+            };
+        });
     }
 
     /**
@@ -128,8 +176,9 @@ export class CtkmStageStatusBarField extends StatusBarField {
     }
 
     _progressForItems(items) {
-        const mapping = this.getStageProgressMap();
-        const states = (items || []).map((item) => mapping[String(item.value)] || "todo");
+        const states = (items || []).map(
+            (item) => this.getStageEntry(item.value).state
+        );
         if (states.includes("progress")) {
             return "progress";
         }
@@ -139,31 +188,89 @@ export class CtkmStageStatusBarField extends StatusBarField {
         return "todo";
     }
 
+    _percentForItems(items) {
+        const percents = (items || [])
+            .map((item) => this.getStageEntry(item.value).percent)
+            .filter((value) => value !== null && value !== undefined);
+        if (!percents.length) {
+            return null;
+        }
+        return Math.round(
+            percents.reduce((sum, value) => sum + value, 0) / percents.length
+        );
+    }
+
     applyProgressClasses() {
         const root = this.rootRef?.el;
         if (!root) {
             return;
         }
-        const mapping = this.getStageProgressMap();
         for (const btn of root.querySelectorAll(".o_arrow_button[data-value]")) {
-            btn.setAttribute("data-progress", mapping[String(btn.dataset.value)] || "todo");
+            const entry = this.getStageEntry(btn.dataset.value);
+            btn.setAttribute("data-progress", entry.state || "todo");
+            if (entry.percent === null || entry.percent === undefined) {
+                btn.removeAttribute("data-percent");
+                btn.style.removeProperty("--ctkm-pct");
+            } else {
+                btn.setAttribute("data-percent", String(entry.percent));
+                btn.style.setProperty("--ctkm-pct", String(entry.percent));
+            }
+            if (!btn.classList.contains("dropdown-toggle")) {
+                let fill = btn.querySelector(":scope > .o_ctkm_sb_fill");
+                let label = btn.querySelector(":scope > .o_ctkm_sb_label");
+                const base = String(label?.textContent || btn.textContent || "")
+                    .replace(/\s*\d+\s*%\s*$/, "")
+                    .trim();
+                if (entry.percent === null || entry.percent === undefined) {
+                    if (fill) {
+                        fill.remove();
+                    }
+                } else {
+                    if (!fill) {
+                        fill = document.createElement("span");
+                        fill.className = "o_ctkm_sb_fill";
+                        btn.insertBefore(fill, btn.firstChild);
+                    }
+                    fill.style.width = `${entry.percent}%`;
+                }
+                btn.childNodes.forEach((node) => {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        node.remove();
+                    }
+                });
+                if (!label) {
+                    label = document.createElement("span");
+                    label.className = "o_ctkm_sb_label";
+                    btn.appendChild(label);
+                }
+                label.textContent = withPercentLabel(base, entry.percent);
+                if (entry.percent !== null && entry.percent !== undefined) {
+                    btn.title = `${base} — ${entry.percent}%`;
+                } else {
+                    btn.removeAttribute("title");
+                }
+            }
         }
-        if (this.beforeRef?.el) {
-            this.beforeRef.el.setAttribute(
-                "data-progress",
-                this._progressForItems(this.items.before)
-            );
-        }
-        if (this.afterRef?.el) {
-            this.afterRef.el.setAttribute(
-                "data-progress",
-                this._progressForItems(this.items.after)
-            );
-        }
+        const applyGroup = (el, items) => {
+            if (!el) {
+                return;
+            }
+            el.setAttribute("data-progress", this._progressForItems(items));
+            const percent = this._percentForItems(items);
+            if (percent === null) {
+                el.removeAttribute("data-percent");
+                el.style.removeProperty("--ctkm-pct");
+            } else {
+                el.setAttribute("data-percent", String(percent));
+                el.style.setProperty("--ctkm-pct", String(percent));
+            }
+        };
+        applyGroup(this.beforeRef?.el, this.items.before);
+        applyGroup(this.afterRef?.el, this.items.after);
     }
 
     getDropdownItemClassNames(item) {
-        const state = this.getStageProgressMap()[String(item.value)] || "todo";
+        const state = this.getStageEntry(item.value).state;
         return `${super.getDropdownItemClassNames(item)} o_ctkm_stage_${state}`;
     }
 }

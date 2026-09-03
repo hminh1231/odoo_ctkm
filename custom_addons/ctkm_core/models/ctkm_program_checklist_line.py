@@ -35,6 +35,12 @@ class CtkmProgramChecklistLine(models.Model):
         default='todo',
         required=True,
     )
+    work_percent = fields.Integer(
+        string='Tiến độ %',
+        compute='_compute_work_percent',
+        help='Phần trăm hoàn thành để hiện thanh loading. '
+             'Bước 10–15 theo cửa hàng và SL tem/tag từ file bước 4.',
+    )
     is_done = fields.Boolean(
         string='Xong',
         compute='_compute_is_done',
@@ -91,6 +97,26 @@ class CtkmProgramChecklistLine(models.Model):
              'Phạm vi thông báo khi bước Hậu kiểm hoàn thành. '
              'Reset khi bước bị mở lại để có thể gửi lại.',
     )
+
+    @api.depends(
+        'state',
+        'stage_id',
+        'program_id.stage_progress_json',
+    )
+    def _compute_work_percent(self):
+        for line in self:
+            percent = None
+            mapping = line.program_id.stage_progress_json or {}
+            if line.stage_id:
+                val = mapping.get(str(line.stage_id.id))
+                if isinstance(val, dict) and val.get('percent') is not None:
+                    try:
+                        percent = int(round(float(val['percent'])))
+                    except (TypeError, ValueError):
+                        percent = None
+            if percent is None:
+                percent = 100 if line.state == 'done' else 0
+            line.work_percent = max(0, min(100, percent))
 
     @api.depends('state')
     def _compute_is_done(self):

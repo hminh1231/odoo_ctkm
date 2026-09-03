@@ -495,8 +495,8 @@ class CtkmTask(models.Model):
         'ctkm.task.tem.photo.line',
         'task_id',
         string='Kiểm tra hình ảnh tem/tag',
-        help='Bảng (Cửa hàng, Mã vật tư) lấy từ kho Tem/Tag file tổng; '
-             'tick "Xác nhận thay" khi đã kiểm tra xong ảnh.',
+        help='Bảng (Cửa hàng, Mã vật tư) lấy từ kho Tem/Tag file tổng. '
+             'Bước 13 tick "Đã chụp"; bước 14 tick "Xác nhận thay".',
     )
 
     # Bước phạm vi thông báo (Gửi tin tuần tự theo STT dòng)
@@ -1487,12 +1487,14 @@ class CtkmTask(models.Model):
         return users
 
     def _ctkm_checklist_line_is_receive_or_replace_step(self, line):
-        """Bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag' (các bước dùng
-        Quản lý cửa hàng làm Người kiểm soát theo từng cửa hàng)."""
+        """Bước 11 'Nhận tem tag mới', bước 12 'Thay tem Tag' và bước 10
+        'Bàn giao Tem Tag / Thu hồi tem tag cũ' (các bước dùng Quản lý cửa
+        hàng làm Người kiểm soát theo từng cửa hàng)."""
         if not line:
             return False
         stage_id = line.stage_id.id if line.stage_id else False
         target_stage_ids = {
+            self._ctkm_step_stage_id(TEM_HANDOVER_STAGE_XMLID),
             self._ctkm_step_stage_id(TEM_RECEIVE_STAGE_XMLID),
             self._ctkm_step_stage_id(TEM_REPLACE_STAGE_XMLID),
         }
@@ -1502,6 +1504,8 @@ class CtkmTask(models.Model):
         key = normalize_step_key(line.name)
         if not key:
             return False
+        if any(marker in key for marker in TEM_HANDOVER_TASK_MARKERS):
+            return True
         if any(marker in key for marker in TEM_RECEIVE_TASK_MARKERS):
             return True
         if key in TEM_REPLACE_TASK_KEYS:
@@ -1573,8 +1577,9 @@ class CtkmTask(models.Model):
 
     def _ctkm_assign_store_managers_verifier_after_bb_import(self):
         """Khi hoàn thành bước 4: gán Quản lý cửa hàng (hr.store.manager_id)
-        làm Người kiểm soát bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag'
-        theo từng cửa hàng trên biên bản tổng.
+        làm Người kiểm soát bước 10 'Bàn giao Tem Tag / Thu hồi tem tag cũ',
+        bước 11 'Nhận tem tag mới' và bước 12 'Thay tem Tag' theo từng cửa
+        hàng trên biên bản tổng.
 
         Khác với 'Phụ trách' (Cửa hàng trưởng - chức danh trên hồ sơ),
         'Người kiểm soát' ở đây lấy từ cấu hình Cửa hàng (Quản lý cửa hàng).
@@ -1595,7 +1600,7 @@ class CtkmTask(models.Model):
                 body=_(
                     'Không tìm thấy nhân viên Quản lý cửa hàng (Employee → '
                     'Cấu hình → Cửa hàng) tương ứng với mã Store trên biên bản: '
-                    '%(stores)s. Bước 11–12 giữ nguyên Người kiểm soát hiện tại.'
+                    '%(stores)s. Bước 10–12 giữ nguyên Người kiểm soát hiện tại.'
                 ) % {'stores': escape(store_label)},
                 subtype_xmlid='mail.mt_note',
                 body_is_html=True,
@@ -1616,7 +1621,8 @@ class CtkmTask(models.Model):
         flag_tasks = self.env['ctkm.task'].sudo().search([
             ('program_id', '=', self.program_id.id),
             ('state', '!=', 'done'),
-            '|',
+            '|', '|',
+            ('is_tem_handover_task', '=', True),
             ('is_tem_receive_task', '=', True),
             ('is_tem_replace_task', '=', True),
         ])
@@ -1631,9 +1637,14 @@ class CtkmTask(models.Model):
                     ctkm_internal_state_write=True,
                 ).write({'verifier_ids': [(6, 0, manager_ids)]})
             # Quan hệ 1 Phụ trách – 1 Người kiểm soát theo TỪNG cửa hàng.
+            # Bước 10 (Bàn giao Tem Tag) không có Phụ trách riêng → mỗi cửa
+            # hàng một dòng, Quản lý cửa hàng xác nhận trực tiếp (no_assignee).
             other.sudo()._ctkm_build_store_verifier_lines(store_keys, store_manager_map)
         uncovered = self.env['res.users']
         for other in flag_tasks:
+            if other.is_tem_handover_task:
+                # Bước 10 không có Phụ trách riêng nên bỏ qua cảnh báo thiếu.
+                continue
             covered = other.store_verifier_ids.mapped('assignee_user_id')
             uncovered |= (other.user_ids - covered)
         if uncovered:
@@ -1649,9 +1660,10 @@ class CtkmTask(models.Model):
         self.message_post(
             body=_(
                 'Đã gán <b>%(users)s</b> (Quản lý cửa hàng) làm Người kiểm soát '
-                'bước 11–12 (Nhận tem tag mới, Thay tem Tag) '
-                'theo mã Store trên biên bản: %(stores)s. Mỗi Cửa hàng trưởng '
-                'chỉ được xác nhận bởi Quản lý cửa hàng đúng cửa hàng đó.'
+                'bước 10–12 (Bàn giao Tem Tag, Nhận tem tag mới, Thay tem Tag) '
+                'theo mã Store trên biên bản: %(stores)s. Mỗi Cửa hàng trưởng / '
+                'bước bàn giao chỉ được xác nhận bởi Quản lý cửa hàng đúng cửa '
+                'hàng đó.'
             ) % {
                 'users': escape(', '.join(managers.mapped('display_name'))),
                 'stores': escape(store_label),
@@ -1666,16 +1678,29 @@ class CtkmTask(models.Model):
 
         - Bước có Phụ trách (Cửa hàng trưởng) theo cửa hàng (bước 11/12): mỗi
           chief gắn với Quản lý cửa hàng ĐÚNG cửa hàng của mình.
+        - Bước không có Phụ trách riêng (Bàn giao Tem Tag - bước 10): mỗi cửa
+          hàng một dòng, Quản lý cửa hàng xác nhận trực tiếp phần cửa hàng đó
+          (no_assignee = True).
         """
         self.ensure_one()
         if not store_keys or not store_manager_map:
             return
         StoreVerifier = self.env['ctkm.task.store.verifier'].sudo()
         self.store_verifier_ids.sudo().unlink()
+        no_assignee = bool(self.is_tem_handover_task)
         lines = []
         for key in store_keys:
             manager = store_manager_map.get(key)
             if not manager:
+                continue
+            if no_assignee:
+                lines.append({
+                    'task_id': self.id,
+                    'store_key': key,
+                    'store_label': key,
+                    'verifier_id': manager.id,
+                    'no_assignee': True,
+                })
                 continue
             chiefs = self._ctkm_users_for_store_key(key)
             if not chiefs:
@@ -1775,6 +1800,20 @@ class CtkmTask(models.Model):
                 ('program_id', 'in', programs.ids),
                 ('is_tem_postcheck_task', '=', True),
             ])._ctkm_sync_postcheck_lines()
+            photo_tasks = self.sudo().search([
+                ('program_id', 'in', programs.ids),
+                '|',
+                ('is_tem_photo_task', '=', True),
+                ('is_tem_check_task', '=', True),
+            ])
+            photo_tasks |= self.sudo().filtered(
+                lambda t: t.is_tem_photo_task or t.is_tem_check_task
+            )
+            photo_tasks._ctkm_sync_tem_photo_lines()
+        else:
+            self.sudo().filtered(
+                lambda t: t.is_tem_photo_task or t.is_tem_check_task
+            )._ctkm_sync_tem_photo_lines()
         for task in self:
             values = task._ctkm_tem_tag_line_values()
             existing = {}
@@ -2322,8 +2361,6 @@ class CtkmTask(models.Model):
             Line.create(to_create)
             if obsolete:
                 obsolete.unlink()
-        # Bước Kiểm tra ảnh: đồng bộ bảng từ kho Tem/Tag (file tổng).
-        self.filtered('is_tem_check_task').sudo()._ctkm_sync_tem_photo_lines()
 
     def _ctkm_sync_postcheck_lines(self):
         """Hậu kiểm: copy cửa hàng + SL tem/tag từ bước 9 In tem, Tag."""
@@ -2489,21 +2526,23 @@ class CtkmTask(models.Model):
             ('is_tem_price_task', '=', True),
         ])._ctkm_sync_price_lines()
 
+    def _ctkm_is_photo_or_check_task(self):
+        return bool(self.is_tem_photo_task or self.is_tem_check_task)
+
     def _ctkm_tem_photo_line_values(self):
-        """Gom kho Tem/Tag (file tổng) theo (Cửa hàng, Mã vật tư) cho bước Kiểm tra ảnh.
-        Chỉ lấy các cửa hàng trong 'Cửa hàng quản lí' của người nhận việc (giống bước 6).
+        """Gom kho Tem/Tag (file tổng) theo (Cửa hàng, Mã vật tư).
+
+        Dùng cho bước 13 (Đã chụp) và bước 14 (Xác nhận thay). Nguồn là
+        ``ctkm.inventory.tem.tag`` của chương trình — bước
+        "Đổ BB thay tem/tag (file tổng)" chứa tất cả cửa hàng.
         """
         self.ensure_one()
-        if not self.is_tem_check_task or not self.program_id:
+        if not self._ctkm_is_photo_or_check_task() or not self.program_id:
             return []
         if 'ctkm.inventory.tem.tag' not in self.env:
             return []
-        store_keys = self._ctkm_tem_tag_managed_store_keys()
-        if not store_keys:
-            return []
         rows = self.env['ctkm.inventory.tem.tag'].sudo().search([
             ('program_id', '=', self.program_id.id),
-            ('store_key', 'in', store_keys),
         ])
         by_key = {}
         for rec in rows:
@@ -2515,18 +2554,20 @@ class CtkmTask(models.Model):
                     'store': rec.store or '',
                     'store_key': rec.store_key or '',
                     'material_code': rec.material_code or '',
+                    'total_quantity': 0.0,
                 }
+            by_key[key]['total_quantity'] += rec.quantity or 0.0
         values = list(by_key.values())
         values.sort(key=lambda vals: (vals['store'] or '', vals['material_code'] or ''))
         return values
 
     def _ctkm_sync_tem_photo_lines(self):
-        """Dựng lại bảng 'Kiểm tra hình ảnh tem/tag' từ kho Tem/Tag (file tổng)."""
+        """Dựng lại bảng chụp / kiểm tra ảnh tem-tag từ kho Tem/Tag (file tổng)."""
         Line = self.env['ctkm.task.tem.photo.line'].sudo().with_context(
             ctkm_tem_photo_sync=True,
         )
         for task in self:
-            if not task.is_tem_check_task:
+            if not task._ctkm_is_photo_or_check_task():
                 continue
             values = task._ctkm_tem_photo_line_values()
             existing = {}
@@ -2535,8 +2576,15 @@ class CtkmTask(models.Model):
             to_create = []
             for vals in values:
                 key = (vals['store'] or '', vals['material_code'] or '')
-                if key in existing:
-                    existing.pop(key)
+                line = existing.pop(key, None)
+                if line:
+                    changes = {
+                        field: value
+                        for field, value in vals.items()
+                        if line[field] != value
+                    }
+                    if changes:
+                        line.write(changes)
                 else:
                     to_create.append(dict(vals, task_id=task.id))
             if to_create:
@@ -3164,19 +3212,22 @@ class CtkmTask(models.Model):
             return self.browse()
         tasks = self.sudo().search([
             ('program_id', 'in', program_ids),
-            '|', '|', '|', '|', '|', '|', '|', '|',
+            '|', '|', '|', '|', '|', '|', '|', '|', '|',
             ('is_tem_tag_import_task', '=', True),
             ('is_tem_bb_replace_task', '=', True),
             ('is_tem_print_task', '=', True),
             ('is_tem_handover_task', '=', True),
             ('is_tem_receive_task', '=', True),
             ('is_tem_replace_task', '=', True),
+            ('is_tem_photo_task', '=', True),
             ('is_tem_check_task', '=', True),
             ('is_tem_postcheck_task', '=', True),
             ('is_tem_price_task', '=', True),
         ])
         tasks._ctkm_sync_tem_tag_lines()
-        tasks.filtered('is_tem_check_task')._ctkm_sync_tem_photo_lines()
+        tasks.filtered(
+            lambda t: t.is_tem_photo_task or t.is_tem_check_task
+        )._ctkm_sync_tem_photo_lines()
         tasks.filtered('is_tem_postcheck_task')._ctkm_sync_postcheck_lines()
         tasks.filtered('is_tem_price_task')._ctkm_sync_price_lines()
         return tasks
@@ -3219,11 +3270,15 @@ class CtkmTask(models.Model):
                 _('Đã làm mới'),
                 _('Đã lấy danh sách cửa hàng từ bước In tem, Tag.'),
             )
-        if task.is_tem_check_task:
-            task.sudo()._ctkm_sync_tem_photo_lines()
+        if task.is_tem_photo_task:
             return self._ctkm_notify_reload(
                 _('Đã làm mới'),
-                _('Đã cập nhật danh sách cửa hàng kiểm tra ảnh theo Cửa hàng quản lí.'),
+                _('Đã lấy danh sách cửa hàng / mã vật tư từ file tổng để tick Đã chụp.'),
+            )
+        if task.is_tem_check_task:
+            return self._ctkm_notify_reload(
+                _('Đã làm mới'),
+                _('Đã lấy danh sách cửa hàng / mã vật tư từ file tổng để xác nhận ảnh.'),
             )
         if task.is_tem_price_task:
             return self._ctkm_notify_reload(
@@ -3296,9 +3351,11 @@ class CtkmTask(models.Model):
                 design_tasks.sudo().with_context(
                     ctkm_skip_tem_design_sync=True,
                 )._ctkm_sync_tem_design_lines()
-        # Mở form bước Kiểm tra ảnh: đồng bộ bảng (Cửa hàng, Mã vật tư).
+        # Mở form bước 13/14: đồng bộ bảng (Cửa hàng, Mã vật tư) từ file tổng.
         if self.ids and not self.env.context.get('ctkm_skip_tem_photo_sync'):
-            photo_tasks = self.filtered('is_tem_check_task')
+            photo_tasks = self.filtered(
+                lambda t: t.is_tem_photo_task or t.is_tem_check_task
+            )
             if photo_tasks:
                 photo_tasks.sudo().with_context(
                     ctkm_skip_tem_photo_sync=True,
@@ -3846,13 +3903,6 @@ class CtkmTask(models.Model):
                 'Dùng nút Hoàn thành hoặc Xác nhận quản lý.'
             ))
 
-        if 'detail_tem_photo_ids' in vals and not internal:
-            for task in self:
-                if task.is_tem_photo_task and task.state == 'done':
-                    raise UserError(_(
-                        'Công việc đã hoàn thành, không thể thay đổi hoặc xóa hình ảnh đã tải lên.'
-                    ))
-
         if 'manager_confirmed' in vals and not internal:
             for task in self:
                 if not task._user_can_confirm_as_manager(self.env.user):
@@ -3916,7 +3966,9 @@ class CtkmTask(models.Model):
         # (bước 12 lọc theo cửa hàng của người nhận việc).
         if {'program_id', 'user_ids', 'name', 'checklist_line_id'} & set(vals):
             self.sudo()._ctkm_sync_tem_tag_lines()
-            self.sudo().filtered('is_tem_check_task')._ctkm_sync_tem_photo_lines()
+            self.sudo().filtered(
+                lambda t: t.is_tem_photo_task or t.is_tem_check_task
+            )._ctkm_sync_tem_photo_lines()
 
         if {'process_date', 'done_date'} & set(vals):
             self.sudo()._ctkm_touch_main_time_line(vals)
@@ -4201,8 +4253,6 @@ class CtkmTask(models.Model):
                 'manager_confirmed': True,
                 'state': 'done',
             })
-            if task.is_tem_handover_task and task.recover_ids:
-                task.recover_ids._ctkm_recover_inventory()
         target = self[:1]
         return target._ctkm_notify_reload(
             _('Đã xác nhận'),

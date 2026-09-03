@@ -126,6 +126,16 @@ class CtkmTaskTemTagReplaceLine(models.Model):
             self.env['ctkm.task'].sudo()._ctkm_sync_price_lines_for_programs(
                 self.mapped('task_id.program_id')
             )
+        if not internal and (
+            'received' in vals
+            or 'replaced_done' in vals
+            or 'replaced_quantity' in vals
+        ):
+            programs = self.mapped('task_id.program_id')
+            if programs:
+                programs.invalidate_recordset([
+                    'stage_progress_json', 'checklist_current_stage_id',
+                ])
         return res
 
     def action_toggle_received(self):

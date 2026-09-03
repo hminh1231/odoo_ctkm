@@ -128,7 +128,8 @@ class CtkmProgram(models.Model):
     stage_progress_json = fields.Json(
         string='Tiến độ từng giai đoạn',
         compute='_compute_stage_progress_json',
-        help='Map stage_id → trạng thái checklist (todo/progress/done) để tô màu thanh giai đoạn.',
+        help='Map stage_id → {state, percent}. Bước 10–15 có percent (0–100) '
+             'theo cửa hàng và SL tem/tag từ file bước 4.',
     )
     checklist_current_stage_id = fields.Many2one(
         'ctkm.stage',
@@ -242,6 +243,35 @@ class CtkmProgram(models.Model):
         'checklist_line_ids.stage_id',
         'checklist_line_ids.sequence',
         'checklist_line_ids.name',
+        'task_ids.is_tem_handover_task',
+        'task_ids.handover_store_ids.done',
+        'task_ids.handover_store_ids.store_key',
+        'task_ids.collect_store_ids.done',
+        'task_ids.collect_store_ids.store_key',
+        'task_ids.is_tem_receive_task',
+        'task_ids.is_tem_replace_task',
+        'task_ids.tem_tag_replace_ids.received',
+        'task_ids.tem_tag_replace_ids.replaced_done',
+        'task_ids.tem_tag_replace_ids.replaced_quantity',
+        'task_ids.tem_tag_replace_ids.total_quantity',
+        'task_ids.tem_tag_replace_ids.store',
+        'task_ids.tem_tag_replace_ids.store_key',
+        'task_ids.is_tem_photo_task',
+        'task_ids.is_tem_check_task',
+        'task_ids.tem_photo_check_ids.photographed',
+        'task_ids.tem_photo_check_ids.confirmed',
+        'task_ids.tem_photo_check_ids.store',
+        'task_ids.tem_photo_check_ids.store_key',
+        'task_ids.tem_photo_check_ids.total_quantity',
+        'task_ids.is_tem_price_task',
+        'task_ids.price_store_ids.replaced',
+        'task_ids.price_store_ids.not_replaced',
+        'task_ids.price_store_ids.price_applied',
+        'task_ids.price_store_ids.store_key',
+        'task_ids.is_tem_print_task',
+        'task_ids.print_store_ids.tem_quantity',
+        'task_ids.print_store_ids.tag_quantity',
+        'task_ids.print_store_ids.store_key',
     )
     def _compute_stage_progress_json(self):
         stages = self.env['ctkm.stage'].search([])
@@ -251,6 +281,8 @@ class CtkmProgram(models.Model):
             progress_stage = False
             todo_stage = False
             last_stage = False
+            stores_map = program._ctkm_step4_store_qty_map()
+            sudo_tasks = program.sudo().task_ids
             lines = program.checklist_line_ids.sorted(
                 lambda line: (line.sequence, line.id)
             )
@@ -260,16 +292,257 @@ class CtkmProgram(models.Model):
                     stage = stages_by_name.get(line.name)
                 if not stage:
                     continue
-                mapping[str(stage.id)] = line.state or 'todo'
+                state = line.state or 'todo'
+                percent = program._ctkm_stage_work_percent(
+                    stage, line, stores_map, sudo_tasks,
+                )
+                entry = {'state': state}
+                if percent is not None:
+                    entry['percent'] = percent
+                mapping[str(stage.id)] = entry
                 last_stage = stage
-                if line.state == 'progress' and not progress_stage:
+                if state == 'progress' and not progress_stage:
                     progress_stage = stage
-                elif line.state == 'todo' and not todo_stage:
+                elif state == 'todo' and not todo_stage:
                     todo_stage = stage
             program.stage_progress_json = mapping
             program.checklist_current_stage_id = (
                 progress_stage or todo_stage or last_stage
             )
+
+    _CTKM_STORE_PERCENT_SEQUENCES = frozenset(range(10, 16))
+
+    def _ctkm_step4_store_qty_map(self):
+        """Cửa hàng + SL tem/tag từ file bước 4 (kho Tem/Tag), fallback bước In.
+
+        Trả về ``{store_key: {'qty', 'tem', 'tag', 'keys'}}``. Mỗi cửa hàng
+        một phần bằng nhau trên thanh trạng thái; SL dùng để cân trọng số.
+        """
+        self.ensure_one()
+        from odoo.addons.ctkm_core.models.ctkm_task_tem_print_line import (
+            classify_tem_tag_kinds,
+            normalize_store_key,
+        )
+        Task = self.env['ctkm.task']
+        result = {}
+
+        def _bucket(store_key, store_name):
+            key = store_key or normalize_store_key(store_name)
+            if not key:
+                return False
+            canon = Task._ctkm_store_canonical_key(key, store_name) or key
+            info = result.setdefault(canon, {
+                'qty': 0.0,
+                'tem': 0.0,
+                'tag': 0.0,
+                'keys': set(),
+            })
+            info['keys'].update(filter(None, (key, canon, normalize_store_key(store_name))))
+            return canon
+
+        if 'ctkm.inventory.tem.tag' in self.env:
+            rows = self.env['ctkm.inventory.tem.tag'].sudo().search([
+                ('program_id', '=', self.id),
+            ])
+            for rec in rows:
+                bucket = _bucket(rec.store_key, rec.store)
+                if not bucket:
+                    continue
+                amount = rec.quantity or 0.0
+                result[bucket]['qty'] += amount
+                kinds = classify_tem_tag_kinds(rec.tem_tag)
+                if 'tag' in kinds:
+                    result[bucket]['tag'] += amount
+                if 'tem' in kinds or not kinds:
+                    result[bucket]['tem'] += amount
+        if result:
+            return result
+
+        print_lines = self.env['ctkm.task.tem.print.line'].sudo().search([
+            ('program_id', '=', self.id),
+        ])
+        for line in print_lines:
+            bucket = _bucket(line.store_key, line.store)
+            if not bucket:
+                continue
+            tem = line.tem_quantity or 0.0
+            tag = line.tag_quantity or 0.0
+            result[bucket]['tem'] += tem
+            result[bucket]['tag'] += tag
+            result[bucket]['qty'] += tem + tag
+        return result
+
+    def _ctkm_match_store_bucket(self, stores_map, *values):
+        """Khớp mã cửa hàng trên dòng công việc với bucket từ file bước 4."""
+        if not stores_map:
+            return False
+        Task = self.env['ctkm.task']
+        aliases = Task._ctkm_store_key_aliases(*values)
+        if not aliases:
+            return False
+        for bucket, info in stores_map.items():
+            if bucket in aliases or aliases & info.get('keys', set()):
+                return bucket
+        canon = Task._ctkm_store_canonical_key(*values)
+        return canon if canon in stores_map else False
+
+    def _ctkm_weighted_store_percent(self, stores_map, store_ratios):
+        """50% theo số cửa hàng + 50% theo SL tem/tag. 10 CH xong 1 CH → 10%."""
+        n = len(stores_map)
+        if not n:
+            return 0
+        store_part = sum(store_ratios.get(key, 0.0) for key in stores_map) / n
+        total_qty = sum(info['qty'] for info in stores_map.values())
+        if total_qty > 0:
+            qty_part = sum(
+                store_ratios.get(key, 0.0) * stores_map[key]['qty']
+                for key in stores_map
+            ) / total_qty
+        else:
+            qty_part = store_part
+        return int(round(100.0 * (0.5 * store_part + 0.5 * qty_part)))
+
+    def _ctkm_group_lines_by_store(self, stores_map, lines, *key_fields):
+        grouped = {key: [] for key in stores_map}
+        for line in lines:
+            values = [line[field] for field in key_fields if field in line._fields]
+            bucket = self._ctkm_match_store_bucket(stores_map, *values)
+            if bucket:
+                grouped[bucket].append(line)
+        return grouped
+
+    def _ctkm_tick_qty_ratio(self, lines, tick_field, qty_field, qty_done_field=None):
+        """Tỷ lệ 0–1: 50% số dòng đã tick + 50% sản lượng."""
+        if not lines:
+            return 0.0
+        tick = sum(1.0 for line in lines if line[tick_field]) / len(lines)
+        qty_total = sum(line[qty_field] or 0.0 for line in lines)
+        if qty_done_field:
+            qty_done = sum(line[qty_done_field] or 0.0 for line in lines)
+        else:
+            qty_done = sum(
+                (line[qty_field] or 0.0) for line in lines if line[tick_field]
+            )
+        qty = (qty_done / qty_total) if qty_total else tick
+        return 0.5 * tick + 0.5 * qty
+
+    def _ctkm_stage_work_percent(self, stage, checklist_line, stores_map, tasks=None):
+        """% công việc bước 10–15; bước khác trả về None."""
+        sequence = stage.sequence or checklist_line.sequence or 0
+        if sequence not in self._CTKM_STORE_PERCENT_SEQUENCES:
+            return None
+        if checklist_line.state == 'done':
+            return 100
+        if not stores_map:
+            return 0
+        tasks = tasks if tasks is not None else self.sudo().task_ids
+        ratios = self._ctkm_stage_store_ratios(sequence, stores_map, tasks)
+        return self._ctkm_weighted_store_percent(stores_map, ratios)
+
+    def _ctkm_stage_store_ratios(self, sequence, stores_map, tasks):
+        """Tỷ lệ hoàn thành 0–1 của từng cửa hàng, theo việc thật của bước."""
+        empty = {key: 0.0 for key in stores_map}
+        if sequence == 10:
+            return self._ctkm_step10_store_ratios(tasks, stores_map) or empty
+        if sequence == 11:
+            lines = tasks.filtered('is_tem_receive_task').tem_tag_replace_ids
+            grouped = self._ctkm_group_lines_by_store(
+                stores_map, lines, 'store_key', 'store',
+            )
+            return {
+                key: self._ctkm_tick_qty_ratio(
+                    grouped[key], 'received', 'total_quantity',
+                )
+                for key in stores_map
+            }
+        if sequence == 12:
+            lines = tasks.filtered('is_tem_replace_task').tem_tag_replace_ids
+            grouped = self._ctkm_group_lines_by_store(
+                stores_map, lines, 'store_key', 'store',
+            )
+            return {
+                key: self._ctkm_tick_qty_ratio(
+                    grouped[key], 'replaced_done', 'total_quantity',
+                    'replaced_quantity',
+                )
+                for key in stores_map
+            }
+        if sequence == 13:
+            lines = tasks.filtered('is_tem_photo_task').tem_photo_check_ids
+            grouped = self._ctkm_group_lines_by_store(
+                stores_map, lines, 'store_key', 'store',
+            )
+            return {
+                key: self._ctkm_tick_qty_ratio(
+                    grouped[key], 'photographed', 'total_quantity',
+                )
+                for key in stores_map
+            }
+        if sequence == 14:
+            lines = tasks.filtered('is_tem_check_task').tem_photo_check_ids
+            grouped = self._ctkm_group_lines_by_store(
+                stores_map, lines, 'store_key', 'store',
+            )
+            return {
+                key: self._ctkm_tick_qty_ratio(
+                    grouped[key], 'confirmed', 'total_quantity',
+                )
+                for key in stores_map
+            }
+        if sequence == 15:
+            return self._ctkm_step15_store_ratios(tasks, stores_map) or empty
+        return empty
+
+    def _ctkm_step10_store_ratios(self, tasks, stores_map):
+        """Bàn giao 50% + thu hồi 50% (nếu có dòng thu); không có thu thì 100% giao."""
+        handover_tasks = tasks.filtered('is_tem_handover_task')
+        handover = handover_tasks.handover_store_ids
+        collect = handover_tasks.collect_store_ids
+        handover_g = self._ctkm_group_lines_by_store(
+            stores_map, handover, 'store_key', 'store',
+        )
+        collect_g = self._ctkm_group_lines_by_store(
+            stores_map, collect, 'store_key', 'store',
+        )
+        has_collect = bool(collect)
+        ratios = {}
+        for key in stores_map:
+            h_lines = handover_g.get(key) or []
+            if h_lines:
+                handover_ratio = sum(1.0 for line in h_lines if line.done) / len(h_lines)
+            else:
+                handover_ratio = 0.0
+            if not has_collect:
+                ratios[key] = handover_ratio
+                continue
+            c_lines = collect_g.get(key) or []
+            if c_lines:
+                collect_ratio = sum(1.0 for line in c_lines if line.done) / len(c_lines)
+            else:
+                collect_ratio = 1.0
+            ratios[key] = 0.5 * handover_ratio + 0.5 * collect_ratio
+        return ratios
+
+    def _ctkm_step15_store_ratios(self, tasks, stores_map):
+        """ASM/KTDT (báo cáo) 50% + KT áp giá 50%."""
+        lines = tasks.filtered('is_tem_price_task').price_store_ids
+        grouped = self._ctkm_group_lines_by_store(
+            stores_map, lines, 'store_key', 'store',
+        )
+        ratios = {}
+        for key in stores_map:
+            slines = grouped.get(key) or []
+            if not slines:
+                ratios[key] = 0.0
+                continue
+            reported = 1.0 if any(
+                line.replaced or line.not_replaced for line in slines
+            ) else 0.0
+            applied = 1.0 if all(line.price_applied for line in slines) else (
+                sum(1.0 for line in slines if line.price_applied) / len(slines)
+            )
+            ratios[key] = 0.5 * reported + 0.5 * applied
+        return ratios
 
     def _ctkm_default_checklist_vals(self):
         stages = self.env['ctkm.stage'].search([], order='sequence, id')

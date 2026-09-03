@@ -148,7 +148,14 @@ class CtkmTaskTemPriceLine(models.Model):
                 vals = self._vals_with_confirm_tracking(vals)
             elif not vals:
                 return True
-        return super().write(vals)
+        res = super().write(vals)
+        if not internal and 'price_applied' in vals:
+            programs = self.mapped('task_id.program_id')
+            if programs:
+                programs.invalidate_recordset([
+                    'stage_progress_json', 'checklist_current_stage_id',
+                ])
+        return res
 
     def _vals_with_confirm_tracking(self, vals):
         """Tick KT áp giá: ghi người + ngày; bỏ tick thì xóa."""

@@ -1,0 +1,74 @@
+.o_ctkm_loading_bar,
+.o_field_ctkm_loading_bar.o_ctkm_loading_bar {
+    --ctkm-pct: 0;
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    min-width: 110px;
+    height: 1.55rem;
+    border-radius: 999px;
+    background: #e9ecef;
+    overflow: hidden;
+    isolation: isolate;
+    white-space: nowrap;
+}
+
+.o_ctkm_loading_bar_fill {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    display: block !important;
+    width: 0;
+    max-width: 100%;
+    background: #28a745;
+    transition: width 0.35s ease;
+    z-index: 0;
+}
+
+.o_ctkm_loading_bar_label {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 1;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.55rem;
+    text-align: center;
+    color: #212529;
+    text-shadow: 0 0 4px rgba(255, 255, 255, 0.85);
+}
+
+.o_ctkm_loading_bar_high .o_ctkm_loading_bar_label,
+.o_ctkm_loading_bar_done .o_ctkm_loading_bar_label {
+    color: #fff;
+    text-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+}
+
+.o_ctkm_loading_bar_empty .o_ctkm_loading_bar_label,
+.o_ctkm_loading_bar_low .o_ctkm_loading_bar_label {
+    color: #343a40;
+    text-shadow: 0 0 4px rgba(255, 255, 255, 0.9);
+}
+
+.o_list_renderer .o_data_cell.o_list_number .o_ctkm_loading_bar,
+.o_list_renderer .o_data_cell .o_field_ctkm_loading_bar {
+    display: block !important;
+    width: 100% !important;
+
+    span {
+        display: flex !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        white-space: nowrap !important;
+    }
+
+    .o_ctkm_loading_bar_fill {
+        display: block !important;
+    }
+}

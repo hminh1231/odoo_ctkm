@@ -57,6 +57,7 @@
                     <field name="name" invisible="1"/>
                     <field name="is_tem_tag_import_task" invisible="1"/>
                     <field name="is_tem_photo_task" invisible="1"/>
+                    <field name="is_tem_check_task" invisible="1"/>
                     <field name="is_tem_replace_task" invisible="1"/>
                     <field name="is_tem_bb_replace_task" invisible="1"/>
                     <field name="is_tem_print_task" invisible="1"/>
@@ -138,17 +139,20 @@
                                         invisible="not is_tem_tag_import_task"/>
                                 </group>
                                 <group string="Ảnh tem/tag" invisible="not is_tem_photo_task">
+                                    <div colspan="2" class="text-muted mb-2">
+                                        Tải ảnh team / từng tem-tag. Tick <b>Đã chụp</b> theo
+                                        cửa hàng và mã vật tư lấy từ file bước
+                                        <b>Đổ BB thay tem/tag (file tổng)</b>.
+                                        Xong 1 cửa hàng (mọi mã) = một phần bằng nhau trên thanh trạng thái.
+                                    </div>
+                                    <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
+                                        readonly="state == 'done'"
+                                        options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                     <div colspan="2" class="mb-2" invisible="not detail_tem_photo_ids">
                                         <button name="action_preview_tem_photos" type="object"
                                             string="Xem ảnh" class="btn-secondary btn-sm"
                                             icon="fa-eye"/>
                                     </div>
-                                    <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
-                                        readonly="state == 'done'"
-                                        options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
-                                </group>
-                                <group string="Kiểm tra hình ảnh tem/tag"
-                                    invisible="not is_tem_check_task">
                                     <div colspan="2" class="mb-2">
                                         <button name="action_refresh_tem_tag_lines" type="object"
                                             string="Làm mới danh sách" class="btn-secondary btn-sm"
@@ -159,7 +163,37 @@
                                         <list editable="bottom" create="0" delete="0"
                                             default_order="store, material_code">
                                             <field name="store" readonly="1"/>
+                                            <field name="store_key" column_invisible="1"/>
                                             <field name="material_code" readonly="1"/>
+                                            <field name="total_quantity" readonly="1"
+                                                string="Số lượng" sum="Tổng SL" width="100px"/>
+                                            <field name="photographed" widget="ctkm_tick"
+                                                string="Đã chụp"
+                                                options="{'tick_all': True}"/>
+                                        </list>
+                                    </field>
+                                </group>
+                                <group string="Kiểm tra hình ảnh tem/tag"
+                                    invisible="not is_tem_check_task">
+                                    <div colspan="2" class="text-muted mb-2">
+                                        Tick <b>Xác nhận thay</b> khi đã kiểm tra xong ảnh tem/tag
+                                        của cửa hàng. Danh sách lấy từ file bước
+                                        <b>Đổ BB thay tem/tag (file tổng)</b>.
+                                    </div>
+                                    <div colspan="2" class="mb-2">
+                                        <button name="action_refresh_tem_tag_lines" type="object"
+                                            string="Làm mới danh sách" class="btn-secondary btn-sm"
+                                            icon="fa-refresh"/>
+                                    </div>
+                                    <field name="tem_photo_check_ids" nolabel="1" colspan="2"
+                                        widget="one2many" class="o_ctkm_print_store_list">
+                                        <list editable="bottom" create="0" delete="0"
+                                            default_order="store, material_code">
+                                            <field name="store" readonly="1"/>
+                                            <field name="store_key" column_invisible="1"/>
+                                            <field name="material_code" readonly="1"/>
+                                            <field name="total_quantity" readonly="1"
+                                                string="Số lượng" sum="Tổng SL" width="100px"/>
                                             <field name="confirmed" widget="ctkm_tick"
                                                 string="Xác nhận thay"
                                                 options="{'tick_all': True}"/>
