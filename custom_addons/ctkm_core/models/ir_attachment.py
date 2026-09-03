@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-from odoo import models
+from odoo import _, models
+from odoo.exceptions import UserError
 
 _CTKM_BOT_XMLID = "business_discuss_bots.user_bot_ctkm"
 _CTKM_RES_MODELS = frozenset({"ctkm.program", "ctkm.task"})
@@ -38,3 +39,15 @@ class IrAttachment(models.Model):
         if not remaining:
             return None
         return remaining, error_func
+
+    def unlink(self):
+        if not self.env.su:
+            tasks = self.env['ctkm.task'].sudo().search([
+                ('detail_tem_photo_ids', 'in', self.ids),
+                ('state', '=', 'done'),
+            ])
+            if tasks:
+                raise UserError(_(
+                    'Không thể xóa hình ảnh của công việc đã ở trạng thái hoàn thành.'
+                ))
+        return super().unlink()

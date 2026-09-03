@@ -138,7 +138,13 @@
                                         invisible="not is_tem_tag_import_task"/>
                                 </group>
                                 <group string="Ảnh tem/tag" invisible="not is_tem_photo_task">
+                                    <div colspan="2" class="mb-2" invisible="not detail_tem_photo_ids">
+                                        <button name="action_preview_tem_photos" type="object"
+                                            string="Xem ảnh" class="btn-secondary btn-sm"
+                                            icon="fa-eye"/>
+                                    </div>
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
+                                        readonly="state == 'done'"
                                         options="{'accepted_file_extensions': '.png,.jpg,.jpeg,.gif,.webp'}"/>
                                 </group>
                                 <group string="Kiểm tra hình ảnh tem/tag"
