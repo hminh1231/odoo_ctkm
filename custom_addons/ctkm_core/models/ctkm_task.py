@@ -998,6 +998,8 @@ class CtkmTask(models.Model):
             return True
         if key in set(self._ctkm_current_user_visible_store_keys()):
             return True
+        if key in set(self._ctkm_tem_tag_managed_store_keys()):
+            return True
         dept_keys = self._ctkm_user_department_store_keys(self.env.user)
         return any(
             self._ctkm_department_matches_store(dept, key)
@@ -1005,7 +1007,7 @@ class CtkmTask(models.Model):
         )
 
     def _ctkm_tem_tag_managed_store_keys(self):
-        """Mã cửa hàng theo 'Cửa hàng quản lí' của người nhận việc (bước 6)."""
+        """Mã cửa hàng theo 'Cửa hàng quản lí' của người nhận việc (bước 6 và bước 14)."""
         self.ensure_one()
         tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
         if hasattr(tem_tag, 'managed_store_keys_for_user'):
@@ -2489,18 +2491,19 @@ class CtkmTask(models.Model):
 
     def _ctkm_tem_photo_line_values(self):
         """Gom kho Tem/Tag (file tổng) theo (Cửa hàng, Mã vật tư) cho bước Kiểm tra ảnh.
-
-        Nguồn là ``ctkm.inventory.tem.tag`` của chương trình — bước
-        "Đổ BB thay tem/tag (file tổng)" chứa tất cả cửa hàng, nên bảng này
-        hiển thị đúng các Store / Mã vật tư của bước đó.
+        Chỉ lấy các cửa hàng trong 'Cửa hàng quản lí' của người nhận việc (giống bước 6).
         """
         self.ensure_one()
         if not self.is_tem_check_task or not self.program_id:
             return []
         if 'ctkm.inventory.tem.tag' not in self.env:
             return []
+        store_keys = self._ctkm_tem_tag_managed_store_keys()
+        if not store_keys:
+            return []
         rows = self.env['ctkm.inventory.tem.tag'].sudo().search([
             ('program_id', '=', self.program_id.id),
+            ('store_key', 'in', store_keys),
         ])
         by_key = {}
         for rec in rows:
@@ -3215,6 +3218,12 @@ class CtkmTask(models.Model):
             return self._ctkm_notify_reload(
                 _('Đã làm mới'),
                 _('Đã lấy danh sách cửa hàng từ bước In tem, Tag.'),
+            )
+        if task.is_tem_check_task:
+            task.sudo()._ctkm_sync_tem_photo_lines()
+            return self._ctkm_notify_reload(
+                _('Đã làm mới'),
+                _('Đã cập nhật danh sách cửa hàng kiểm tra ảnh theo Cửa hàng quản lí.'),
             )
         if task.is_tem_price_task:
             return self._ctkm_notify_reload(
