@@ -5210,12 +5210,14 @@ class CtkmTask(models.Model):
                     _add(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
             if vt.is_tem_photo_task or vt.is_tem_check_task:
                 for l in vt.tem_photo_check_ids:
+                    # ctkm.task.tem.photo.line has no store_id, only store_key and store (Char)
                     k = l.store_key or _ctkm_normalize_store_key(l.store)
-                    _add(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+                    _add(k, k, l.store or k)
             if vt.is_tem_receive_task or vt.is_tem_replace_task:
                 for l in vt.tem_tag_replace_ids:
+                    # ctkm.task.tem.tag.replace.line has no store_id, only store_key and store (Char)
                     k = l.store_key or _ctkm_normalize_store_key(l.store)
-                    _add(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+                    _add(k, k, l.store or k)
             if vt.is_tem_price_task:
                 for l in vt.price_store_ids:
                     k = l.store_key or _ctkm_normalize_store_key(l.store)
@@ -5319,12 +5321,14 @@ class CtkmTask(models.Model):
                             _add_store(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
                     if t.is_tem_photo_task or t.is_tem_check_task:
                         for l in t.tem_photo_check_ids:
+                            # ctkm.task.tem.photo.line has no store_id
                             k = l.store_key or _ctkm_normalize_store_key(l.store)
-                            _add_store(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+                            _add_store(k, k, l.store or k)
                     if t.is_tem_receive_task or t.is_tem_replace_task:
                         for l in t.tem_tag_replace_ids:
+                            # ctkm.task.tem.tag.replace.line has no store_id
                             k = l.store_key or _ctkm_normalize_store_key(l.store)
-                            _add_store(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+                            _add_store(k, k, l.store or k)
                     if t.is_tem_price_task:
                         for l in t.price_store_ids:
                             k = l.store_key or _ctkm_normalize_store_key(l.store)
@@ -5390,10 +5394,10 @@ class CtkmTask(models.Model):
                         if t.is_tem_handover_task and t.handover_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):
                             is_store_in_prog = True
                             break
-                        if (t.is_tem_receive_task or t.is_tem_replace_task) and t.tem_tag_replace_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):
+                        if (t.is_tem_receive_task or t.is_tem_replace_task) and t.tem_tag_replace_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
                             is_store_in_prog = True
                             break
-                        if (t.is_tem_photo_task or t.is_tem_check_task) and t.tem_photo_check_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):
+                        if (t.is_tem_photo_task or t.is_tem_check_task) and t.tem_photo_check_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
                             is_store_in_prog = True
                             break
                         if t.is_tem_price_task and t.price_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Chương trình khuyến mãi',
-    'version': '4.38',
+    'version': '4.39',
     'category': 'Marketing/Promotions',
     'summary': 'Quản lý chương trình khuyến mãi',
     'description': """
