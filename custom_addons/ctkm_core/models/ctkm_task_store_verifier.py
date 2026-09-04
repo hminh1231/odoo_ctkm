@@ -24,6 +24,7 @@ class CtkmTaskStoreVerifier(models.Model):
     )
     verifier_user_id = fields.Many2one(
         'res.users', related='verifier_id.user_id',
+        store=True, index=True,
         string='Tài khoản Người kiểm soát',
     )
     no_assignee = fields.Boolean(

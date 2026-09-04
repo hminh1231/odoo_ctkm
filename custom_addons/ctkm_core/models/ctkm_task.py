@@ -5133,6 +5133,19 @@ class CtkmTask(models.Model):
                 k = _ctkm_normalize_store_key(emp.ma_bo_phan)
                 _add(k, emp.ma_bo_phan, emp.ma_bo_phan)
 
+        # 1b. Cửa hàng từ hr.store nếu employee/user là Quản lý cửa hàng
+        if 'hr.store' in self.env:
+            StoreObj = self.env['hr.store'].sudo()
+            store_domain = []
+            if 'manager_id' in StoreObj._fields:
+                store_domain = ['|', ('manager_id', 'in', employees.ids), ('manager_id.user_id', '=', user.id)]
+            elif 'user_id' in StoreObj._fields:
+                store_domain = [('user_id', '=', user.id)]
+            if store_domain:
+                for s in StoreObj.search(store_domain):
+                    k = _ctkm_normalize_store_key(s.code or s.name)
+                    _add(k, s.code, s.name)
+
         # 2. LUG Permission: user.assigned_ma_bo_phan_ids
         if 'assigned_ma_bo_phan_ids' in user._fields:
             for s in user.sudo().assigned_ma_bo_phan_ids:
@@ -5142,9 +5155,10 @@ class CtkmTask(models.Model):
         # 3. Cửa hàng từ ctkm.task.store.verifier (Người kiểm soát / Quản lý cửa hàng / Phụ trách)
         if 'ctkm.task.store.verifier' in self.env:
             sv_records = self.env['ctkm.task.store.verifier'].sudo().search([
-                '|', '|',
+                '|', '|', '|',
                     ('verifier_user_id', '=', user.id),
                     ('verifier_id.user_id', '=', user.id),
+                    ('verifier_id', 'in', employees.ids),
                     ('assignee_user_id', '=', user.id),
             ])
             for sv in sv_records:
@@ -5165,19 +5179,56 @@ class CtkmTask(models.Model):
                         s_name = st_rec.name
                 _add(canon, dk, s_name)
 
-        # 5. Cửa hàng từ các công việc mà user là Người kiểm soát (verifier_ids)
+        # 5. Cửa hàng từ các công việc mà user là Người kiểm soát hoặc Người nhận việc
         TaskModel = self.env['ctkm.task'].sudo()
-        verifier_tasks = TaskModel.search([
-            ('verifier_ids.user_id', 'in', [user.id]),
-            ('program_id.state', 'not in', ['draft', 'cancel']),
+        user_tasks = TaskModel.search([
+            ('active', '=', True),
+            ('program_id.active', '=', True),
+            '|', '|', '|', '|',
+                ('user_ids', 'in', [user.id]),
+                ('user_ids.employee_ids.parent_id.user_id', 'in', [user.id]),
+                ('verifier_ids', 'in', employees.ids),
+                ('verifier_ids.user_id', 'in', [user.id]),
+                ('store_verifier_ids.verifier_user_id', 'in', [user.id]),
         ])
-        for vt in verifier_tasks:
+        for vt in user_tasks:
             for sv in vt.store_verifier_ids:
-                k = _ctkm_normalize_store_key(sv.store_key or sv.store_label)
-                _add(k, sv.store_key, sv.store_label or sv.store_key)
+                if (
+                    sv.verifier_user_id.id == user.id
+                    or sv.verifier_id.id in employees.ids
+                    or sv.assignee_user_id.id == user.id
+                    or user.id in vt.verifier_ids.mapped('user_id.id')
+                    or any(e in vt.verifier_ids for e in employees)
+                ):
+                    k = _ctkm_normalize_store_key(sv.store_key or sv.store_label)
+                    _add(k, sv.store_key, sv.store_label or sv.store_key)
             for d in vt.store_dispatch_ids:
                 k = _ctkm_normalize_store_key(d.store_key or d.store_label)
                 _add(k, d.store_key, d.store_label or d.store_key)
+            if vt.is_tem_handover_task:
+                for l in vt.handover_store_ids:
+                    k = l.store_key or _ctkm_normalize_store_key(l.store)
+                    _add(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+            if vt.is_tem_photo_task or vt.is_tem_check_task:
+                for l in vt.tem_photo_check_ids:
+                    k = l.store_key or _ctkm_normalize_store_key(l.store)
+                    _add(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+            if vt.is_tem_receive_task or vt.is_tem_replace_task:
+                for l in vt.tem_tag_replace_ids:
+                    k = l.store_key or _ctkm_normalize_store_key(l.store)
+                    _add(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+            if vt.is_tem_price_task:
+                for l in vt.price_store_ids:
+                    k = l.store_key or _ctkm_normalize_store_key(l.store)
+                    _add(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+            if vt.is_tem_postcheck_task:
+                for l in vt.postcheck_store_ids:
+                    k = l.store_key or _ctkm_normalize_store_key(l.store)
+                    _add(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+            if vt.is_tem_print_task:
+                for l in vt.print_store_ids:
+                    k = l.store_key or _ctkm_normalize_store_key(l.store)
+                    _add(k, l.store_code, l.store_id.name if l.store_id else l.store)
 
         stores.sort(key=lambda s: s.get('name') or s.get('code') or s.get('key'))
         return stores
@@ -5190,29 +5241,35 @@ class CtkmTask(models.Model):
         user = self.env.user
         stores = self._ctkm_get_user_managed_stores(user)
 
+        employees = self.env['hr.employee'].sudo()
+        if 'employee_id' in user._fields and user.employee_id:
+            employees |= user.employee_id.sudo()
+        if user.employee_ids:
+            employees |= user.employee_ids.sudo()
+
         # Tìm các công việc CTKM liên quan đến user (hoặc tất cả nếu là manager/admin)
         Task = self.sudo()
         user_tasks = Task.search([
-            ('program_id.state', 'not in', ['draft', 'cancel']),
-            '|', '|', '|',
+            ('active', '=', True),
+            ('program_id.active', '=', True),
+            '|', '|', '|', '|',
                 ('user_ids', 'in', [user.id]),
                 ('user_ids.employee_ids.parent_id.user_id', 'in', [user.id]),
+                ('verifier_ids', 'in', employees.ids),
                 ('verifier_ids.user_id', 'in', [user.id]),
                 ('store_verifier_ids.verifier_user_id', 'in', [user.id]),
         ])
-        programs = user_tasks.mapped('program_id').filtered(
-            lambda p: p.state not in ('draft', 'cancel')
-        )
+        programs = user_tasks.mapped('program_id').filtered(lambda p: p.active)
 
         if not programs:
             if user.has_group('ctkm_core.group_ctkm_user') or user.has_group('ctkm_core.group_ctkm_manager'):
                 programs = self.env['ctkm.program'].sudo().search([
-                    ('state', 'not in', ['draft', 'cancel'])
+                    ('active', '=', True)
                 ], order='date_begin desc, id desc', limit=20)
             elif stores:
                 store_keys_set = {s['key'] for s in stores}
                 candidates = self.env['ctkm.program'].sudo().search([
-                    ('state', 'not in', ['draft', 'cancel'])
+                    ('active', '=', True)
                 ], order='date_begin desc, id desc', limit=20)
                 matched_programs = self.env['ctkm.program']
                 for cand in candidates:
@@ -5258,6 +5315,26 @@ class CtkmTask(models.Model):
                     for sv in t.sudo().store_verifier_ids:
                         k = sv.store_key
                         _add_store(k, k, sv.store_label or k)
+                    if t.is_tem_handover_task:
+                        for l in t.handover_store_ids:
+                            k = l.store_key or _ctkm_normalize_store_key(l.store)
+                            _add_store(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+                    if t.is_tem_photo_task or t.is_tem_check_task:
+                        for l in t.tem_photo_check_ids:
+                            k = l.store_key or _ctkm_normalize_store_key(l.store)
+                            _add_store(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+                    if t.is_tem_receive_task or t.is_tem_replace_task:
+                        for l in t.tem_tag_replace_ids:
+                            k = l.store_key or _ctkm_normalize_store_key(l.store)
+                            _add_store(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+                    if t.is_tem_price_task:
+                        for l in t.price_store_ids:
+                            k = l.store_key or _ctkm_normalize_store_key(l.store)
+                            _add_store(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
+                    if t.is_tem_postcheck_task:
+                        for l in t.postcheck_store_ids:
+                            k = l.store_key or _ctkm_normalize_store_key(l.store)
+                            _add_store(k, l.store_id.code if l.store_id else k, l.store_id.name if l.store_id else l.store)
                     if t.is_tem_print_task:
                         for pl in t.print_store_ids:
                             k = pl.store_key or _ctkm_normalize_store_key(pl.store)
@@ -5312,21 +5389,30 @@ class CtkmTask(models.Model):
                         if t.is_tem_print_task and t.print_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
                             is_store_in_prog = True
                             break
-                        if t.is_tem_handover_task and t.handover_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                        if t.is_tem_handover_task and t.handover_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):
                             is_store_in_prog = True
                             break
-                        if (t.is_tem_receive_task or t.is_tem_replace_task) and t.tem_tag_replace_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                        if (t.is_tem_receive_task or t.is_tem_replace_task) and t.tem_tag_replace_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):
                             is_store_in_prog = True
                             break
-                        if (t.is_tem_photo_task or t.is_tem_check_task) and t.tem_photo_check_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                        if (t.is_tem_photo_task or t.is_tem_check_task) and t.tem_photo_check_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):
                             is_store_in_prog = True
                             break
-                        if t.is_tem_price_task and t.price_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                        if t.is_tem_price_task and t.price_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):
                             is_store_in_prog = True
                             break
-                        if t.is_tem_postcheck_task and t.postcheck_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                        if t.is_tem_postcheck_task and t.postcheck_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store, l.store_id.name if l.store_id else False, l.store_id.code if l.store_id else False)):
                             is_store_in_prog = True
                             break
+
+                prog_has_any_store_config = bool(stores_map) or any(
+                    bool(t.store_dispatch_ids or t.store_verifier_ids or t.print_store_ids or
+                         t.handover_store_ids or t.tem_tag_replace_ids or t.tem_photo_check_ids or
+                         t.price_store_ids or t.postcheck_store_ids)
+                    for t in tasks
+                )
+                if not is_store_in_prog and not prog_has_any_store_config:
+                    is_store_in_prog = True
 
                 if not is_store_in_prog:
                     cells[st_key] = None
@@ -5334,7 +5420,10 @@ class CtkmTask(models.Model):
 
                 # 2. Kiểm tra nếu cả chương trình đang ở các bước chuẩn bị (sequence < 9)
                 has_started_dispatch = any(
-                    t._ctkm_is_store_dispatch_step() and t.store_dispatch_ids
+                    t._ctkm_is_store_dispatch_step() and (
+                        t.store_dispatch_ids
+                        or t.state in ('progress', 'waiting_confirm', 'done')
+                    )
                     for t in tasks
                 )
                 early_tasks = [t for t in tasks if t.checklist_line_id.sequence and t.checklist_line_id.sequence < 9 and t.state != 'done']
@@ -5465,15 +5554,16 @@ class CtkmTask(models.Model):
                         'badge_class': 'success',
                     }
 
-            program_rows.append({
-                'id': program.id,
-                'name': program.name,
-                'code': program.notify_code or '',
-                'cells': cells,
-            })
+            if any(c is not None for c in cells.values()):
+                program_rows.append({
+                    'id': program.id,
+                    'name': program.name,
+                    'code': program.notify_code or '',
+                    'cells': cells,
+                })
 
         return {
-            'has_data': True,
+            'has_data': bool(program_rows),
             'stores': stores,
             'programs': program_rows,
         }
