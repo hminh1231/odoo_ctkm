@@ -594,13 +594,21 @@ class CtkmTask(models.Model):
                 ('program_id', '=', task.program_id.id),
             ]).mapped('store_key'))
             inv_stores.discard(False)
+            allowed = task._ctkm_upstream_sent_store_keys()
+            if allowed is not None and not allowed:
+                continue
+            if allowed is not None:
+                inv_stores = {
+                    key for key in inv_stores
+                    if task._ctkm_store_in_allowed(allowed, key)
+                }
             line_stores = set(
                 self.env['ctkm.task.tem.tag.replace.line'].sudo().search([
                     ('task_id', '=', task.id),
                 ]).mapped('store_key')
             )
             line_stores.discard(False)
-            if inv_stores and line_stores != inv_stores:
+            if inv_stores != line_stores:
                 task.sudo().with_context(
                     ctkm_skip_receive_resync=True,
                 )._ctkm_sync_tem_tag_lines()
@@ -1747,11 +1755,14 @@ class CtkmTask(models.Model):
             domain = domain + [('store_key', 'in', store_keys)]
         groups = tem_tag._read_group(
             domain,
-            ['material_code', 'store', 'tem_tag'],
+            ['material_code', 'store', 'store_key', 'tem_tag'],
             ['quantity:sum', 'replaced_quantity:sum', 'date:max', 'ctkm_name:max'],
         )
         by_key = {}
-        for material_code, store, kind_value, quantity, replaced_quantity, last_date, ctkm_name in groups:
+        for (
+            material_code, store, store_key, kind_value, quantity,
+            replaced_quantity, last_date, ctkm_name,
+        ) in groups:
             kinds = classify_tem_tag_kinds(kind_value)
             is_tag = bool(kinds == {'tag'})
             kind = 'tag' if is_tag else 'tem'
@@ -1759,6 +1770,7 @@ class CtkmTask(models.Model):
             rec = by_key.setdefault(key, {
                 'material_code': material_code or False,
                 'store': store or False,
+                'store_key': store_key or False,
                 'date': last_date or False,
                 'total_quantity': 0.0,
                 'replaced_quantity': 0.0,
@@ -1766,6 +1778,8 @@ class CtkmTask(models.Model):
                 'is_tag': is_tag,
                 'ctkm_name': ctkm_name or False,
             })
+            if store_key and not rec.get('store_key'):
+                rec['store_key'] = store_key
             rec['total_quantity'] += quantity or 0.0
             rec['replaced_quantity'] += replaced_quantity or 0.0
             if last_date and (not rec['date'] or last_date > rec['date']):
@@ -1776,6 +1790,18 @@ class CtkmTask(models.Model):
             vals['store'] or '',
             0 if vals['is_tem'] else 1,
         ))
+        if self.is_tem_receive_task or self.is_tem_replace_task:
+            allowed = self._ctkm_upstream_sent_store_keys()
+            if allowed is not None:
+                values = [
+                    vals for vals in values
+                    if self._ctkm_store_in_allowed(
+                        allowed, vals.get('store'), vals.get('store_key'),
+                    )
+                ]
+        # store_key trên dòng replace là field computed — chỉ dùng để lọc.
+        for vals in values:
+            vals.pop('store_key', None)
         return values
 
     def _ctkm_sync_tem_tag_lines(self):
@@ -1784,7 +1810,8 @@ class CtkmTask(models.Model):
             ctkm_tem_tag_line_sync=True,
         )
         programs = self.mapped('program_id')
-        if programs:
+        dispatch_push = self.env.context.get('ctkm_dispatch_push')
+        if programs and not dispatch_push:
             print_tasks = self.sudo().search([
                 ('program_id', 'in', programs.ids),
                 ('is_tem_print_task', '=', True),
@@ -1810,12 +1837,22 @@ class CtkmTask(models.Model):
                 lambda t: t.is_tem_photo_task or t.is_tem_check_task
             )
             photo_tasks._ctkm_sync_tem_photo_lines()
-        else:
+        elif not programs:
             self.sudo().filtered(
                 lambda t: t.is_tem_photo_task or t.is_tem_check_task
             )._ctkm_sync_tem_photo_lines()
         for task in self:
+            if task.is_tem_receive_task or task.is_tem_replace_task:
+                allowed = task._ctkm_upstream_sent_store_keys()
+                if allowed is not None and not allowed:
+                    continue
             values = task._ctkm_tem_tag_line_values()
+            if (
+                not values
+                and (task.is_tem_receive_task or task.is_tem_replace_task)
+                and task.tem_tag_replace_ids
+            ):
+                continue
             existing = {}
             obsolete = Line.browse()
             for line in task.sudo().tem_tag_replace_ids:
@@ -1851,7 +1888,7 @@ class CtkmTask(models.Model):
             obsolete |= Line.browse([line.id for line in existing.values()])
             if obsolete:
                 obsolete.unlink()
-        if programs:
+        if programs and not dispatch_push:
             self.sudo()._ctkm_sync_price_lines_for_programs(programs)
 
     def _ctkm_tem_design_line_values(self):
@@ -2372,6 +2409,17 @@ class CtkmTask(models.Model):
                 continue
             print_task = task._ctkm_source_print_task()
             sources = print_task.sudo().print_store_ids
+            allowed = task._ctkm_upstream_sent_store_keys()
+            if allowed is not None and not allowed:
+                continue
+            if allowed is not None:
+                sources = sources.filtered(
+                    lambda line: task._ctkm_store_in_allowed(
+                        allowed,
+                        task._ctkm_print_line_store_key(line),
+                        line.store,
+                    )
+                )
             existing = {}
             obsolete = Line.browse()
             for line in Line.search([('task_id', '=', task.id)]):
@@ -2414,11 +2462,13 @@ class CtkmTask(models.Model):
                 if not line:
                     to_create.append(dict(vals, task_id=task.id))
                     continue
-                changes = {
-                    field: value
-                    for field, value in vals.items()
-                    if line[field] != value
-                }
+                changes = {}
+                for field, value in vals.items():
+                    current = line[field]
+                    if line._fields[field].type == 'many2one':
+                        current = current.id if current else False
+                    if current != value:
+                        changes[field] = value
                 if changes:
                     line.write(changes)
             leftover = Line.browse([line.id for line in existing.values()])
@@ -2438,6 +2488,17 @@ class CtkmTask(models.Model):
                 continue
             print_task = task._ctkm_source_print_task()
             sources = print_task.sudo().print_store_ids
+            allowed = task._ctkm_upstream_sent_store_keys()
+            if allowed is not None and not allowed:
+                continue
+            if allowed is not None:
+                sources = sources.filtered(
+                    lambda line: task._ctkm_store_in_allowed(
+                        allowed,
+                        task._ctkm_print_line_store_key(line),
+                        line.store,
+                    )
+                )
             confirm_index = task._ctkm_build_previous_confirm_index()
             existing = {}
             obsolete = Line.browse()
@@ -2559,6 +2620,14 @@ class CtkmTask(models.Model):
             by_key[key]['total_quantity'] += rec.quantity or 0.0
         values = list(by_key.values())
         values.sort(key=lambda vals: (vals['store'] or '', vals['material_code'] or ''))
+        allowed = self._ctkm_upstream_sent_store_keys()
+        if allowed is not None:
+            values = [
+                vals for vals in values
+                if self._ctkm_store_in_allowed(
+                    allowed, vals.get('store_key'), vals.get('store'),
+                )
+            ]
         return values
 
     def _ctkm_sync_tem_photo_lines(self):
@@ -2568,6 +2637,9 @@ class CtkmTask(models.Model):
         )
         for task in self:
             if not task._ctkm_is_photo_or_check_task():
+                continue
+            allowed = task._ctkm_upstream_sent_store_keys()
+            if allowed is not None and not allowed:
                 continue
             values = task._ctkm_tem_photo_line_values()
             existing = {}
@@ -3522,6 +3594,23 @@ class CtkmTask(models.Model):
         self.ensure_one()
         worker_name = self.user_ids[:1].name or ''
         program_name = self.program_name or self.name or ''
+        if self._ctkm_is_store_dispatch_step():
+            pending = self.sudo().store_dispatch_ids.filtered(
+                lambda rec: rec.state == 'pending'
+            ).sorted('id')[:1]
+            store_label = pending.store_label or pending.store_key or ''
+            lines = [
+                Markup('<b>Yêu cầu xác nhận gửi dữ liệu cửa hàng CTKM</b>'),
+                Markup('Nhân viên <b>%s</b> đã bấm Gửi dữ liệu.') % escape(worker_name),
+                Markup('Cửa hàng: <b>%s</b>') % escape(store_label),
+                Markup('Công việc: <b>%s</b>') % escape(program_name),
+                Markup(
+                    'Vui lòng vào form và bấm <b>Xác nhận quản lý</b> '
+                    'cho cửa hàng này.'
+                ),
+                self._ctkm_manager_confirm_button_markup(),
+            ]
+            return Markup('<br/>').join(lines)
         lines = [
             Markup('<b>Yêu cầu xác nhận hoàn thành công việc CTKM</b>'),
             Markup('Nhân viên <b>%s</b> đã bấm Hoàn thành.') % escape(worker_name),
@@ -3659,14 +3748,14 @@ class CtkmTask(models.Model):
         program_name = self.program_name or self.program_id.name or self.name or ''
         if line.no_assignee:
             store_line = Markup(
-                'Cửa hàng <b>%s</b> đã bấm Hoàn thành.'
+                'Cửa hàng <b>%s</b> đã bấm Gửi dữ liệu.'
             ) % escape(store_label)
         else:
             worker = line.assignee_user_id
             worker_name = worker.name or ''
             store_line = Markup(
                 'Cửa hàng <b>%s</b>: Nhân viên <b>%s</b> (Phụ trách) '
-                'đã bấm Hoàn thành.'
+                'đã bấm Gửi dữ liệu.'
             ) % (escape(store_label), escape(worker_name))
         lines = [
             Markup('<b>Yêu cầu xác nhận hoàn thành công việc CTKM</b>'),
@@ -3680,11 +3769,11 @@ class CtkmTask(models.Model):
         ]
         return Markup('<br/>').join(lines)
 
-    def _notify_store_verifiers(self):
+    def _notify_store_verifiers(self, store_keys=None):
         """Gửi tin OdooBot CTKM tới từng Quản lý cửa hàng (theo cửa hàng).
 
         Mỗi Quản lý cửa hàng chỉ nhận thông báo của cửa hàng mình, ghi rõ
-        đúng Phụ trách (Cửa hàng trưởng) của cửa hàng đó đã bấm Hoàn thành
+        đúng Phụ trách (Cửa hàng trưởng) của cửa hàng đó đã bấm Gửi dữ liệu
         (không lấy nhân viên đầu tiên của toàn công việc).
         """
         self.ensure_one()
@@ -3692,7 +3781,12 @@ class CtkmTask(models.Model):
             return self.env['res.users']
         recipients = self.env['res.users']
         notified_names = []
+        allowed = set(store_keys) if store_keys else None
         for line in self.store_verifier_ids:
+            if allowed is not None and not self._ctkm_store_in_allowed(
+                allowed, line.store_key, line.store_label,
+            ):
+                continue
             user = line.verifier_user_id
             if not user or line.verified or user.share or not user.active:
                 continue
@@ -4963,6 +5057,7 @@ class CtkmTask(models.Model):
                 'ctkm_import_task_id': self.id,
             },
         }
+
 
     @api.model
     def _ctkm_get_user_managed_stores(self, user=None):

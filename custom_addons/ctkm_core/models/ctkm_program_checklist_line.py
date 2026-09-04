@@ -39,7 +39,7 @@ class CtkmProgramChecklistLine(models.Model):
         string='Tiến độ %',
         compute='_compute_work_percent',
         help='Phần trăm hoàn thành để hiện thanh loading. '
-             'Bước 10–15 theo cửa hàng và SL tem/tag từ file bước 4.',
+             'Bước 9 theo cửa hàng đã in; bước 10–15 theo cửa hàng đã tick.',
     )
     is_done = fields.Boolean(
         string='Xong',

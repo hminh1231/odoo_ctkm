@@ -104,10 +104,16 @@ class CtkmProgramDiscussNotify(models.Model):
             lines.append(Markup("Mô tả CTKM: %s") % escape(description))
         if checklist_line.note:
             lines.append(Markup("Ghi chú bước: %s") % escape(checklist_line.note))
-        lines.append(Markup(
-            "Vui lòng xử lý, bấm <b>Hoàn thành</b>, chờ xác nhận quản lý, "
-            "rồi <b>Chuyển tiếp</b> để giao bước sau."
-        ))
+        if task and task._ctkm_is_store_dispatch_step():
+            lines.append(Markup(
+                "Cứ xong cửa hàng, bấm <b>Gửi dữ liệu</b> (quản lý xác nhận từng lần nếu có). "
+                "Khi tiến độ 100%, bấm <b>Hoàn thành</b> rồi <b>Chuyển tiếp</b>."
+            ))
+        else:
+            lines.append(Markup(
+                "Vui lòng xử lý, bấm <b>Hoàn thành</b>, chờ xác nhận quản lý, "
+                "rồi <b>Chuyển tiếp</b> để giao bước sau."
+            ))
         if task:
             lines.append(self._ctkm_notify_task_detail_button_markup(task))
         else:

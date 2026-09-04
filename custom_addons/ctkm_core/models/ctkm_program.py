@@ -128,8 +128,8 @@ class CtkmProgram(models.Model):
     stage_progress_json = fields.Json(
         string='Tiến độ từng giai đoạn',
         compute='_compute_stage_progress_json',
-        help='Map stage_id → {state, percent}. Bước 10–15 có percent (0–100) '
-             'theo cửa hàng và SL tem/tag từ file bước 4.',
+        help='Map stage_id → {state, percent}. Bước 9 theo cửa hàng đã in; '
+             'bước 10–15 theo việc đã tick trên từng cửa hàng.',
     )
     checklist_current_stage_id = fields.Many2one(
         'ctkm.stage',
@@ -268,7 +268,10 @@ class CtkmProgram(models.Model):
         'task_ids.price_store_ids.not_replaced',
         'task_ids.price_store_ids.price_applied',
         'task_ids.price_store_ids.store_key',
+        'task_ids.store_dispatch_ids.state',
+        'task_ids.store_dispatch_ids.store_key',
         'task_ids.is_tem_print_task',
+        'task_ids.print_store_ids.done',
         'task_ids.print_store_ids.tem_quantity',
         'task_ids.print_store_ids.tag_quantity',
         'task_ids.print_store_ids.store_key',
@@ -310,7 +313,7 @@ class CtkmProgram(models.Model):
                 progress_stage or todo_stage or last_stage
             )
 
-    _CTKM_STORE_PERCENT_SEQUENCES = frozenset(range(10, 16))
+    _CTKM_STORE_PERCENT_SEQUENCES = frozenset(range(9, 16))
 
     def _ctkm_step4_store_qty_map(self):
         """Cửa hàng + SL tem/tag từ file bước 4 (kho Tem/Tag), fallback bước In.
@@ -427,17 +430,70 @@ class CtkmProgram(models.Model):
         return 0.5 * tick + 0.5 * qty
 
     def _ctkm_stage_work_percent(self, stage, checklist_line, stores_map, tasks=None):
-        """% công việc bước 10–15; bước khác trả về None."""
+        """% công việc bước 9 (đã in) và 10–15 (đã tick trên bảng cửa hàng)."""
         sequence = stage.sequence or checklist_line.sequence or 0
         if sequence not in self._CTKM_STORE_PERCENT_SEQUENCES:
             return None
         if checklist_line.state == 'done':
             return 100
+        tasks = tasks if tasks is not None else self.sudo().task_ids
+        is_print_step = sequence == 9 or bool(
+            checklist_line
+            and tasks.filtered(
+                lambda t: t.is_tem_print_task and t.checklist_line_id == checklist_line
+            )
+        )
+        if is_print_step:
+            return self._ctkm_step9_work_percent(tasks)
         if not stores_map:
             return 0
-        tasks = tasks if tasks is not None else self.sudo().task_ids
         ratios = self._ctkm_stage_store_ratios(sequence, stores_map, tasks)
         return self._ctkm_weighted_store_percent(stores_map, ratios)
+
+    def _ctkm_step9_work_percent(self, tasks):
+        """Bước In tem/Tag: 50% số cửa hàng đã tick Đã in + 50% SL tem/tag."""
+        lines = tasks.filtered('is_tem_print_task').print_store_ids
+        if not lines:
+            return 0
+        n = len(lines)
+        store_part = sum(1.0 for line in lines if line.done) / n
+        total_qty = sum(
+            (line.tem_quantity or 0.0) + (line.tag_quantity or 0.0) for line in lines
+        )
+        if total_qty > 0:
+            qty_part = sum(
+                (line.tem_quantity or 0.0) + (line.tag_quantity or 0.0)
+                for line in lines if line.done
+            ) / total_qty
+        else:
+            qty_part = store_part
+        return int(round(100.0 * (0.5 * store_part + 0.5 * qty_part)))
+
+    def _ctkm_dispatch_store_ratios(self, sequence, stores_map, tasks):
+        """Tiến độ bước 10–15: 1.0 khi cửa hàng đã Gửi dữ liệu và được xác nhận."""
+        empty = {key: 0.0 for key in stores_map}
+        flag_by_rank = {
+            10: 'is_tem_handover_task',
+            11: 'is_tem_receive_task',
+            12: 'is_tem_replace_task',
+            13: 'is_tem_photo_task',
+            14: 'is_tem_check_task',
+            15: 'is_tem_price_task',
+        }
+        flag = flag_by_rank.get(sequence)
+        if not flag:
+            return empty
+        dispatch_tasks = tasks.filtered(flag)
+        sent = set()
+        Task = self.env['ctkm.task']
+        for task in dispatch_tasks:
+            sent.update(task._ctkm_dispatch_alias_set(('sent',)))
+        return {
+            key: 1.0 if Task._ctkm_store_in_allowed(
+                sent, key, *(stores_map[key].get('keys') or []),
+            ) else 0.0
+            for key in stores_map
+        }
 
     def _ctkm_stage_store_ratios(self, sequence, stores_map, tasks):
         """Tỷ lệ hoàn thành 0–1 của từng cửa hàng, theo việc thật của bước."""

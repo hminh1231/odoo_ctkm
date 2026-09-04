@@ -279,6 +279,12 @@ class CtkmTaskTemPrintLine(models.Model):
                 fields.Date.context_today(self) if vals.get('done') else False
             )
         res = super().write(vals)
+        if 'done' in vals:
+            programs = self.mapped('task_id.program_id')
+            if programs:
+                programs.invalidate_recordset([
+                    'stage_progress_json', 'checklist_current_stage_id',
+                ])
         if 'store_id' in vals and not internal:
             for line in self:
                 if not line.store_id:

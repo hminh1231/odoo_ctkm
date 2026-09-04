@@ -45,10 +45,21 @@ class CtkmTaskStoreVerifier(models.Model):
              'cửa hàng (tránh gửi lặp khi Cửa hàng trưởng tick nhiều dòng).',
     )
 
-    @api.depends('task_id.state', 'task_id.completion_ids',
-                 'task_id.completion_ids.done', 'assignee_user_id', 'no_assignee')
+    @api.depends(
+        'task_id.state', 'task_id.completion_ids',
+        'task_id.completion_ids.done', 'assignee_user_id', 'no_assignee',
+        'task_id.store_dispatch_ids', 'task_id.store_dispatch_ids.state',
+        'task_id.store_dispatch_ids.store_key', 'store_key', 'store_label',
+    )
     def _compute_assignee_completed(self):
         for line in self:
+            task = line.task_id
+            if task and task._ctkm_is_store_dispatch_step():
+                pending = task._ctkm_dispatch_alias_set(('pending',))
+                line.assignee_completed = task._ctkm_store_in_allowed(
+                    pending, line.store_key, line.store_label,
+                )
+                continue
             if line.no_assignee:
                 # Không có Phụ trách riêng: xem công việc đã bấm Hoàn thành
                 # (chờ xác nhận / đã xong) là đủ điều kiện để Quản lý cửa hàng
@@ -67,10 +78,13 @@ class CtkmTaskStoreVerifier(models.Model):
     def _ctkm_verify(self, user):
         """Xác nhận phần cửa hàng: chỉ Quản lý cửa hàng ĐÚNG store mới xác nhận được."""
         today = fields.Date.context_today(self)
+        is_admin = user.has_group('ctkm_core.group_ctkm_manager')
         for line in self:
             if line.verified or not line.assignee_completed:
                 continue
-            if not line.verifier_user_id or line.verifier_user_id != user:
+            if not line.verifier_user_id or (
+                line.verifier_user_id != user and not is_admin
+            ):
                 continue
             line.write({
                 'verified': True,

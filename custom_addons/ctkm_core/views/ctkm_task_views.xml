@@ -40,12 +40,17 @@
                     <field name="manager_confirmed" invisible="1"/>
                     <field name="state" invisible="1"/>
                     <field name="forwarded" invisible="1"/>
+                    <field name="is_store_dispatch_step" invisible="1"/>
+                    <field name="store_dispatch_all_sent" invisible="1"/>
+                    <button name="action_send_store_data" type="object"
+                        string="Gửi dữ liệu" class="btn-primary" icon="fa-paper-plane"
+                        invisible="not is_task_assignee or state == 'done' or not is_store_dispatch_step or store_dispatch_all_sent"/>
                     <button name="action_mark_done" type="object"
                         string="Hoàn thành" class="btn-primary" icon="fa-check"
-                        invisible="not is_task_assignee or manager_confirmed or state == 'done'"/>
+                        invisible="not is_task_assignee or state == 'done' or (is_store_dispatch_step and not store_dispatch_all_sent) or (not is_store_dispatch_step and manager_confirmed)"/>
                     <button name="action_manager_confirm" type="object"
                         string="Xác nhận quản lý" class="btn-primary" icon="fa-check-square-o"
-                        invisible="not can_confirm_as_manager or state != 'waiting_confirm' or manager_confirmed or not checklist_need_manager_confirm"/>
+                        invisible="not can_confirm_as_manager or state != 'waiting_confirm' or manager_confirmed or (not checklist_need_manager_confirm and not is_store_dispatch_step)"/>
                     <button name="action_advance_stage" type="object"
                         string="Chuyển tiếp" class="btn-secondary" icon="fa-forward"
                         invisible="state != 'done' or forwarded or (checklist_need_manager_confirm and not manager_confirmed)"/>
@@ -67,6 +72,7 @@
                     <field name="is_tem_receive_task" invisible="1"/>
                     <field name="is_tem_postcheck_task" invisible="1"/>
                     <field name="is_tem_price_task" invisible="1"/>
+                    <field name="is_store_dispatch_step" invisible="1"/>
                     <field name="show_work_processing_tab" invisible="1"/>
                     <field name="program_kanban_state" widget="statusbar"
                         class="ms-auto float-end"/>
@@ -632,10 +638,14 @@
                                             widget="many2many_tags"
                                             invisible="not verifier_ids"/>
                                         <field name="manager_confirmed"
-                                            readonly="state != 'waiting_confirm' or not can_confirm_as_manager"/>
+                                            readonly="state != 'waiting_confirm' or not can_confirm_as_manager or is_store_dispatch_step"/>
                                     <div colspan="2" class="text-muted"
-                                        invisible="state == 'waiting_confirm'">
+                                        invisible="state == 'waiting_confirm' or is_store_dispatch_step">
                                         Chỉ xác nhận được sau khi công việc đã bấm Hoàn thành.
+                                    </div>
+                                    <div colspan="2" class="text-muted"
+                                        invisible="not is_store_dispatch_step or state == 'waiting_confirm'">
+                                        Bước 10–15: xác nhận từng lần Gửi dữ liệu (mỗi cửa hàng một lần).
                                     </div>
                                         <div colspan="2" class="text-muted"
                                             invisible="state != 'waiting_confirm' or can_confirm_as_manager or not verifier_ids">
@@ -646,8 +656,12 @@
                                             Chỉ quản lý trực tiếp (theo organization chart) mới được tick xác nhận.
                                         </div>
                                     <div colspan="2" class="text-muted"
-                                        invisible="state != 'waiting_confirm' or not can_confirm_as_manager or manager_confirmed">
+                                        invisible="state != 'waiting_confirm' or not can_confirm_as_manager or manager_confirmed or is_store_dispatch_step">
                                         Bấm nút <b>Xác nhận quản lý</b> trên đầu form, hoặc tick ô bên trên.
+                                    </div>
+                                    <div colspan="2" class="text-muted"
+                                        invisible="state != 'waiting_confirm' or not can_confirm_as_manager or manager_confirmed or not is_store_dispatch_step">
+                                        Bấm nút <b>Xác nhận quản lý</b> trên đầu form (mỗi cửa hàng một lần).
                                     </div>
                                 </group>
                             </group>
@@ -723,7 +737,8 @@
             '&amp;',
                 ('state', '=', 'waiting_confirm'),
                 ('store_verifier_ids.verifier_user_id', 'in', [uid])]</field>
-        <field name="context">{'search_default_group_program_id': 1}</field>
+        <field name="context">{'search_default_is_current_stage_task': 1,
+            'search_default_group_program_id': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Chưa có công việc nào.
