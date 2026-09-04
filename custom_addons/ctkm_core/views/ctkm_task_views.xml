@@ -7,7 +7,9 @@
         <field name="model">ctkm.task</field>
         <field name="arch" type="xml">
             <list string="Công việc của tôi" create="0" delete="0"
-                class="o_ctkm_task_list">
+                class="o_ctkm_task_list"
+                js_class="ctkm_task_list_with_matrix"
+                default_order="checklist_line_id, id">
                 <field name="process_date"/>
                 <field name="program_id" string="Tên CTKM"
                     options="{'no_create': True, 'no_open': False}"/>
@@ -721,8 +723,7 @@
             '&amp;',
                 ('state', '=', 'waiting_confirm'),
                 ('store_verifier_ids.verifier_user_id', 'in', [uid])]</field>
-        <field name="context">{'search_default_is_current_stage_task': 1,
-            'search_default_group_program_id': 1}</field>
+        <field name="context">{'search_default_group_program_id': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Chưa có công việc nào.

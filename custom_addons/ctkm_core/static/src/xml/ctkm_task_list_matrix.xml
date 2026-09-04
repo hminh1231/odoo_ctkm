@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- Primary inheritance of web.ListView to inject Store Progress Matrix -->
+    <t t-name="ctkm_core.CtkmTaskListMatrixView" t-inherit="web.ListView" t-inherit-mode="primary">
+        <xpath expr="//t[@t-component='props.Renderer']" position="before">
+            <CtkmStoreProgressMatrix onFilterProgram.bind="onFilterProgram"/>
+        </xpath>
+    </t>
+
+    <!-- Component template: CtkmStoreProgressMatrix -->
+    <t t-name="ctkm_core.CtkmStoreProgressMatrix">
+        <div class="o_ctkm_matrix_panel border bg-view rounded p-2 mb-2 shadow-sm">
+            <!-- Header bar -->
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="fw-bold text-uppercase fs-6 text-primary">Tiến độ theo cửa hàng</span>
+                    <t t-if="state.hasData">
+                        <span class="badge bg-light text-dark border">
+                            <t t-esc="state.stores.length"/> Cửa hàng
+                        </span>
+                        <span class="badge bg-light text-dark border">
+                            <t t-esc="state.programs.length"/> CTKM
+                        </span>
+                    </t>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            t-on-click="loadMatrix"
+                            t-att-disabled="state.loading">
+                        Làm mới
+                    </button>
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            t-on-click="toggleCollapse">
+                        <t t-if="state.collapsed">Mở rộng</t>
+                        <t t-else="">Thu gọn</t>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quick Action Bar for selected cell -->
+            <t t-if="state.selectedCell and !state.collapsed">
+                <div class="alert alert-info py-1 px-2 mb-2 d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2 text-truncate small">
+                        <span class="fw-bold"><t t-esc="state.selectedCell.programName"/></span>
+                        <span>|</span>
+                        <span>Cửa hàng: <b><t t-esc="state.selectedCell.storeName"/></b></span>
+                        <span>|</span>
+                        <span>Bước: <b><t t-esc="state.selectedCell.stage_name"/></b> (<t t-esc="state.selectedCell.state_label"/>)</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-1">
+                        <button type="button"
+                                class="btn btn-xs btn-primary py-0"
+                                t-on-click="openSelectedTask"
+                                t-if="state.selectedCell.task_id">
+                            Mở công việc
+                        </button>
+                        <button type="button"
+                                class="btn btn-xs btn-outline-secondary py-0"
+                                t-on-click="closeSelectedCell">
+                            Đóng
+                        </button>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Matrix table body -->
+            <t t-if="!state.collapsed">
+                <t t-if="state.loading">
+                    <div class="text-muted small py-3 text-center">
+                        Đang tải dữ liệu tiến độ cửa hàng...
+                    </div>
+                </t>
+                <t t-elif="!state.hasData or state.programs.length === 0">
+                    <div class="text-muted small py-3 text-center">
+                        Chưa có dữ liệu cửa hàng cần theo dõi.
+                    </div>
+                </t>
+                <t t-else="">
+                    <div class="o_ctkm_matrix_table_wrapper table-responsive">
+                        <table class="table table-sm table-bordered align-middle o_ctkm_matrix_table mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th class="o_ctkm_col_program sticky-left bg-light">Tên CTKM</th>
+                                    <th class="o_ctkm_col_code bg-light text-nowrap">Mã TB</th>
+                                    <t t-foreach="state.stores" t-as="store" t-key="store.key">
+                                        <th class="text-center o_ctkm_col_store bg-light text-nowrap" t-att-title="store.name">
+                                            <t t-esc="store.name || store.code"/>
+                                        </th>
+                                    </t>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="state.programs" t-as="prog" t-key="prog.id">
+                                    <tr>
+                                        <td class="o_ctkm_col_program sticky-left bg-view fw-bold text-truncate" t-att-title="prog.name">
+                                            <t t-esc="prog.name"/>
+                                        </td>
+                                        <td class="o_ctkm_col_code text-muted text-nowrap small">
+                                            <t t-esc="prog.code || '-'"/>
+                                        </td>
+                                        <t t-foreach="state.stores" t-as="store" t-key="store.key">
+                                            <t t-set="cell" t-value="prog.cells[store.key]"/>
+                                            <td class="text-center o_ctkm_cell"
+                                                t-att-class="{
+                                                    'o_ctkm_cell_clickable': cell,
+                                                    'table-active': state.selectedCell and state.selectedCell.programId === prog.id and state.selectedCell.key === store.key
+                                                }"
+                                                t-on-click="() => this.onCellClick(prog, store, cell)">
+                                                <t t-if="cell">
+                                                    <span t-attf-class="badge bg-{{cell.badge_class}} text-wrap o_ctkm_badge"
+                                                          t-att-title="cell.stage_name + ': ' + cell.state_label">
+                                                        <t t-esc="cell.stage_name"/> - <t t-esc="cell.state_label"/>
+                                                    </span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="text-muted small">—</span>
+                                                </t>
+                                            </td>
+                                        </t>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                    </div>
+                </t>
+            </t>
+        </div>
+    </t>
+
+</templates>
