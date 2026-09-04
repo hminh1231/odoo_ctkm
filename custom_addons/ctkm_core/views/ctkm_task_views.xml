@@ -65,6 +65,7 @@
                     <field name="is_tem_tag_import_task" invisible="1"/>
                     <field name="is_tem_photo_task" invisible="1"/>
                     <field name="is_tem_check_task" invisible="1"/>
+                    <field name="current_user_visible_store_keys" invisible="1"/>
                     <field name="is_tem_replace_task" invisible="1"/>
                     <field name="is_tem_bb_replace_task" invisible="1"/>
                     <field name="is_tem_print_task" invisible="1"/>
@@ -152,6 +153,7 @@
                                         cửa hàng và mã vật tư lấy từ file bước
                                         <b>Đổ BB thay tem/tag (file tổng)</b>.
                                         Xong 1 cửa hàng (mọi mã) = một phần bằng nhau trên thanh trạng thái.
+                                        Chỉ hiện cửa hàng khớp mã bộ phận trên hồ sơ của bạn.
                                     </div>
                                     <field name="detail_tem_photo_ids" widget="many2many_binary" nolabel="1" colspan="2"
                                         readonly="state == 'done'"
@@ -167,7 +169,8 @@
                                             icon="fa-refresh"/>
                                     </div>
                                     <field name="tem_photo_check_ids" nolabel="1" colspan="2"
-                                        widget="one2many" class="o_ctkm_print_store_list">
+                                        widget="one2many" class="o_ctkm_print_store_list"
+                                        domain="[('store_key', 'in', current_user_visible_store_keys)]">
                                         <list editable="bottom" create="0" delete="0"
                                             default_order="store, material_code">
                                             <field name="store" readonly="1"/>
@@ -186,7 +189,8 @@
                                     <div colspan="2" class="text-muted mb-2">
                                         Tick <b>Xác nhận thay</b> khi đã kiểm tra xong ảnh tem/tag
                                         của cửa hàng. Danh sách lấy từ file bước
-                                        <b>Đổ BB thay tem/tag (file tổng)</b>.
+                                        <b>Đổ BB thay tem/tag (file tổng)</b>,
+                                        chỉ cửa hàng khớp mã bộ phận trên hồ sơ của bạn.
                                     </div>
                                     <div colspan="2" class="mb-2">
                                         <button name="action_refresh_tem_tag_lines" type="object"
@@ -194,7 +198,8 @@
                                             icon="fa-refresh"/>
                                     </div>
                                     <field name="tem_photo_check_ids" nolabel="1" colspan="2"
-                                        widget="one2many" class="o_ctkm_print_store_list">
+                                        widget="one2many" class="o_ctkm_print_store_list"
+                                        domain="[('store_key', 'in', current_user_visible_store_keys)]">
                                         <list editable="bottom" create="0" delete="0"
                                             default_order="store, material_code">
                                             <field name="store" readonly="1"/>

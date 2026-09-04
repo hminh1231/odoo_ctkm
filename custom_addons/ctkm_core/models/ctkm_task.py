@@ -498,6 +498,11 @@ class CtkmTask(models.Model):
         help='Bảng (Cửa hàng, Mã vật tư) lấy từ kho Tem/Tag file tổng. '
              'Bước 13 tick "Đã chụp"; bước 14 tick "Xác nhận thay".',
     )
+    current_user_visible_store_keys = fields.Json(
+        string='Store keys người đang xem',
+        compute='_compute_current_user_visible_store_keys',
+        help='Dùng để lọc bảng bước 13–14 theo mã bộ phận của người đang xem.',
+    )
 
     # Bước phạm vi thông báo (Gửi tin tuần tự theo STT dòng)
     notify_line_id = fields.Many2one(
@@ -997,6 +1002,25 @@ class CtkmTask(models.Model):
                     visible.add(key)
         return [key for key in visible if key]
 
+    @api.depends('is_tem_photo_task', 'is_tem_check_task')
+    def _compute_current_user_visible_store_keys(self):
+        """Danh sách store_key dùng domain lọc bảng bước 13–14 trên form."""
+        user = self.env.user
+        is_manager = user.has_group('ctkm_core.group_ctkm_manager')
+        visible = [] if is_manager else list(
+            self._ctkm_visible_store_keys_for_user(user)
+        )
+        for task in self:
+            if is_manager:
+                keys = {
+                    line.store_key or _ctkm_normalize_store_key(line.store)
+                    for line in task.sudo().tem_photo_check_ids
+                    if line.store_key or line.store
+                }
+                task.current_user_visible_store_keys = [key for key in keys if key]
+            else:
+                task.current_user_visible_store_keys = visible
+
     def _ctkm_store_visible_to_user(self, store_value):
         """True nếu mã Store trên dòng thuộc cửa hàng của user đang xem."""
         key = _ctkm_normalize_store_key(store_value)
@@ -1041,16 +1065,18 @@ class CtkmTask(models.Model):
         return keys
 
     def _ctkm_employee_department_store_keys(self, employee):
-        """Mã bộ phận / cửa hàng trên hồ sơ nhân viên, đã chuẩn hóa."""
+        """Mã bộ phận / cửa hàng trên hồ sơ nhân viên, đã chuẩn hóa.
+
+        Chỉ lấy *mã* (code), không lấy tên cửa hàng — tránh khớp nhầm
+        nhiều store LUG_* khi tên chứa tiền tố chung.
+        """
         codes = []
         if 'ma_bo_phan' in employee._fields:
             codes.append(employee.ma_bo_phan)
         if 'ma_bo_phan_id' in employee._fields and employee.ma_bo_phan_id:
-            store_code = employee.ma_bo_phan_id.sudo()
-            codes.extend([store_code.code, store_code.name])
+            codes.append(employee.ma_bo_phan_id.sudo().code)
         if 'store_id' in employee._fields and employee.store_id:
-            store = employee.store_id.sudo()
-            codes.extend([store.code, store.name])
+            codes.append(employee.store_id.sudo().code)
         keys = set()
         for code in codes:
             key = _ctkm_normalize_store_key(code)
