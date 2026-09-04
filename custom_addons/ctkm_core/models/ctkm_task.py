@@ -5093,16 +5093,23 @@ class CtkmTask(models.Model):
         seen = set()
 
         def _add(key, code, name):
-            if not key or key in seen:
+            if not key:
                 return
-            seen.add(key)
+            canon = self._ctkm_store_canonical_key(key, code, name) or key
+            if canon in seen:
+                if name and name != canon:
+                    for s in stores:
+                        if s['key'] == canon and (s['name'] == canon or len(name) > len(s['name'])):
+                            s['name'] = name
+                return
+            seen.add(canon)
             stores.append({
-                'key': key,
-                'code': code or key,
-                'name': name or code or key,
+                'key': canon,
+                'code': code or canon,
+                'name': name or code or canon,
             })
 
-        # 1. Cửa hàng quản lí (hr.employee.managed_store_ids)
+        # 1. Cửa hàng từ hồ sơ nhân viên (hr.employee)
         employees = self.env['hr.employee'].sudo()
         if 'employee_id' in user._fields and user.employee_id:
             employees |= user.employee_id.sudo()
@@ -5122,6 +5129,9 @@ class CtkmTask(models.Model):
                 s = emp.ma_bo_phan_id
                 k = _ctkm_normalize_store_key(s.code or s.name)
                 _add(k, s.code, s.name)
+            if 'ma_bo_phan' in emp._fields and emp.ma_bo_phan:
+                k = _ctkm_normalize_store_key(emp.ma_bo_phan)
+                _add(k, emp.ma_bo_phan, emp.ma_bo_phan)
 
         # 2. LUG Permission: user.assigned_ma_bo_phan_ids
         if 'assigned_ma_bo_phan_ids' in user._fields:
@@ -5129,11 +5139,54 @@ class CtkmTask(models.Model):
                 k = _ctkm_normalize_store_key(s.code or s.name)
                 _add(k, s.code, s.name)
 
+        # 3. Cửa hàng từ ctkm.task.store.verifier (Người kiểm soát / Quản lý cửa hàng / Phụ trách)
+        if 'ctkm.task.store.verifier' in self.env:
+            sv_records = self.env['ctkm.task.store.verifier'].sudo().search([
+                '|', '|',
+                    ('verifier_user_id', '=', user.id),
+                    ('verifier_id.user_id', '=', user.id),
+                    ('assignee_user_id', '=', user.id),
+            ])
+            for sv in sv_records:
+                k = _ctkm_normalize_store_key(sv.store_key or sv.store_label)
+                _add(k, sv.store_key, sv.store_label or sv.store_key)
+
+        # 4. Cửa hàng từ mã bộ phận của user (_ctkm_user_department_store_keys)
+        dept_keys = self._ctkm_user_department_store_keys(user)
+        for dk in dept_keys:
+            canon = self._ctkm_store_canonical_key(dk) or dk
+            if canon not in seen:
+                s_name = dk
+                if 'hr.store' in self.env:
+                    st_rec = self.env['hr.store'].sudo().search([
+                        '|', ('code', '=', dk), ('name', '=', dk),
+                    ], limit=1)
+                    if st_rec:
+                        s_name = st_rec.name
+                _add(canon, dk, s_name)
+
+        # 5. Cửa hàng từ các công việc mà user là Người kiểm soát (verifier_ids)
+        TaskModel = self.env['ctkm.task'].sudo()
+        verifier_tasks = TaskModel.search([
+            ('verifier_ids.user_id', 'in', [user.id]),
+            ('program_id.state', 'not in', ['draft', 'cancel']),
+        ])
+        for vt in verifier_tasks:
+            for sv in vt.store_verifier_ids:
+                k = _ctkm_normalize_store_key(sv.store_key or sv.store_label)
+                _add(k, sv.store_key, sv.store_label or sv.store_key)
+            for d in vt.store_dispatch_ids:
+                k = _ctkm_normalize_store_key(d.store_key or d.store_label)
+                _add(k, d.store_key, d.store_label or d.store_key)
+
+        stores.sort(key=lambda s: s.get('name') or s.get('code') or s.get('key'))
         return stores
 
     @api.model
     def get_user_store_progress_matrix(self):
         """Tính toán ma trận tiến độ CTKM × Cửa hàng cho người dùng hiện tại."""
+        from odoo.addons.ctkm_core.models.ctkm_task_store_dispatch import _CTKM_DISPATCH_CHAIN
+
         user = self.env.user
         stores = self._ctkm_get_user_managed_stores(user)
 
@@ -5143,43 +5196,77 @@ class CtkmTask(models.Model):
             ('program_id.state', 'not in', ['draft', 'cancel']),
             '|', '|', '|',
                 ('user_ids', 'in', [user.id]),
-                '&', ('state', '=', 'waiting_confirm'),
-                     ('user_ids.employee_ids.parent_id.user_id', 'in', [user.id]),
-                '&', ('state', '=', 'waiting_confirm'),
-                     ('verifier_ids.user_id', 'in', [user.id]),
-                '&', ('state', '=', 'waiting_confirm'),
-                     ('store_verifier_ids.verifier_user_id', 'in', [user.id]),
+                ('user_ids.employee_ids.parent_id.user_id', 'in', [user.id]),
+                ('verifier_ids.user_id', 'in', [user.id]),
+                ('store_verifier_ids.verifier_user_id', 'in', [user.id]),
         ])
         programs = user_tasks.mapped('program_id').filtered(
             lambda p: p.state not in ('draft', 'cancel')
         )
 
-        if not programs and user.has_group('ctkm_core.group_ctkm_user'):
-            programs = self.env['ctkm.program'].sudo().search([
-                ('state', 'not in', ['draft', 'cancel'])
-            ], order='date_begin desc, id desc', limit=20)
+        if not programs:
+            if user.has_group('ctkm_core.group_ctkm_user') or user.has_group('ctkm_core.group_ctkm_manager'):
+                programs = self.env['ctkm.program'].sudo().search([
+                    ('state', 'not in', ['draft', 'cancel'])
+                ], order='date_begin desc, id desc', limit=20)
+            elif stores:
+                store_keys_set = {s['key'] for s in stores}
+                candidates = self.env['ctkm.program'].sudo().search([
+                    ('state', 'not in', ['draft', 'cancel'])
+                ], order='date_begin desc, id desc', limit=20)
+                matched_programs = self.env['ctkm.program']
+                for cand in candidates:
+                    step4_map = cand._ctkm_step4_store_qty_map()
+                    if step4_map and any(self._ctkm_store_in_allowed(store_keys_set, k) for k in step4_map):
+                        matched_programs |= cand
+                    elif cand.task_ids.filtered(lambda t: any(
+                        self._ctkm_store_in_allowed(store_keys_set, d.store_key, d.store_label)
+                        for d in t.store_dispatch_ids
+                    )):
+                        matched_programs |= cand
+                programs = matched_programs
 
-        # Nếu user chưa gán store cụ thể (ví dụ tài khoản admin/manager),
+        # Nếu user chưa có store cụ thể (ví dụ tài khoản admin/manager chung),
         # lấy các cửa hàng xuất hiện trong các chương trình này
-        if not stores:
-            seen = set()
+        if not stores and programs:
+            seen_keys = set()
 
-            def _add(key, code, name):
-                if not key or key in seen:
+            def _add_store(key, code, name):
+                if not key:
                     return
-                seen.add(key)
-                stores.append({'key': key, 'code': code or key, 'name': name or code or key})
+                canon = self._ctkm_store_canonical_key(key, code, name) or key
+                if canon in seen_keys:
+                    if name and name != canon:
+                        for s in stores:
+                            if s['key'] == canon and (s['name'] == canon or len(name) > len(s['name'])):
+                                s['name'] = name
+                    return
+                seen_keys.add(canon)
+                stores.append({'key': canon, 'code': code or canon, 'name': name or code or canon})
 
             for p in programs:
+                step4_map = p.sudo()._ctkm_step4_store_qty_map()
+                if step4_map:
+                    for k in step4_map:
+                        canon = self._ctkm_store_canonical_key(k) or k
+                        lbl = p.task_ids[:1]._ctkm_store_label_for_key(canon) if p.task_ids else canon
+                        _add_store(canon, canon, lbl or canon)
                 for t in p.task_ids:
+                    for d in t.sudo().store_dispatch_ids:
+                        k = d.store_key
+                        _add_store(k, k, d.store_label or k)
+                    for sv in t.sudo().store_verifier_ids:
+                        k = sv.store_key
+                        _add_store(k, k, sv.store_label or k)
                     if t.is_tem_print_task:
                         for pl in t.print_store_ids:
                             k = pl.store_key or _ctkm_normalize_store_key(pl.store)
-                            _add(k, pl.store_code, pl.store_id.name if pl.store_id else pl.store)
+                            _add_store(k, pl.store_code, pl.store_id.name if pl.store_id else pl.store)
             if not stores and 'hr.store' in self.env:
                 for s in self.env['hr.store'].sudo().search([], order='code, name', limit=15):
                     k = _ctkm_normalize_store_key(s.code or s.name)
-                    _add(k, s.code, s.name)
+                    _add_store(k, s.code, s.name)
+            stores.sort(key=lambda s: s.get('name') or s.get('code') or s.get('key'))
 
         if not programs or not stores:
             return {
@@ -5194,108 +5281,189 @@ class CtkmTask(models.Model):
         program_rows = []
         for program in programs:
             tasks = program.task_ids.sorted(lambda t: (t.checklist_line_id.sequence or 999, t.id))
+            stores_map = program.sudo()._ctkm_step4_store_qty_map()
             cells = {}
+
+            # Cache task của chuỗi bước 10-16
+            chain_tasks = {}
+            for rank, flag in _CTKM_DISPATCH_CHAIN:
+                t_match = tasks.filtered(lambda t: t[flag])
+                if t_match:
+                    chain_tasks[rank] = t_match[:1]
 
             for st in stores:
                 st_key = st['key']
-                current_active_task = None
-                all_done = True
-                found_any_record = False
+                st_aliases = self._ctkm_store_key_aliases(st_key, st.get('code'), st.get('name'))
 
-                for task in tasks:
-                    step_done = False
-                    is_store_step = False
+                # 1. Kiểm tra xem cửa hàng này có thuộc chương trình không
+                is_store_in_prog = False
+                if stores_map:
+                    bucket = program._ctkm_match_store_bucket(stores_map, st_key)
+                    if bucket or (st_aliases & set(stores_map.keys())):
+                        is_store_in_prog = True
+                if not is_store_in_prog:
+                    for t in tasks:
+                        if t.store_dispatch_ids.filtered(lambda d: self._ctkm_store_in_allowed(st_aliases, d.store_key, d.store_label)):
+                            is_store_in_prog = True
+                            break
+                        if t.store_verifier_ids.filtered(lambda sv: self._ctkm_store_in_allowed(st_aliases, sv.store_key, sv.store_label)):
+                            is_store_in_prog = True
+                            break
+                        if t.is_tem_print_task and t.print_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                            is_store_in_prog = True
+                            break
+                        if t.is_tem_handover_task and t.handover_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                            is_store_in_prog = True
+                            break
+                        if (t.is_tem_receive_task or t.is_tem_replace_task) and t.tem_tag_replace_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                            is_store_in_prog = True
+                            break
+                        if (t.is_tem_photo_task or t.is_tem_check_task) and t.tem_photo_check_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                            is_store_in_prog = True
+                            break
+                        if t.is_tem_price_task and t.price_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                            is_store_in_prog = True
+                            break
+                        if t.is_tem_postcheck_task and t.postcheck_store_ids.filtered(lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)):
+                            is_store_in_prog = True
+                            break
 
-                    # Kiểm tra theo từng loại bước
-                    if task.is_tem_print_task:
-                        lines = task.print_store_ids.filtered(
-                            lambda l: self._ctkm_department_matches_store(st_key, l.store_key or _ctkm_normalize_store_key(l.store))
-                        )
-                        if lines:
-                            is_store_step = True
-                            found_any_record = True
-                            step_done = all(l.done for l in lines)
-                    elif task.is_tem_handover_task:
-                        lines = task.handover_store_ids.filtered(
-                            lambda l: self._ctkm_department_matches_store(st_key, l.store_key or _ctkm_normalize_store_key(l.store))
-                        )
-                        if lines:
-                            is_store_step = True
-                            found_any_record = True
-                            step_done = all(l.done for l in lines)
-                    elif task.is_tem_replace_task or task.is_tem_receive_task:
-                        lines = task.tem_tag_replace_ids.filtered(
-                            lambda l: self._ctkm_department_matches_store(st_key, l.store_key or _ctkm_normalize_store_key(l.store))
-                        )
-                        if lines:
-                            is_store_step = True
-                            found_any_record = True
-                            if task.is_tem_receive_task:
-                                step_done = (task.state == 'done')
-                            else:
-                                step_done = (task.state == 'done') or all(l.remaining_quantity <= 0.0001 for l in lines)
-                    elif task.is_tem_photo_task or task.is_tem_check_task:
-                        lines = task.tem_photo_check_ids.filtered(
-                            lambda l: self._ctkm_department_matches_store(st_key, l.store_key or _ctkm_normalize_store_key(l.store))
-                        )
-                        if lines:
-                            is_store_step = True
-                            found_any_record = True
-                            if task.is_tem_photo_task:
-                                step_done = all(l.photographed for l in lines)
-                            else:
-                                step_done = all(l.confirmed for l in lines)
-                    elif task.is_tem_price_task:
-                        lines = task.price_store_ids.filtered(
-                            lambda l: self._ctkm_department_matches_store(st_key, l.store_key or _ctkm_normalize_store_key(l.store))
-                        )
-                        if lines:
-                            is_store_step = True
-                            found_any_record = True
-                            step_done = all(l.price_applied for l in lines)
-                    elif task.is_tem_postcheck_task:
-                        lines = task.postcheck_store_ids.filtered(
-                            lambda l: self._ctkm_department_matches_store(st_key, l.store_key or _ctkm_normalize_store_key(l.store))
-                        )
-                        if lines:
-                            is_store_step = True
-                            found_any_record = True
-                            step_done = all(l.replaced or l.tag_replaced for l in lines)
+                if not is_store_in_prog:
+                    cells[st_key] = None
+                    continue
 
-                    if is_store_step:
-                        if not step_done:
-                            all_done = False
-                            if not current_active_task:
-                                current_active_task = task
-                                break
+                # 2. Kiểm tra nếu cả chương trình đang ở các bước chuẩn bị (sequence < 9)
+                has_started_dispatch = any(
+                    t._ctkm_is_store_dispatch_step() and t.store_dispatch_ids
+                    for t in tasks
+                )
+                early_tasks = [t for t in tasks if t.checklist_line_id.sequence and t.checklist_line_id.sequence < 9 and t.state != 'done']
+                if early_tasks and not has_started_dispatch:
+                    et = early_tasks[0]
+                    s_label = 'Đang làm' if et.state == 'progress' else ('Chờ xác nhận' if et.state == 'waiting_confirm' else 'Chưa bắt đầu')
+                    b_class = 'warning' if et.state == 'progress' else ('info' if et.state == 'waiting_confirm' else 'secondary')
+                    cells[st_key] = {
+                        'task_id': et.id,
+                        'stage_name': et.checklist_line_id.name or et.name,
+                        'state': et.state,
+                        'state_label': s_label,
+                        'badge_class': b_class,
+                    }
+                    continue
 
-                # Nếu tìm thấy dữ liệu cửa hàng trong chương trình
-                if found_any_record:
-                    if all_done and not current_active_task:
-                        last_task = tasks[-1] if tasks else False
+                # 3. Bước 9 (In tem tag):
+                print_task = tasks.filtered('is_tem_print_task')[:1]
+                if print_task and print_task.state != 'done':
+                    plines = print_task.print_store_ids.filtered(
+                        lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)
+                    )
+                    if plines and not all(l.done for l in plines):
+                        s_label = 'Đang làm' if print_task.state == 'progress' else ('Chờ xác nhận' if print_task.state == 'waiting_confirm' else 'Chưa bắt đầu')
+                        b_class = 'warning' if print_task.state == 'progress' else ('info' if print_task.state == 'waiting_confirm' else 'secondary')
                         cells[st_key] = {
-                            'task_id': last_task.id if last_task else False,
+                            'task_id': print_task.id,
+                            'stage_name': print_task.checklist_line_id.name or print_task.name,
+                            'state': print_task.state,
+                            'state_label': s_label,
+                            'badge_class': b_class,
+                        }
+                        continue
+
+                # 4. Chuỗi phân nhánh từng cửa hàng (Ranks 10..15):
+                cell_found = False
+                for rank in range(10, 16):
+                    step_task = chain_tasks.get(rank)
+                    if not step_task:
+                        continue
+
+                    if step_task.state == 'done':
+                        # Toàn bộ task đã xong -> cửa hàng này đã vượt qua bước này, xét tiếp bước sau
+                        continue
+
+                    # Kiểm tra store_dispatch_ids của cửa hàng trên bước này
+                    dispatches = step_task.store_dispatch_ids.filtered(
+                        lambda d: self._ctkm_store_in_allowed(st_aliases, d.store_key, d.store_label)
+                    )
+                    if dispatches:
+                        if any(d.state == 'sent' for d in dispatches):
+                            # Đã xác nhận gửi xuống bước sau -> xét bước kế tiếp
+                            continue
+                        if any(d.state == 'pending' for d in dispatches):
+                            # Đang chờ xác nhận gửi dữ liệu ở bước này!
+                            cells[st_key] = {
+                                'task_id': step_task.id,
+                                'stage_name': step_task.checklist_line_id.name or step_task.name,
+                                'state': 'waiting_confirm',
+                                'state_label': 'Chờ xác nhận',
+                                'badge_class': 'info',
+                            }
+                            cell_found = True
+                            break
+
+                    # Chưa có dispatch sent/pending -> Cửa hàng hiện đang dừng ở bước này!
+                    sv = step_task.store_verifier_ids.filtered(
+                        lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store_label)
+                    )
+                    if sv and any(not l.verified and (l.assignee_completed or step_task.state == 'waiting_confirm') for l in sv):
+                        s_label = 'Chờ xác nhận'
+                        b_class = 'info'
+                    elif step_task.state == 'waiting_confirm':
+                        s_label = 'Chờ xác nhận'
+                        b_class = 'info'
+                    elif step_task.state == 'progress':
+                        s_label = 'Đang làm'
+                        b_class = 'warning'
+                    else:
+                        s_label = 'Chưa bắt đầu'
+                        b_class = 'secondary'
+
+                    cells[st_key] = {
+                        'task_id': step_task.id,
+                        'stage_name': step_task.checklist_line_id.name or step_task.name,
+                        'state': step_task.state,
+                        'state_label': s_label,
+                        'badge_class': b_class,
+                    }
+                    cell_found = True
+                    break
+
+                if cell_found:
+                    continue
+
+                # 5. Bước 16 (Hậu kiểm CTKM) - Bước cuối cùng của chuỗi
+                postcheck_task = chain_tasks.get(16)
+                if postcheck_task:
+                    plines = postcheck_task.postcheck_store_ids.filtered(
+                        lambda l: self._ctkm_store_in_allowed(st_aliases, l.store_key, l.store)
+                    )
+                    is_postcheck_done = postcheck_task.state == 'done' or bool(plines and all(l.replaced or l.tag_replaced for l in plines))
+                    if is_postcheck_done:
+                        cells[st_key] = {
+                            'task_id': postcheck_task.id,
                             'stage_name': 'Hoàn thành',
                             'state': 'done',
                             'state_label': 'Hoàn thành',
                             'badge_class': 'success',
                         }
-                    elif current_active_task:
-                        s_label = 'Đang làm' if current_active_task.state == 'progress' else (
-                            'Chờ xác nhận' if current_active_task.state == 'waiting_confirm' else 'Chưa bắt đầu'
-                        )
-                        b_class = 'warning' if current_active_task.state == 'progress' else (
-                            'info' if current_active_task.state == 'waiting_confirm' else 'secondary'
-                        )
+                    else:
+                        s_label = 'Chờ xác nhận' if postcheck_task.state == 'waiting_confirm' else ('Đang làm' if postcheck_task.state == 'progress' else 'Chưa bắt đầu')
+                        b_class = 'info' if postcheck_task.state == 'waiting_confirm' else ('warning' if postcheck_task.state == 'progress' else 'secondary')
                         cells[st_key] = {
-                            'task_id': current_active_task.id,
-                            'stage_name': current_active_task.checklist_line_id.name or current_active_task.name,
-                            'state': current_active_task.state,
+                            'task_id': postcheck_task.id,
+                            'stage_name': postcheck_task.checklist_line_id.name or postcheck_task.name,
+                            'state': postcheck_task.state,
                             'state_label': s_label,
                             'badge_class': b_class,
                         }
                 else:
-                    cells[st_key] = None
+                    last_t = tasks[-1] if tasks else False
+                    cells[st_key] = {
+                        'task_id': last_t.id if last_t else False,
+                        'stage_name': 'Hoàn thành',
+                        'state': 'done',
+                        'state_label': 'Hoàn thành',
+                        'badge_class': 'success',
+                    }
 
             program_rows.append({
                 'id': program.id,
