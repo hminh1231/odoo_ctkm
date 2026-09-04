@@ -5182,7 +5182,6 @@ class CtkmTask(models.Model):
         # 5. Cửa hàng từ các công việc mà user là Người kiểm soát hoặc Người nhận việc
         TaskModel = self.env['ctkm.task'].sudo()
         user_tasks = TaskModel.search([
-            ('active', '=', True),
             ('program_id.active', '=', True),
             '|', '|', '|', '|',
                 ('user_ids', 'in', [user.id]),
@@ -5250,7 +5249,6 @@ class CtkmTask(models.Model):
         # Tìm các công việc CTKM liên quan đến user (hoặc tất cả nếu là manager/admin)
         Task = self.sudo()
         user_tasks = Task.search([
-            ('active', '=', True),
             ('program_id.active', '=', True),
             '|', '|', '|', '|',
                 ('user_ids', 'in', [user.id]),
