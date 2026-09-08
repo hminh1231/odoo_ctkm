@@ -112,14 +112,14 @@ class CtkmTask(models.Model):
         if not self.program_id:
             return set()
         Inventory = self.env['ctkm.inventory.tem.tag'].sudo()
-        groups = Inventory.read_group(
+        groups = Inventory._read_group(
             [('program_id', '=', self.program_id.id)],
-            ['store_key'], ['store_key'],
+            groupby=['store_key'],
         )
         inventory_keys = {
-            row['store_key']
-            for row in groups
-            if row.get('store_key')
+            store_key
+            for (store_key,) in groups
+            if store_key
         }
         managed_keys = set()
         if hasattr(self, '_ctkm_tem_tag_managed_store_keys'):
