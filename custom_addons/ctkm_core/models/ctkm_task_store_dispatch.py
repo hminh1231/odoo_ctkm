@@ -163,9 +163,29 @@ class CtkmTask(models.Model):
             return []
         stores_map = program._ctkm_step4_store_qty_map()
         rank = self._ctkm_dispatch_rank()
-        if not stores_map or rank not in _CTKM_DISPATCH_SEND_RANKS:
+        if rank not in _CTKM_DISPATCH_SEND_RANKS:
             return []
-        ratios = program._ctkm_stage_store_ratios(rank, stores_map, self)
+
+        # Fallback: nếu chưa có dữ liệu kho bước 4 / bước 9, xây stores_map
+        # tạm từ các dòng tem_tag_replace_ids của bước này để tính tỷ lệ.
+        if not stores_map and rank == 11:
+            lines = self.sudo().tem_tag_replace_ids
+            for line in lines:
+                key = line.store_key or (
+                    self._ctkm_store_canonical_key(line.store_key, line.store)
+                    if line.store else None
+                )
+                if not key:
+                    continue
+                info = stores_map.setdefault(key, {
+                    'qty': 0.0, 'tem': 0.0, 'tag': 0.0, 'keys': set(),
+                })
+                info['qty'] += line.total_quantity or 0.0
+                info['keys'].add(key)
+
+        if not stores_map:
+            return []
+        ratios = program._ctkm_stage_store_ratios(rank, stores_map, self.sudo())
         return [
             key for key in sorted(stores_map)
             if (ratios.get(key) or 0.0) >= 0.999
@@ -231,13 +251,17 @@ class CtkmTask(models.Model):
         my_keys = self._ctkm_user_department_store_keys(user)
         if not my_keys:
             return available
-        return [
+        filtered = [
             key for key in available
             if any(
                 self._ctkm_department_matches_store(dept_key, key)
                 for dept_key in my_keys
             )
         ]
+        # Nếu lọc theo mã bộ phận không khớp store nào (format key khác nhau)
+        # nhưng user đã là người nhận việc (đã kiểm tra trong action_send_store_data),
+        # trả về toàn bộ cửa hàng đã xong để không chặn thao tác hợp lệ.
+        return filtered if filtered else available
 
     def _ctkm_pending_dispatches_for_user(self, user):
         self.ensure_one()
