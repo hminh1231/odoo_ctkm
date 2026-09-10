@@ -168,7 +168,7 @@ class CtkmTask(models.Model):
 
         # Fallback: nếu chưa có dữ liệu kho bước 4 / bước 9, xây stores_map
         # tạm từ các dòng tem_tag_replace_ids của bước này để tính tỷ lệ.
-        if not stores_map and rank == 11:
+        if not stores_map and rank in (11, 12):
             lines = self.sudo().tem_tag_replace_ids
             for line in lines:
                 key = line.store_key or (
@@ -341,6 +341,25 @@ class CtkmTask(models.Model):
                     'Chưa có cửa hàng nào tick đủ 100%% tem/tag để gửi. '
                     'Tiến độ hiện tại: %s. '
                     'Vui lòng tick đủ tất cả các dòng của cửa hàng (hoặc bấm "Tick tất cả Đã nhận") rồi bấm Gửi dữ liệu.'
+                ) % '; '.join(details))
+
+        if rank == 12 and self.is_tem_replace_task:
+            lines = self.tem_tag_replace_ids
+            by_store = {}
+            for l in lines:
+                by_store.setdefault(l.store or l.store_key or _('Không rõ'), []).append(l)
+            details = []
+            for st, st_lines in by_store.items():
+                ticked = sum(1 for l in st_lines if l.replaced_done)
+                total = len(st_lines)
+                if 0 < ticked < total:
+                    pct = int(round(ticked / total * 100))
+                    details.append(f'"{st}" (mới thay {ticked}/{total} dòng - {pct}%)')
+            if details:
+                raise UserError(_(
+                    'Chưa có cửa hàng nào hoàn thành 100%% thay tem/tag để gửi. '
+                    'Tiến độ hiện tại: %s. '
+                    'Vui lòng hoàn thành đủ tất cả các dòng của cửa hàng (hoặc bấm "Tick tất cả Đã thay") rồi bấm Gửi dữ liệu.'
                 ) % '; '.join(details))
 
         if program:

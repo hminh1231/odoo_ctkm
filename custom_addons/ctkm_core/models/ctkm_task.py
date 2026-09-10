@@ -613,7 +613,21 @@ class CtkmTask(models.Model):
                 ]).mapped('store_key')
             )
             line_stores.discard(False)
-            if inv_stores != line_stores:
+            needs_sync = (inv_stores != line_stores)
+            if not needs_sync and task.is_tem_replace_task:
+                receive_task = task._ctkm_program_task_by_rank(11)
+                if not receive_task and task.program_id:
+                    receive_task = task.program_id.task_ids.filtered('is_tem_receive_task')[:1]
+                if receive_task:
+                    step11_received = set(
+                        receive_task.sudo().tem_tag_replace_ids.filtered('received').mapped('material_code')
+                    )
+                    step12_received = set(
+                        task.sudo().tem_tag_replace_ids.filtered('received').mapped('material_code')
+                    )
+                    if step11_received != step12_received:
+                        needs_sync = True
+            if needs_sync:
                 task.sudo().with_context(
                     ctkm_skip_receive_resync=True,
                 )._ctkm_sync_tem_tag_lines()
@@ -1825,6 +1839,26 @@ class CtkmTask(models.Model):
                         allowed, vals.get('store'), vals.get('store_key'),
                     )
                 ]
+        if self.is_tem_replace_task:
+            receive_task = self._ctkm_program_task_by_rank(11)
+            if not receive_task and self.program_id:
+                receive_task = self.program_id.task_ids.filtered('is_tem_receive_task')[:1]
+            if receive_task:
+                receive_map = {
+                    (
+                        (line.material_code or '').strip(),
+                        (line.store or '').strip(),
+                        'tag' if line.is_tag and not line.is_tem else 'tem',
+                    ): bool(line.received)
+                    for line in receive_task.sudo().tem_tag_replace_ids
+                }
+                for vals in values:
+                    key = (
+                        (vals.get('material_code') or '').strip(),
+                        (vals.get('store') or '').strip(),
+                        'tag' if vals.get('is_tag') and not vals.get('is_tem') else 'tem',
+                    )
+                    vals['received'] = receive_map.get(key, False)
         # store_key trên dòng replace là field computed — chỉ dùng để lọc.
         for vals in values:
             vals.pop('store_key', None)
@@ -3384,6 +3418,11 @@ class CtkmTask(models.Model):
                 _('ASM xác nhận lấy từ cột Đã thay bước Thay tem Tag. '
                   'KT áp giá chỉ tick khi đã có đủ ASM xác nhận và KTDT xác nhận.'),
             )
+        if task.is_tem_replace_task:
+            return self._ctkm_notify_reload(
+                _('Đã làm mới'),
+                _('Đã đồng bộ danh sách và trạng thái Đã nhận từ bước Nhận tem tag mới.'),
+            )
         return self._ctkm_notify_reload(
             _('Đã làm mới'),
             _('Bảng Chi tiết tem/tag đã cập nhật theo dữ liệu kho Tem/Tag.'),
@@ -3429,6 +3468,30 @@ class CtkmTask(models.Model):
         return self._ctkm_notify_reload(
             _('Đã tick tất cả'),
             _('Đã đánh dấu Đã nhận cho %s dòng tem/tag.') % len(lines),
+        )
+
+    def action_tick_all_replaced(self):
+        """Tick Đã thay và điền đủ SL cho mọi dòng tem/tag thuộc phạm vi người đang xem (bước 12)."""
+        self.ensure_one()
+        if not self.is_tem_replace_task:
+            raise UserError(_('Chỉ bước "Thay tem Tag" mới dùng nút này.'))
+        lines = self.tem_tag_replace_ids.filtered(
+            lambda l: not l.replaced_done or (l.replaced_quantity or 0.0) < (l.total_quantity or 0.0)
+        )
+        if not lines:
+            return self._ctkm_notify_reload(
+                _('Đã thay đủ'),
+                _('Tất cả tem/tag đã được tick Đã thay.'),
+                notif_type='warning',
+            )
+        for line in lines:
+            line.write({
+                'replaced_done': True,
+                'replaced_quantity': line.total_quantity or 0.0,
+            })
+        return self._ctkm_notify_reload(
+            _('Đã tick tất cả'),
+            _('Đã đánh dấu Đã thay cho %s dòng tem/tag.') % len(lines),
         )
 
     def web_read(self, specification):

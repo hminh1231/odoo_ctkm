@@ -109,6 +109,24 @@ class CtkmTaskTemTagReplaceLine(models.Model):
                     'total': line.total_quantity,
                 })
 
+    @api.onchange('replaced_done')
+    def _onchange_replaced_done(self):
+        for line in self:
+            if line.replaced_done:
+                line.replaced_quantity = line.total_quantity or 0.0
+            else:
+                line.replaced_quantity = 0.0
+
+    @api.onchange('replaced_quantity')
+    def _onchange_replaced_quantity(self):
+        for line in self:
+            tot = line.total_quantity or 0.0
+            rep = line.replaced_quantity or 0.0
+            if rep >= tot - QUANTITY_EPSILON and tot > 0:
+                line.replaced_done = True
+            elif rep < tot - QUANTITY_EPSILON:
+                line.replaced_done = False
+
     def write(self, vals):
         # Sync nội bộ (dựng lại bảng từ kho Tem/Tag) không cần kiểm tra quyền
         # và cũng không ghi ngược về kho (tránh vòng lặp).
@@ -117,6 +135,55 @@ class CtkmTaskTemTagReplaceLine(models.Model):
             self._check_can_update_replaced()
         if 'received' in vals and not internal:
             self._check_can_update_received()
+
+        if 'received' in vals and not self.env.context.get('ctkm_syncing_partner_received'):
+            new_received = bool(vals['received'])
+            PartnerLine = self.env['ctkm.task.tem.tag.replace.line'].sudo().with_context(
+                ctkm_syncing_partner_received=True,
+                ctkm_tem_tag_line_sync=True,
+            )
+            for line in self:
+                task = line.task_id
+                if not task or not task.program_id:
+                    continue
+                partner_rank = 12 if task.is_tem_receive_task else (11 if task.is_tem_replace_task else None)
+                if not partner_rank:
+                    continue
+                partner_task = task._ctkm_program_task_by_rank(partner_rank)
+                if not partner_task and task.program_id:
+                    flag = 'is_tem_replace_task' if partner_rank == 12 else 'is_tem_receive_task'
+                    partner_task = task.program_id.task_ids.filtered(flag)[:1]
+                if not partner_task:
+                    continue
+                target_lines = PartnerLine.search([
+                    ('task_id', '=', partner_task.id),
+                    ('material_code', '=', line.material_code),
+                    ('store', '=', line.store),
+                    ('is_tem', '=', line.is_tem),
+                    ('is_tag', '=', line.is_tag),
+                ])
+                if target_lines:
+                    target_lines.write({'received': new_received})
+
+        auto_qty = self.env.context.get('ctkm_auto_qty')
+        if not internal and not auto_qty:
+            if 'replaced_done' in vals and 'replaced_quantity' not in vals:
+                res = super().write(vals)
+                for line in self:
+                    target_qty = (line.total_quantity or 0.0) if vals['replaced_done'] else 0.0
+                    if abs((line.replaced_quantity or 0.0) - target_qty) > QUANTITY_EPSILON:
+                        line.with_context(ctkm_auto_qty=True).write({'replaced_quantity': target_qty})
+                return res
+            if 'replaced_quantity' in vals and 'replaced_done' not in vals:
+                res = super().write(vals)
+                for line in self:
+                    tot_qty = line.total_quantity or 0.0
+                    rep_qty = line.replaced_quantity or 0.0
+                    is_done = bool(rep_qty >= tot_qty - QUANTITY_EPSILON and tot_qty > 0)
+                    if line.replaced_done != is_done:
+                        line.with_context(ctkm_auto_qty=True).write({'replaced_done': is_done})
+                return res
+
         res = super().write(vals)
         if 'replaced_quantity' in vals and not internal:
             self._distribute_replaced_quantity()
