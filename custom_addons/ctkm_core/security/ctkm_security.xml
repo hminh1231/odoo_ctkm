@@ -229,7 +229,9 @@
                     '&amp;',
                         ('task_id.is_tem_receive_task', '=', False),
                         ('task_id.is_tem_replace_task', '=', False),
-                    ('store_key', 'in', user.env['ctkm.task']._ctkm_visible_store_keys_for_user(user))]</field>
+                    '|',
+                        ('store_key', 'in', user.env['ctkm.task']._ctkm_visible_store_keys_for_user(user)),
+                        ('store', 'in', user.env['ctkm.task']._ctkm_visible_store_keys_for_user(user))]</field>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="False"/>
@@ -245,7 +247,9 @@
                     '&amp;',
                         ('task_id.is_tem_check_task', '=', False),
                         ('task_id.is_tem_photo_task', '=', False),
-                    ('store_key', 'in', user.env['ctkm.task']._ctkm_visible_store_keys_for_user(user))]</field>
+                    '|',
+                        ('store_key', 'in', user.env['ctkm.task']._ctkm_visible_store_keys_for_user(user)),
+                        ('store', 'in', user.env['ctkm.task']._ctkm_visible_store_keys_for_user(user))]</field>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="False"/>

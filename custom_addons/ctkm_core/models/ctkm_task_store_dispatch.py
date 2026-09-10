@@ -167,9 +167,23 @@ class CtkmTask(models.Model):
             return []
 
         # Fallback: nếu chưa có dữ liệu kho bước 4 / bước 9, xây stores_map
-        # tạm từ các dòng tem_tag_replace_ids của bước này để tính tỷ lệ.
+        # tạm từ các dòng tem_tag_replace_ids / tem_photo_check_ids của bước này để tính tỷ lệ.
         if not stores_map and rank in (11, 12):
             lines = self.sudo().tem_tag_replace_ids
+            for line in lines:
+                key = line.store_key or (
+                    self._ctkm_store_canonical_key(line.store_key, line.store)
+                    if line.store else None
+                )
+                if not key:
+                    continue
+                info = stores_map.setdefault(key, {
+                    'qty': 0.0, 'tem': 0.0, 'tag': 0.0, 'keys': set(),
+                })
+                info['qty'] += line.total_quantity or 0.0
+                info['keys'].add(key)
+        elif not stores_map and rank in (13, 14):
+            lines = self.sudo().tem_photo_check_ids
             for line in lines:
                 key = line.store_key or (
                     self._ctkm_store_canonical_key(line.store_key, line.store)

@@ -76,13 +76,14 @@ class CtkmTaskTemPhotoLine(models.Model):
                     'Chỉ bước "Chụp team gửi lên group / chụp từng con tem" '
                     'mới được cập nhật Đã chụp.'
                 ))
-            if not is_manager and self.env.user not in task.user_ids:
+            is_visible_store = task._ctkm_store_visible_to_user(line.store)
+            if not is_manager and self.env.user not in task.user_ids and not is_visible_store:
                 raise UserError(_(
-                    'Chỉ người nhận việc mới được cập nhật Đã chụp.'
+                    'Chỉ người nhận việc hoặc quản lý cửa hàng này mới được cập nhật Đã chụp.'
                 ))
             if (
                 not is_manager
-                and not task._ctkm_store_visible_to_user(line.store)
+                and not is_visible_store
             ):
                 raise UserError(_(
                     'Bạn chỉ được đánh dấu đã chụp tem/tag của cửa hàng mình.'
@@ -97,14 +98,15 @@ class CtkmTaskTemPhotoLine(models.Model):
                     'Chỉ bước "Kiểm tra hình ảnh tem tag" '
                     'mới được cập nhật Xác nhận thay.'
                 ))
-            if not is_manager and self.env.user not in task.user_ids:
+            is_visible_store = task._ctkm_store_visible_to_user(line.store)
+            if not is_manager and self.env.user not in task.user_ids and not is_visible_store:
                 raise UserError(_(
-                    'Chỉ người nhận việc mới được cập nhật Xác nhận thay.'
+                    'Chỉ người nhận việc hoặc quản lý cửa hàng này mới được cập nhật Xác nhận thay.'
                 ))
             if (
                 not is_manager
                 and task.is_tem_check_task
-                and not task._ctkm_store_visible_to_user(line.store)
+                and not is_visible_store
             ):
                 raise UserError(_(
                     'Bạn chỉ được xác nhận hình ảnh tem/tag của cửa hàng mình.'

@@ -975,6 +975,8 @@ class CtkmTask(models.Model):
             employees |= user.employee_id.sudo()
         if user.employee_ids:
             employees |= user.employee_ids.sudo()
+        if not employees and 'hr.employee' in self.env:
+            employees |= self.env['hr.employee'].sudo().search([('user_id', '=', user.id)])
         keys = set()
         for employee in employees:
             keys |= self._ctkm_employee_department_store_keys(employee)
@@ -988,10 +990,10 @@ class CtkmTask(models.Model):
     def _ctkm_visible_store_keys_for_user(self, user):
         """Mã Store trên biên bản mà *user* được xem (bước 11–14).
 
-        Khớp chính xác mã bộ phận. Chỉ gộp ``{store}_DDL`` / ``{store}_DNA``
-        vào mã ngắn trên file (AETL) khi hồ sơ có cả hai hậu tố và không có
-        mã trần; cột file đã có hậu tố (AETA_DNA) không gộp.
-        Không lấy LUG Permission — tránh lộ store của cửa hàng khác.
+        Khớp chính xác mã bộ phận và cửa hàng quản lí (managed_store_ids).
+        Chỉ gộp ``{store}_DDL`` / ``{store}_DNA`` vào mã ngắn trên file (AETL)
+        khi hồ sơ có cả hai hậu tố và không có mã trần; cột file đã có hậu tố
+        (AETA_DNA) không gộp.
         """
         dept_keys = self._ctkm_user_department_store_keys(user)
         visible = set(dept_keys)
@@ -1000,6 +1002,16 @@ class CtkmTask(models.Model):
             parent = self._ctkm_grouped_store_key(dept)
             if parent and parent in grouped_parents:
                 visible.add(parent)
+        for key in list(visible):
+            canon = self._ctkm_store_canonical_key(key)
+            if canon:
+                visible.add(canon)
+            if key.startswith('LUG_') and len(key) > 4:
+                visible.add(key[4:])
+            elif key.startswith('LUG') and len(key) > 3:
+                visible.add(key[3:])
+            elif '_' not in key and ' ' not in key and len(key) <= 10:
+                visible.add(f'LUG_{key}')
         if 'ctkm.inventory.tem.tag' in self.env and dept_keys:
             tem_tag = self.env['ctkm.inventory.tem.tag'].sudo()
             groups = tem_tag._read_group(
@@ -1010,10 +1022,34 @@ class CtkmTask(models.Model):
             for store_key, _count in groups:
                 key = _ctkm_normalize_store_key(store_key)
                 if key and any(
-                    self._ctkm_department_matches_store(dept, key)
+                    key in visible
+                    or self._ctkm_department_matches_store(dept, key)
+                    or (self._ctkm_store_canonical_key(dept) and self._ctkm_store_canonical_key(dept) == self._ctkm_store_canonical_key(key))
                     for dept in dept_keys
                 ):
                     visible.add(key)
+        if 'ctkm.task.tem.photo.line' in self.env and dept_keys:
+            PhotoLine = self.env['ctkm.task.tem.photo.line'].sudo()
+            p_groups = PhotoLine._read_group(
+                ['|', ('store_key', '!=', False), ('store', '!=', False)],
+                ['store_key', 'store'],
+                ['id:count'],
+            )
+            for p_sk, p_st, _c in p_groups:
+                norm_sk = _ctkm_normalize_store_key(p_sk)
+                norm_st = _ctkm_normalize_store_key(p_st)
+                for cand in (norm_sk, norm_st):
+                    if cand and any(
+                        cand in visible
+                        or self._ctkm_department_matches_store(dept, cand)
+                        or (self._ctkm_store_canonical_key(dept) and self._ctkm_store_canonical_key(dept) == self._ctkm_store_canonical_key(cand))
+                        for dept in dept_keys
+                    ):
+                        if norm_sk:
+                            visible.add(norm_sk)
+                        if norm_st:
+                            visible.add(norm_st)
+                        break
         return [key for key in visible if key]
 
     @api.depends('is_tem_photo_task', 'is_tem_check_task')
@@ -1033,7 +1069,9 @@ class CtkmTask(models.Model):
                 }
                 task.current_user_visible_store_keys = [key for key in keys if key]
             else:
-                task.current_user_visible_store_keys = visible
+                task_visible = set(visible)
+                task_visible.update(task._ctkm_tem_tag_managed_store_keys())
+                task.current_user_visible_store_keys = [k for k in task_visible if k]
 
     def _ctkm_store_visible_to_user(self, store_value):
         """True nếu mã Store trên dòng thuộc cửa hàng của user đang xem."""
@@ -1047,8 +1085,11 @@ class CtkmTask(models.Model):
         if key in set(self._ctkm_tem_tag_managed_store_keys()):
             return True
         dept_keys = self._ctkm_user_department_store_keys(self.env.user)
+        canon_key = self._ctkm_store_canonical_key(key)
         return any(
-            self._ctkm_department_matches_store(dept, key)
+            dept == key
+            or self._ctkm_department_matches_store(dept, key)
+            or (canon_key and self._ctkm_store_canonical_key(dept) == canon_key)
             for dept in dept_keys
         )
 
@@ -1081,21 +1122,37 @@ class CtkmTask(models.Model):
     def _ctkm_employee_department_store_keys(self, employee):
         """Mã bộ phận / cửa hàng trên hồ sơ nhân viên, đã chuẩn hóa.
 
-        Chỉ lấy *mã* (code), không lấy tên cửa hàng — tránh khớp nhầm
-        nhiều store LUG_* khi tên chứa tiền tố chung.
+        Lấy mã bộ phận, cửa hàng công việc (store_id) và danh sách
+        Cửa hàng quản lí (managed_store_ids).
         """
         codes = []
-        if 'ma_bo_phan' in employee._fields:
+        if 'ma_bo_phan' in employee._fields and employee.ma_bo_phan:
             codes.append(employee.ma_bo_phan)
         if 'ma_bo_phan_id' in employee._fields and employee.ma_bo_phan_id:
             codes.append(employee.ma_bo_phan_id.sudo().code)
         if 'store_id' in employee._fields and employee.store_id:
-            codes.append(employee.store_id.sudo().code)
+            st = employee.store_id.sudo()
+            if 'code' in st._fields and st.code:
+                codes.append(st.code)
+            if 'name' in st._fields and st.name:
+                codes.append(st.name)
+        if 'managed_store_ids' in employee._fields:
+            for store in employee.sudo().managed_store_ids:
+                if 'code' in store._fields and store.code:
+                    codes.append(store.code)
+                if 'name' in store._fields and store.name:
+                    codes.append(store.name)
         keys = set()
         for code in codes:
             key = _ctkm_normalize_store_key(code)
             if key:
                 keys.add(key)
+                if key.startswith('LUG_') and len(key) > 4:
+                    keys.add(key[4:])
+                elif key.startswith('LUG') and len(key) > 3:
+                    keys.add(key[3:])
+                elif '_' not in key and ' ' not in key and len(key) <= 10:
+                    keys.add(f'LUG_{key}')
         return keys
 
     @api.model

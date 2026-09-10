@@ -170,7 +170,7 @@
                                     </div>
                                     <field name="tem_photo_check_ids" nolabel="1" colspan="2"
                                         widget="one2many" class="o_ctkm_print_store_list"
-                                        domain="[('store_key', 'in', current_user_visible_store_keys)]">
+                                        domain="['|', ('store_key', 'in', current_user_visible_store_keys), ('store', 'in', current_user_visible_store_keys)]">
                                         <list editable="bottom" create="0" delete="0"
                                             default_order="store, material_code">
                                             <field name="store" readonly="1"/>
@@ -199,7 +199,7 @@
                                     </div>
                                     <field name="tem_photo_check_ids" nolabel="1" colspan="2"
                                         widget="one2many" class="o_ctkm_print_store_list"
-                                        domain="[('store_key', 'in', current_user_visible_store_keys)]">
+                                        domain="['|', ('store_key', 'in', current_user_visible_store_keys), ('store', 'in', current_user_visible_store_keys)]">
                                         <list editable="bottom" create="0" delete="0"
                                             default_order="store, material_code">
                                             <field name="store" readonly="1"/>
