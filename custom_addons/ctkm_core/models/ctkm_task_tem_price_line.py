@@ -64,7 +64,7 @@ class CtkmTaskTemPriceLine(models.Model):
     )
     not_replaced = fields.Boolean(
         string='KTDT xác nhận',
-        help='Lấy từ bước Thay tem Tag: cửa hàng còn SL chưa thay.',
+        help='Lấy từ bước Kiểm tra hình ảnh tem tag: mọi mã vật tư của cửa hàng đã được kiểm tra xác nhận.',
     )
     price_applied = fields.Boolean(
         string='KT áp giá',

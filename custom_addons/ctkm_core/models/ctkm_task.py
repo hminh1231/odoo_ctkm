@@ -2362,16 +2362,24 @@ class CtkmTask(models.Model):
         return aliases
 
     def _ctkm_build_previous_confirm_index(self):
-        """ASM từ cột Đã thay bước 12; KTDT từ SL chưa thay cùng bước."""
+        """ASM từ cột Đã thay bước 12; KTDT từ Xác nhận thay bước 14."""
         self.ensure_one()
         asm = {}
-        remaining = set()
-        remaining_info = {}
-        replace_task = self._ctkm_source_replace_task()
-        if replace_task:
+        ktdt = {}
+
+        # 1. ASM xác nhận từ bước 12 (Thay tem Tag): mọi mã vật tư của CH đã tick Đã thay
+        replace_tasks = self._ctkm_source_replace_task()
+        if not replace_tasks and self.program_id:
+            replace_tasks = self.sudo().search([
+                ('program_id', '=', self.program_id.id),
+                ('is_tem_replace_task', '=', True),
+            ])
+        if replace_tasks:
             by_store = {}
-            for line in replace_task.sudo().tem_tag_replace_ids:
+            for line in replace_tasks.sudo().tem_tag_replace_ids:
                 canon = self._ctkm_store_canonical_key(line.store_key, line.store)
+                if not canon:
+                    canon = _ctkm_normalize_store_key(line.store_key or line.store)
                 if not canon:
                     continue
                 by_store.setdefault(canon, []).append(line)
@@ -2383,35 +2391,91 @@ class CtkmTask(models.Model):
                             not src.write_date or line.write_date >= src.write_date
                         ):
                             src = line
-                    asm[canon] = (
+                    info = (
                         src.write_uid.id if src.write_uid else False,
                         src.write_date.date() if src.write_date else False,
                     )
-                remain_lines = [
-                    line for line in lines
-                    if (line.remaining_quantity or 0.0) > 0.000001
-                ]
-                if remain_lines:
-                    remaining.add(canon)
-                    src = remain_lines[-1]
-                    remaining_info[canon] = (
+                    asm[canon] = info
+                    for line in lines:
+                        for alias in self._ctkm_store_key_aliases(line.store_key, line.store):
+                            if alias:
+                                asm[alias] = info
+
+        # 2. KTDT xác nhận từ bước 14 (Kiểm tra hình ảnh tem tag):
+        # Mọi bản ghi của cửa hàng đã tick "Xác nhận thay"
+        check_tasks = self._ctkm_source_check_task()
+        if not check_tasks and self.program_id:
+            check_tasks = self.sudo().search([
+                ('program_id', '=', self.program_id.id),
+                ('is_tem_check_task', '=', True),
+            ])
+        if check_tasks:
+            by_store_check = {}
+            for line in check_tasks.sudo().tem_photo_check_ids:
+                canon = self._ctkm_store_canonical_key(line.store_key, line.store)
+                if not canon:
+                    canon = _ctkm_normalize_store_key(line.store_key or line.store)
+                if not canon:
+                    continue
+                by_store_check.setdefault(canon, []).append(line)
+            for canon, lines in by_store_check.items():
+                if lines and all(line.confirmed for line in lines):
+                    src = lines[-1]
+                    for line in lines:
+                        if line.write_date and (
+                            not src.write_date or line.write_date >= src.write_date
+                        ):
+                            src = line
+                    info = (
                         src.write_uid.id if src.write_uid else False,
                         src.write_date.date() if src.write_date else False,
                     )
+                    ktdt[canon] = info
+                    for line in lines:
+                        for alias in self._ctkm_store_key_aliases(line.store_key, line.store):
+                            if alias:
+                                ktdt[alias] = info
+
         return {
             'asm': asm,
-            'remaining': remaining,
-            'remaining_info': remaining_info,
+            'ktdt': ktdt,
+            'remaining': set(ktdt.keys()),
+            'remaining_info': ktdt,
         }
 
     def _ctkm_price_confirm_vals(self, index, *store_values):
-        """ASM từ Đã thay bước 12; KTDT từ SL chưa thay."""
+        """ASM từ Đã thay bước 12; KTDT từ Đã xác nhận ảnh bước 14."""
         canon = self._ctkm_store_canonical_key(*store_values)
-        asm_hit = index['asm'].get(canon) if canon else None
-        ktdt_hit = index.get('remaining_info', {}).get(canon) if canon else None
+        aliases = self._ctkm_store_key_aliases(*store_values)
+        lookup_keys = []
+        if canon:
+            lookup_keys.append(canon)
+        for a in aliases:
+            if a and a not in lookup_keys:
+                lookup_keys.append(a)
+        for v in store_values:
+            norm = _ctkm_normalize_store_key(v)
+            if norm and norm not in lookup_keys:
+                lookup_keys.append(norm)
+
+        asm_hit = None
+        for k in lookup_keys:
+            if k in index.get('asm', {}):
+                asm_hit = index['asm'][k]
+                break
+
+        ktdt_hit = None
+        for k in lookup_keys:
+            if k in index.get('ktdt', {}):
+                ktdt_hit = index['ktdt'][k]
+                break
+            if k in index.get('remaining_info', {}):
+                ktdt_hit = index['remaining_info'][k]
+                break
+
         vals = {
-            'replaced': bool(canon and canon in index['asm']),
-            'not_replaced': bool(canon and canon in index['remaining']),
+            'replaced': bool(asm_hit),
+            'not_replaced': bool(ktdt_hit),
             'replaced_user_id': asm_hit[0] if asm_hit else False,
             'replaced_date': asm_hit[1] if asm_hit else False,
             'not_replaced_user_id': ktdt_hit[0] if ktdt_hit else False,
@@ -3470,10 +3534,12 @@ class CtkmTask(models.Model):
                 _('Đã lấy danh sách cửa hàng / mã vật tư từ file tổng để xác nhận ảnh.'),
             )
         if task.is_tem_price_task:
+            task._ctkm_sync_price_lines()
             return self._ctkm_notify_reload(
                 _('Đã làm mới'),
                 _('ASM xác nhận lấy từ cột Đã thay bước Thay tem Tag. '
-                  'KT áp giá chỉ tick khi đã có đủ ASM xác nhận và KTDT xác nhận.'),
+                  'KTDT xác nhận lấy từ bước Kiểm tra hình ảnh tem tag. '
+                  'KT áp giá chỉ tick khi đã có đủ cả ASM xác nhận và KTDT xác nhận.'),
             )
         if task.is_tem_replace_task:
             return self._ctkm_notify_reload(

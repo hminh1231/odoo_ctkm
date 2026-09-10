@@ -586,6 +586,7 @@
                                 <div colspan="2" class="text-muted mb-2">
                                     Cửa hàng và SL tem/tag lấy từ bước <b>In tem, Tag</b>.
                                     <b>ASM xác nhận</b> lấy từ cột <b>Đã thay</b> của bước Thay tem Tag.
+                                    <b>KTDT xác nhận</b> lấy từ bước <b>Kiểm tra hình ảnh tem tag</b> khi toàn bộ mã của cửa hàng đã được xác nhận ảnh.
                                     Tick <b>KT áp giá</b> chỉ khi đã có đủ cả ASM xác nhận và KTDT xác nhận.
                                 </div>
                                 <field name="price_store_search" placeholder="Tìm cửa hàng..."
