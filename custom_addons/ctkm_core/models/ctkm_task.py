@@ -5669,7 +5669,7 @@ class CtkmTaskUserCompletion(models.Model):
     done = fields.Boolean(string='Đã hoàn thành', default=False)
     done_date = fields.Date(string='Ngày hoàn thành')
 
-    _sql_constraints = [
-        ('task_user_uniq', 'unique(task_id, user_id)',
-         'Mỗi người nhận việc chỉ có một bản ghi hoàn thành.'),
-    ]
+    _task_user_uniq = models.Constraint(
+        'UNIQUE(task_id, user_id)',
+        'Mỗi người nhận việc chỉ có một bản ghi hoàn thành.',
+    )
