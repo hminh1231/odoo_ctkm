@@ -3413,6 +3413,24 @@ class CtkmTask(models.Model):
             _('Đã đánh dấu Đã in cho %s cửa hàng.') % len(lines),
         )
 
+    def action_tick_all_received(self):
+        """Tick Đã nhận cho mọi dòng tem/tag thuộc phạm vi người đang xem (bước 11)."""
+        self.ensure_one()
+        if not self.is_tem_receive_task:
+            raise UserError(_('Chỉ bước "Nhận tem tag mới" mới dùng nút này.'))
+        lines = self.tem_tag_replace_ids.filtered(lambda l: not l.received)
+        if not lines:
+            return self._ctkm_notify_reload(
+                _('Đã nhận đủ'),
+                _('Tất cả tem/tag đã được tick Đã nhận.'),
+                notif_type='warning',
+            )
+        lines.write({'received': True})
+        return self._ctkm_notify_reload(
+            _('Đã tick tất cả'),
+            _('Đã đánh dấu Đã nhận cho %s dòng tem/tag.') % len(lines),
+        )
+
     def web_read(self, specification):
         # Mở form bước 9: gom SL tem/tag theo cửa hàng từ file tổng.
         if self.ids and not self.env.context.get('ctkm_skip_print_autosync'):

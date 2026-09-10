@@ -58,6 +58,9 @@ export class CtkmPrintDoneField extends Component {
             await this.orm.write(record.resModel, [record.resId], {
                 [fieldName]: newValue,
             });
+            if (typeof record.update === "function") {
+                await record.update({ [fieldName]: newValue });
+            }
             const parent = record._parentRecord || record.model.root;
             if (parent && typeof parent.load === "function") {
                 await parent.load();

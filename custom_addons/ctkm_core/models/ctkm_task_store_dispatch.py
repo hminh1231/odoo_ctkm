@@ -300,6 +300,72 @@ class CtkmTask(models.Model):
             )
         )
 
+    def _ctkm_raise_no_sendable_store_error(self):
+        """Tạo thông báo lỗi chi tiết khi không có cửa hàng nào gửi được."""
+        self.ensure_one()
+        program = self.program_id.sudo()
+        rank = self._ctkm_dispatch_rank()
+        busy = self._ctkm_dispatch_alias_set(('pending', 'sent'))
+        completed = self._ctkm_completed_store_keys()
+        if completed:
+            sent_dispatches = self.sudo().store_dispatch_ids.filtered(
+                lambda d: self._ctkm_store_in_allowed(
+                    self._ctkm_store_key_aliases(d.store_key, d.store_label),
+                    *completed,
+                )
+            )
+            if sent_dispatches:
+                msgs = []
+                for d in sent_dispatches:
+                    state_lbl = 'đang chờ xác nhận' if d.state == 'pending' else 'đã gửi thành công'
+                    msgs.append(f'"{d.store_label or d.store_key}" ({state_lbl})')
+                raise UserError(_(
+                    'Cửa hàng %s đã được bấm Gửi dữ liệu rồi. '
+                    'Nếu đã gửi hết các cửa hàng, vui lòng bấm nút "Hoàn thành" để chuyển tiếp.'
+                ) % ', '.join(msgs))
+
+        if rank == 11 and self.is_tem_receive_task:
+            lines = self.tem_tag_replace_ids
+            by_store = {}
+            for l in lines:
+                by_store.setdefault(l.store or l.store_key or _('Không rõ'), []).append(l)
+            details = []
+            for st, st_lines in by_store.items():
+                ticked = sum(1 for l in st_lines if l.received)
+                total = len(st_lines)
+                if 0 < ticked < total:
+                    pct = int(round(ticked / total * 100))
+                    details.append(f'"{st}" (mới tick {ticked}/{total} dòng - {pct}%)')
+            if details:
+                raise UserError(_(
+                    'Chưa có cửa hàng nào tick đủ 100%% tem/tag để gửi. '
+                    'Tiến độ hiện tại: %s. '
+                    'Vui lòng tick đủ tất cả các dòng của cửa hàng (hoặc bấm "Tick tất cả Đã nhận") rồi bấm Gửi dữ liệu.'
+                ) % '; '.join(details))
+
+        if program:
+            stores_map = program._ctkm_step4_store_qty_map()
+            if stores_map:
+                ratios = program._ctkm_stage_store_ratios(rank, stores_map, self.sudo())
+                in_progress = [
+                    (k, r) for k, r in ratios.items()
+                    if 0 < r < 0.999 and not self._ctkm_store_in_allowed(busy, k)
+                ]
+                if in_progress:
+                    in_progress.sort(key=lambda x: x[1], reverse=True)
+                    best_key, best_ratio = in_progress[0]
+                    label = self._ctkm_store_label_for_key(best_key)
+                    percent = int(round(best_ratio * 100))
+                    raise UserError(_(
+                        'Cửa hàng "%(store)s" mới hoàn thành %(percent)s%%. '
+                        'Vui lòng hoàn thành đủ 100%% công việc của cửa hàng rồi bấm Gửi dữ liệu.'
+                    ) % {'store': label, 'percent': percent})
+
+        raise UserError(_(
+            'Chưa có cửa hàng nào tick xong để gửi. '
+            'Hãy hoàn thành công việc của một cửa hàng rồi bấm Gửi dữ liệu.'
+        ))
+
     def action_send_store_data(self):
         """Gửi đúng 1 cửa hàng đã xong xuống bước sau; quản lý xác nhận từng lần."""
         self.ensure_one()
@@ -316,10 +382,7 @@ class CtkmTask(models.Model):
             ))
         sendable = self._ctkm_user_sendable_store_keys()
         if not sendable:
-            raise UserError(_(
-                'Chưa có cửa hàng nào tick xong để gửi. '
-                'Hãy hoàn thành công việc của một cửa hàng rồi bấm Gửi dữ liệu.'
-            ))
+            self._ctkm_raise_no_sendable_store_error()
         store_key = sendable[0]
         store_label = self._ctkm_store_label_for_key(store_key)
         Dispatch = self.env['ctkm.task.store.dispatch'].sudo()

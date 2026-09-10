@@ -514,6 +514,10 @@
                                     <button name="action_refresh_tem_tag_lines" type="object"
                                         string="Làm mới danh sách" class="btn-secondary btn-sm"
                                         icon="fa-refresh"/>
+                                    <button name="action_tick_all_received" type="object"
+                                        string="Tick tất cả Đã nhận" class="btn-primary btn-sm ms-2"
+                                        icon="fa-check-square-o"
+                                        invisible="not is_tem_receive_task or state == 'done'"/>
                                 </div>
                                 <field name="tem_tag_replace_ids" nolabel="1" colspan="2">
                                     <list editable="bottom" create="0" delete="0">
